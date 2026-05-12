@@ -1260,10 +1260,6 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
 
           {view === "status" && selectedVisit && (
                         <section>
-              <button style={styles.customerHomeButton} onClick={() => setView("home")}>
-                Home
-              </button>
-
               <div style={styles.ownerGreeting}>
                 <div>
                   <h2 style={styles.title}>Hi, {selectedVisit.ownerFirstName || "there"}!</h2>
