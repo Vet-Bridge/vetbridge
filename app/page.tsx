@@ -478,7 +478,9 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
       <section style={styles.hero}>
         <div style={styles.heroLeft}>
           <div style={styles.brandRow}>
-            <img src="/mypawlink-logo.png" alt="MyPawLink" style={styles.logoImage} />
+            <div style={styles.logoCrop}>
+              <img src="/mypawlink-logo.png" alt="MyPawLink" style={styles.logoImage} />
+            </div>
           </div>
 
           <h2 style={styles.heroTitle}>
@@ -1405,7 +1407,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     background: "linear-gradient(135deg, #fff8f1 0%, #eef9f7 48%, #f6fbff 100%)",
     fontFamily: "Arial, sans-serif",
     color: "#243447",
-    padding: 14,
+    padding: "6px 14px 14px",
   },
   hero: {
     maxWidth: 1180,
@@ -1413,7 +1415,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     background: "rgba(255, 255, 255, 0.92)",
     border: "1px solid rgba(255, 255, 255, 0.75)",
     borderRadius: 8,
-    padding: "clamp(18px, 4vw, 34px)",
+    padding: "8px clamp(18px, 4vw, 34px) clamp(18px, 4vw, 34px)",
     display: "grid",
     gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))",
     gap: 22,
@@ -1430,11 +1432,17 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: "center",
     gap: 14,
   },
-  logoImage: {
+  logoCrop: {
     width: "min(100%, 340px)",
+    height: 112,
+    overflow: "hidden",
+    borderRadius: 8,
+  },
+  logoImage: {
+    width: "100%",
     height: "auto",
     display: "block",
-    borderRadius: 8,
+    transform: "translateY(-58px)",
   },
   logoMark: {
     width: 58,
@@ -1463,7 +1471,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   heroTitle: {
     fontSize: "clamp(28px, 7vw, 38px)",
     lineHeight: 1.12,
-    marginTop: 8,
+    marginTop: 0,
     marginBottom: 12,
     color: "#243447",
   },
