@@ -553,18 +553,11 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
 
       <section style={styles.mainGrid}>
         <div style={styles.panel}>
-          <div style={styles.panelHeader}>
-            <button style={styles.smallButton} onClick={() => setView("home")}>
-              Back home
-            </button>
-          </div>
-
-          {view === "home" && (
-            <div style={styles.homeMessage}>
-              <h2 style={styles.title}>Welcome to MyPawLink</h2>
-              <p style={styles.text}>
-                Start a new visit, find an existing pet, or open the clinic dashboard.
-              </p>
+          {view !== "home" && (
+            <div style={styles.panelHeader}>
+              <button style={styles.smallButton} onClick={() => setView("home")}>
+                Back home
+              </button>
             </div>
           )}
 
