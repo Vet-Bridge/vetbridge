@@ -2170,8 +2170,8 @@ liveUpdateBody: {
 
 liveUpdateTitle: {
   color: "#102a3a",
-  fontSize: 24,
-  lineHeight: 1.25,
+  fontSize: 17,
+  lineHeight: 1.35,
   margin: "0 0 12px",
 },
 
