@@ -360,6 +360,9 @@ export default function Home() {
   e.preventDefault();
 
   const form = new FormData(e.currentTarget);
+  const petAge = String(form.get("petAge") || "").trim();
+  const reason = String(form.get("reason"));
+  const reasonWithAge = petAge ? `Approx. age: ${petAge}\n\n${reason}` : reason;
 
   const firstUpdate = {
     message: "Visit request submitted. The clinic will review it shortly.",
@@ -414,7 +417,7 @@ export default function Home() {
         visit_type: String(form.get("visitType")),
         referral_name: String(form.get("referralName") || ""),
         been_here_before: String(form.get("beenHereBefore")),
-        reason: String(form.get("reason")),
+        reason: reasonWithAge,
         status: "Request submitted",
       },
     ])
@@ -671,6 +674,12 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
     ))}
   </select>
 )}
+
+                <input
+                  style={styles.input}
+                  name="petAge"
+                  placeholder="Approx. age (optional)"
+                />
 
                 {selectedSpecies === "Other" && (
                   <input
