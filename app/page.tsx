@@ -478,7 +478,7 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
       <section style={styles.hero}>
         <div style={styles.heroLeft}>
           <div style={styles.brandRow}>
-            <div style={styles.logoMark}>MP</div>
+            <LogoMark />
             <div>
               <h1 style={styles.logo}>MyPawLink</h1>
               <p style={styles.tagline}>Care updates, made calmer.</p>
@@ -492,40 +492,57 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
           <p style={styles.heroSubtitle}>
             Real-time updates from your emergency vet team so you&apos;re never left wondering.
           </p>
-          <div style={styles.mobileCue}>
-            Designed for quick phone check-ins and calm client updates.
-          </div>
-
-          <div style={styles.featureRow}>
-            <InfoCard icon="1" title="Live updates" text="See what is happening without calling the front desk." />
-            <InfoCard icon="2" title="Forms on phone" text="Review and sign time-sensitive forms from anywhere." />
-            <InfoCard icon="3" title="Care timeline" text="Follow doctor, vitals, and treatment updates in one place." />
-          </div>
         </div>
 
         <div style={styles.heroRight}>
-          <div style={styles.petImageBox}>
+          <div style={styles.petHeroStage}>
+            <div style={{ ...styles.floatBubble, left: 8, top: 56 }}>
+              <MiniIcon type="chat" />
+            </div>
+            <div style={{ ...styles.floatBubble, right: 20, top: 4 }}>
+              <MiniIcon type="plus" />
+            </div>
+            <div style={{ ...styles.floatBubble, right: 0, bottom: 96 }}>
+              <MiniIcon type="heart" />
+            </div>
             <img src="/vet-hero.jpeg" alt="Dog with veterinarian" style={styles.heroImage} />
+          </div>
+
+          <div style={styles.featurePanel}>
+            <InfoCard icon={<MiniIcon type="chat" />} title="Real-time updates" text="Know what&apos;s happening every step of the way." />
+            <InfoCard icon={<MiniIcon type="check" />} title="Better communication" text="Stay informed without the stress of calling." />
+            <InfoCard icon={<MiniIcon type="heart" />} title="Stronger trust" text="Keep owners and clinics connected during care." />
+            <div style={styles.secureLine}>
+              <MiniIcon type="lock" />
+              <span>Your pet&apos;s data is secure and private.</span>
+            </div>
+          </div>
+
+          <div style={styles.startHeader}>
+            <h2>Let&apos;s get started</h2>
+            <p>Choose an option below to connect with your pet&apos;s care team.</p>
           </div>
 
           <div style={styles.buttonRow}>
   <button style={styles.primaryCardButton} onClick={() => setView("newPet")}>
-    <span style={styles.bigIcon}>+</span>
+    <span style={styles.bigIcon}><MiniIcon type="paw" /></span>
     <div style={styles.buttonText}>
       <div style={styles.buttonTitle}>Register New Pet</div>
       <div style={styles.buttonSubtitle}>
         Create a new pet profile and submit a visit request.
       </div>
+      <span style={styles.cardCta}>Register New Pet -&gt;</span>
     </div>
   </button>
 
             <button style={styles.darkCardButton} onClick={() => setView("existingPet")}>
-    <span style={styles.bigIcon}>ID</span>
+    <span style={styles.bigIcon}><MiniIcon type="search" /></span>
     <div style={styles.buttonText}>
       <div style={styles.buttonTitle}>Check In Existing Pet</div>
       <div style={styles.buttonSubtitle}>
         Search by pet name, phone number, and email.
       </div>
+      <span style={styles.cardCtaBlue}>Check In Now -&gt;</span>
     </div>
   </button>
 </div> <button
@@ -1311,7 +1328,81 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
   );
 }
 
-function InfoCard({ icon, title, text }: { icon: string; title: string; text: string }) {
+function LogoMark() {
+  return (
+    <svg width="74" height="74" viewBox="0 0 74 74" role="img" aria-label="MyPawLink logo">
+      <path
+        d="M37 64 C19 52 8 40 8 25 C8 13 18 8 27 13 C31 15 34 18 37 23 C40 18 43 15 47 13 C56 8 66 13 66 25 C66 40 55 52 37 64 Z"
+        fill="#e7fbf7"
+        stroke="#087f78"
+        strokeWidth="5"
+      />
+      <path d="M24 45 C24 34 29 27 36 24 C33 32 35 39 42 45 Z" fill="#087f78" />
+      <path d="M38 45 C42 35 47 30 54 28 C53 37 49 43 42 47 Z" fill="#0f8f86" />
+      <circle cx="31" cy="27" r="3" fill="#087f78" />
+      <circle cx="50" cy="31" r="2.6" fill="#0f8f86" />
+      <path d="M28 48 C32 43 42 43 47 48" fill="none" stroke="#087f78" strokeWidth="4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function MiniIcon({ type }: { type: "chat" | "check" | "heart" | "lock" | "paw" | "search" | "plus" }) {
+  const stroke = type === "search" ? "#0b62d8" : "#087f78";
+
+  return (
+    <svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true">
+      {type === "chat" && (
+        <>
+          <rect x="5" y="7" width="20" height="14" rx="4" fill="none" stroke={stroke} strokeWidth="2" />
+          <path d="M11 21 L9 25 L15 21" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" />
+          <circle cx="12" cy="14" r="1.3" fill={stroke} />
+          <circle cx="16" cy="14" r="1.3" fill={stroke} />
+          <circle cx="20" cy="14" r="1.3" fill={stroke} />
+        </>
+      )}
+      {type === "check" && (
+        <>
+          <path d="M15 4 L24 8 V15 C24 21 20 25 15 27 C10 25 6 21 6 15 V8 Z" fill="none" stroke={stroke} strokeWidth="2" />
+          <path d="M10 15 L14 19 L21 11" fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+        </>
+      )}
+      {type === "heart" && (
+        <path d="M15 25 C8 20 5 16 5 11 C5 7 8 5 11 5 C13 5 14 6 15 8 C16 6 17 5 19 5 C22 5 25 7 25 11 C25 16 22 20 15 25 Z" fill={stroke} />
+      )}
+      {type === "lock" && (
+        <>
+          <rect x="7" y="13" width="16" height="12" rx="3" fill="none" stroke={stroke} strokeWidth="2" />
+          <path d="M10 13 V10 C10 6 12 4 15 4 C18 4 20 6 20 10 V13" fill="none" stroke={stroke} strokeWidth="2" />
+          <circle cx="15" cy="19" r="1.5" fill={stroke} />
+        </>
+      )}
+      {type === "paw" && (
+        <>
+          <circle cx="10" cy="11" r="3" fill={stroke} />
+          <circle cx="15" cy="8" r="3" fill={stroke} />
+          <circle cx="20" cy="11" r="3" fill={stroke} />
+          <circle cx="8" cy="17" r="2.6" fill={stroke} />
+          <circle cx="22" cy="17" r="2.6" fill={stroke} />
+          <path d="M9 23 C10 18 13 16 15 16 C17 16 20 18 21 23 C18 25 12 25 9 23 Z" fill={stroke} />
+        </>
+      )}
+      {type === "search" && (
+        <>
+          <circle cx="13" cy="13" r="7" fill="none" stroke={stroke} strokeWidth="3" />
+          <path d="M18 18 L25 25" stroke={stroke} strokeWidth="3" strokeLinecap="round" />
+        </>
+      )}
+      {type === "plus" && (
+        <>
+          <path d="M15 7 V23" stroke={stroke} strokeWidth="4" strokeLinecap="round" />
+          <path d="M7 15 H23" stroke={stroke} strokeWidth="4" strokeLinecap="round" />
+        </>
+      )}
+    </svg>
+  );
+}
+
+function InfoCard({ icon, title, text }: { icon: React.ReactNode; title: string; text: string }) {
   return (
     <div style={styles.infoCard}>
       <div style={styles.infoIcon}>{icon}</div>
@@ -1423,12 +1514,33 @@ const styles: { [key: string]: React.CSSProperties } = {
     border: "1px solid #dcefeb",
     boxShadow: "0 10px 25px rgba(41, 64, 83, 0.12)",
   },
+  petHeroStage: {
+    position: "relative",
+    minHeight: 340,
+    borderRadius: 8,
+    overflow: "hidden",
+    background: "linear-gradient(145deg, #e7fbf7, #d7f7f2)",
+    border: "1px solid #dcefeb",
+    boxShadow: "0 10px 25px rgba(41, 64, 83, 0.12)",
+  },
   heroImage: {
     width: "100%",
     height: "100%",
-    minHeight: 260,
+    minHeight: 340,
     objectFit: "cover",
     display: "block",
+  },
+  floatBubble: {
+    position: "absolute",
+    zIndex: 2,
+    width: 58,
+    height: 58,
+    borderRadius: "50%",
+    background: "#ffffff",
+    display: "grid",
+    placeItems: "center",
+    boxShadow: "0 10px 25px rgba(15, 143, 134, 0.16)",
+    border: "1px solid #bfe9e0",
   },
   featureRow: {
     display: "grid",
@@ -1437,7 +1549,11 @@ const styles: { [key: string]: React.CSSProperties } = {
     marginTop: 30,
   },
   infoCard: {
-    textAlign: "center",
+    display: "grid",
+    gridTemplateColumns: "58px 1fr",
+    gap: 14,
+    alignItems: "center",
+    textAlign: "left",
   },
   infoIcon: {
     width: 56,
@@ -1455,6 +1571,49 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: "#64717d",
     fontSize: 13,
     lineHeight: 1.4,
+    margin: 0,
+  },
+  featurePanel: {
+    background: "#ffffff",
+    border: "1px solid #e1ecec",
+    borderRadius: 8,
+    padding: 18,
+    display: "grid",
+    gap: 18,
+    boxShadow: "0 14px 34px rgba(41, 64, 83, 0.1)",
+  },
+  secureLine: {
+    borderTop: "1px solid #eef3f4",
+    paddingTop: 14,
+    color: "#087f78",
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    fontWeight: 700,
+  },
+  startHeader: {
+    textAlign: "center",
+    color: "#102a3a",
+  },
+  cardCta: {
+    display: "block",
+    background: "linear-gradient(135deg, #0f9f94, #087f78)",
+    color: "#ffffff",
+    borderRadius: 8,
+    padding: "12px 14px",
+    marginTop: 14,
+    textAlign: "center",
+    fontWeight: 800,
+  },
+  cardCtaBlue: {
+    display: "block",
+    background: "linear-gradient(135deg, #1677f2, #0b62d8)",
+    color: "#ffffff",
+    borderRadius: 8,
+    padding: "12px 14px",
+    marginTop: 14,
+    textAlign: "center",
+    fontWeight: 800,
   },
   buttonRow: {
     display: "grid",
@@ -1462,32 +1621,32 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: 16,
   },
   primaryCardButton: {
-    background: "linear-gradient(135deg, #13a89e, #0f766e)",
-    color: "white",
-    border: "none",
+    background: "linear-gradient(135deg, #f0fffb, #e7fbf7)",
+    color: "#087f78",
+    border: "1px solid #bfe9e0",
     padding: 22,
     borderRadius: 8,
     cursor: "pointer",
     display: "flex",
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: 16,
     textAlign: "left",
     fontSize: 18,
-    minHeight: 112,
+    minHeight: 170,
   },
   darkCardButton: {
-    background: "linear-gradient(135deg, #3b82f6, #2457a6)",
-    color: "white",
-    border: "none",
+    background: "linear-gradient(135deg, #f8fbff, #edf5ff)",
+    color: "#0b62d8",
+    border: "1px solid #bdd7ff",
     padding: 22,
     borderRadius: 8,
     cursor: "pointer",
     display: "flex",
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: 16,
     textAlign: "left",
     fontSize: 18,
-    minHeight: 112,
+    minHeight: 170,
   },
   staffLinkButton: {
   gridColumn: "1 / -1",
@@ -1501,7 +1660,12 @@ const styles: { [key: string]: React.CSSProperties } = {
   fontWeight: 700,
 },
   bigIcon: {
-    fontSize: 34,
+    width: 62,
+    height: 62,
+    borderRadius: "50%",
+    background: "rgba(255, 255, 255, 0.72)",
+    display: "grid",
+    placeItems: "center",
     flexShrink: 0,
   },
   buttonText: {
