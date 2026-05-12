@@ -1260,8 +1260,8 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
 
           {view === "status" && selectedVisit && (
                         <section>
-              <button style={styles.smallButton} onClick={() => setView("clinic")}>
-                Back to Dashboard
+              <button style={styles.customerHomeButton} onClick={() => setView("home")}>
+                Home
               </button>
 
               <div style={styles.ownerGreeting}>
@@ -2025,6 +2025,16 @@ const styles: { [key: string]: React.CSSProperties } = {
     cursor: "pointer",
     color: "#9a3412",
     fontWeight: 700,
+  },
+  customerHomeButton: {
+    background: "#f0fbf8",
+    border: "1px solid #bfe9e0",
+    padding: "6px 10px",
+    borderRadius: 8,
+    cursor: "pointer",
+    color: "#087f78",
+    fontSize: 12,
+    fontWeight: 800,
   },
   noticeBox: {
     background: "#f0fbf8",
