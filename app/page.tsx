@@ -474,17 +474,23 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
 
   return (
     <main style={styles.page}>
+      {view === "home" && (
       <section style={styles.hero}>
         <div style={styles.heroLeft}>
-          <div style={styles.logoMark}>MPL</div>
+          <div style={styles.brandRow}>
+            <div style={styles.logoMark}>MP</div>
+            <div>
+              <h1 style={styles.logo}>MyPawLink</h1>
+              <p style={styles.tagline}>Care updates, made calmer.</p>
+            </div>
+          </div>
 
-          <h1 style={styles.logo}>MyPawLink</h1>
-          <p style={styles.tagline}>Care updates, made calmer.</p>
-
-          <h2 style={styles.heroTitle}>A friendlier way to stay connected during your pet&apos;s visit.</h2>
+          <h2 style={styles.heroTitle}>
+            A calmer way to stay connected <span style={styles.accentText}>when it matters most.</span>
+          </h2>
 
           <p style={styles.heroSubtitle}>
-            MyPawLink helps emergency vet teams share updates, forms, and next steps with pet owners in one simple place.
+            Real-time updates from your emergency vet team so you&apos;re never left wondering.
           </p>
           <div style={styles.mobileCue}>
             Designed for quick phone check-ins and calm client updates.
@@ -530,6 +536,7 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
 </button>
         </div>
       </section>
+      )}
 
       <section style={styles.mainGrid}>
         <div style={styles.panel}>
@@ -1083,10 +1090,35 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
           )}
 
           {view === "status" && selectedVisit && (
-            <section>
+                        <section>
               <button style={styles.smallButton} onClick={() => setView("clinic")}>
-                ← Back to Dashboard
+                Back to Dashboard
               </button>
+
+              <div style={styles.ownerGreeting}>
+                <div>
+                  <h2 style={styles.title}>Hi, {selectedVisit.ownerFirstName || "there"}!</h2>
+                  <p style={styles.text}>Here&apos;s the latest on {selectedVisit.petName}.</p>
+                </div>
+                <div style={styles.notificationBell}>2</div>
+              </div>
+
+              <div style={styles.liveUpdateCard}>
+                <div style={styles.liveBadge}>Live Update</div>
+                <div style={styles.liveUpdateBody}>
+                  <div>
+                    <h3 style={styles.liveUpdateTitle}>
+                      {selectedVisit.updates[selectedVisit.updates.length - 1]?.message ||
+                        `${selectedVisit.petName}'s visit request has been received.`}
+                    </h3>
+                    <p style={styles.text}>
+                      {selectedVisit.updates[selectedVisit.updates.length - 1]?.time ||
+                        new Date(selectedVisit.createdAt).toLocaleTimeString()}
+                    </p>
+                  </div>
+                  <img src="/vet-hero.jpeg" alt={selectedVisit.petName} style={styles.petAvatar} />
+                </div>
+              </div>
 
               <div style={styles.statusHeader}>
   <h2 style={styles.petTitle}>{selectedVisit.petName}</h2>
@@ -1103,25 +1135,40 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
               {getQueueDetails(selectedVisit) && (
                 <div style={styles.queueGrid}>
                   <div style={styles.queueCard}>
-                    <span style={styles.queueLabel}>Place in line</span>
+                    <span style={styles.queueLabel}>Estimated Wait Time</span>
                     <strong style={styles.queueNumber}>
-                      #{getQueueDetails(selectedVisit)?.position}
+                      {getQueueDetails(selectedVisit)?.estimatedWaitMinutes} min
                     </strong>
                   </div>
                   <div style={styles.queueCard}>
-                    <span style={styles.queueLabel}>Patients ahead</span>
+                    <span style={styles.queueLabel}>Pets Ahead in Line</span>
                     <strong style={styles.queueNumber}>
                       {getQueueDetails(selectedVisit)?.patientsAhead}
                     </strong>
                   </div>
                   <div style={styles.queueCard}>
-                    <span style={styles.queueLabel}>Estimated wait</span>
+                    <span style={styles.queueLabel}>Place in Line</span>
                     <strong style={styles.queueNumber}>
-                      {getQueueDetails(selectedVisit)?.estimatedWaitMinutes} min
+                      #{getQueueDetails(selectedVisit)?.position}
                     </strong>
                   </div>
                 </div>
               )}
+              <div style={styles.progressRail}>
+                {["Received", "In Exam", "In Treatment", "Discharge"].map((step, index) => (
+                  <div key={step} style={styles.progressStep}>
+                    <div
+                      style={{
+                        ...styles.progressDot,
+                        ...(index === 0 ? styles.progressDotActive : {}),
+                      }}
+                    >
+                      {index === 0 ? "OK" : ""}
+                    </div>
+                    <span>{step}</span>
+                  </div>
+                ))}
+              </div>
               {selectedVisit.forms && selectedVisit.forms.length > 0 && (
   <div style={{ marginBottom: 20 }}>
     <h3>Forms</h3>
@@ -1229,10 +1276,16 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
     ))}
   </div>
 )}
+              <div style={styles.ownerActionCard}>
+                <h3 style={styles.sectionTitle}>What you can do</h3>
+                <button style={styles.ownerMenuButton}>View All Updates <span>&gt;</span></button>
+                <button style={styles.ownerMenuButton}>Clinic Information <span>&gt;</span></button>
+                <button style={styles.ownerMenuButton}>Contact the Clinic <span>&gt;</span></button>
+              </div>
               <div style={styles.timeline}>
                 {selectedVisit.updates.map((update, index) => (
                   <div key={index} style={styles.timelineItem}>
-                    <div style={styles.timelineDot}>✓</div>
+                    <div style={styles.timelineDot}>OK</div>
                     <div style={styles.timelineContent}>
                       <p style={styles.timelineMessage}>{update.message}</p>
                       <small>{update.time}</small>
@@ -1243,6 +1296,12 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
 
               <div style={styles.noticeBox}>
                 We will keep you updated every step of the way.
+              </div>
+              <div style={styles.bottomNav}>
+                <span style={styles.bottomNavActive}>Home</span>
+                <span>My Pets</span>
+                <span>Updates</span>
+                <span>Profile</span>
               </div>
             </section>
           )}
@@ -1302,21 +1361,26 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignContent: "center",
     gap: 22,
   },
+  brandRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 14,
+  },
   logoMark: {
-    width: 62,
-    height: 62,
-    borderRadius: 8,
-    background: "linear-gradient(135deg, #13a89e, #f97352)",
+    width: 58,
+    height: 58,
+    borderRadius: "50%",
+    background: "#e7fbf7",
     color: "white",
     display: "grid",
     placeItems: "center",
     fontWeight: 800,
     fontSize: 18,
-    boxShadow: "0 10px 25px rgba(249, 115, 82, 0.22)",
+    boxShadow: "inset 0 0 0 4px #0f8f86, 0 10px 25px rgba(15, 143, 134, 0.18)",
   },
   logo: {
-    fontSize: "clamp(40px, 9vw, 54px)",
-    margin: "16px 0 0",
+    fontSize: "clamp(32px, 8vw, 42px)",
+    margin: 0,
     color: "#12485a",
     letterSpacing: 0,
   },
@@ -1332,6 +1396,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     marginTop: 22,
     marginBottom: 12,
     color: "#243447",
+  },
+  accentText: {
+    color: "#087f78",
+    display: "block",
   },
   heroSubtitle: {
     color: "#526070",
@@ -1349,7 +1417,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     padding: "12px 14px",
   },
   petImageBox: {
-    minHeight: 220,
+    minHeight: 260,
     borderRadius: 8,
     overflow: "hidden",
     border: "1px solid #dcefeb",
@@ -1358,7 +1426,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   heroImage: {
     width: "100%",
     height: "100%",
-    minHeight: 220,
+    minHeight: 260,
     objectFit: "cover",
     display: "block",
   },
@@ -1753,6 +1821,161 @@ const styles: { [key: string]: React.CSSProperties } = {
   marginBottom: 16,
 },
 
+ownerGreeting: {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "start",
+  gap: 16,
+  marginTop: 18,
+  marginBottom: 16,
+},
+
+notificationBell: {
+  width: 40,
+  height: 40,
+  borderRadius: "50%",
+  background: "#fff1f2",
+  color: "#e11d48",
+  display: "grid",
+  placeItems: "center",
+  fontWeight: 800,
+  border: "1px solid #fecdd3",
+},
+
+liveUpdateCard: {
+  background: "#ffffff",
+  border: "1px solid #e1ecec",
+  borderRadius: 8,
+  padding: 18,
+  marginBottom: 18,
+  boxShadow: "0 12px 30px rgba(41, 64, 83, 0.08)",
+},
+
+liveBadge: {
+  display: "inline-block",
+  background: "#dcfce7",
+  color: "#047857",
+  borderRadius: 8,
+  padding: "8px 10px",
+  fontSize: 14,
+  fontWeight: 800,
+  marginBottom: 14,
+},
+
+liveUpdateBody: {
+  display: "grid",
+  gridTemplateColumns: "1fr 92px",
+  gap: 14,
+  alignItems: "center",
+},
+
+liveUpdateTitle: {
+  color: "#102a3a",
+  fontSize: 24,
+  lineHeight: 1.25,
+  margin: "0 0 12px",
+},
+
+petAvatar: {
+  width: 92,
+  height: 92,
+  borderRadius: "50%",
+  objectFit: "cover",
+  border: "4px solid #e7fbf7",
+},
+
+progressRail: {
+  display: "grid",
+  gridTemplateColumns: "repeat(4, 1fr)",
+  gap: 8,
+  background: "#ffffff",
+  border: "1px solid #e1ecec",
+  borderRadius: 8,
+  padding: 14,
+  marginBottom: 20,
+},
+
+progressStep: {
+  display: "grid",
+  justifyItems: "center",
+  gap: 8,
+  color: "#64717d",
+  fontSize: 12,
+  textAlign: "center",
+},
+
+progressDot: {
+  width: 34,
+  height: 34,
+  borderRadius: "50%",
+  border: "1px solid #dbe5e8",
+  display: "grid",
+  placeItems: "center",
+  color: "#94a3b8",
+  background: "#f8fafc",
+  fontWeight: 800,
+},
+
+progressDotActive: {
+  background: "#14b8a6",
+  color: "#ffffff",
+  border: "1px solid #14b8a6",
+},
+
+ownerActionCard: {
+  background: "#ffffff",
+  border: "1px solid #e1ecec",
+  borderRadius: 8,
+  padding: 16,
+  marginBottom: 20,
+  boxShadow: "0 10px 25px rgba(41, 64, 83, 0.06)",
+},
+
+sectionTitle: {
+  color: "#102a3a",
+  fontSize: 20,
+  margin: "0 0 12px",
+},
+
+ownerMenuButton: {
+  width: "100%",
+  minHeight: 56,
+  background: "#ffffff",
+  border: "1px solid #e1ecec",
+  borderRadius: 8,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  padding: "12px 14px",
+  marginTop: 10,
+  color: "#102a3a",
+  cursor: "pointer",
+  fontWeight: 800,
+  fontSize: 15,
+},
+
+bottomNav: {
+  position: "sticky",
+  bottom: 0,
+  display: "grid",
+  gridTemplateColumns: "repeat(4, 1fr)",
+  gap: 8,
+  background: "rgba(255, 255, 255, 0.96)",
+  border: "1px solid #e1ecec",
+  borderRadius: 8,
+  padding: "12px 8px",
+  marginTop: 18,
+  boxShadow: "0 -8px 24px rgba(41, 64, 83, 0.08)",
+  textAlign: "center",
+  color: "#64717d",
+  fontSize: 13,
+  fontWeight: 700,
+},
+
+bottomNavActive: {
+  color: "#087f78",
+},
+
 petTitle: {
   fontSize: 32,
   fontWeight: 800,
@@ -1775,4 +1998,5 @@ detailsCard: {
   marginBottom: 18,
 },
 };
+
 
