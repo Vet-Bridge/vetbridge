@@ -527,8 +527,8 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
       <div style={styles.buttonSubtitle}>
         Create a new pet profile and submit a visit request.
       </div>
-      <span style={styles.cardCta}>Register New Pet -&gt;</span>
     </div>
+    <span style={styles.cardCta}>Register New Pet -&gt;</span>
   </button>
 
             <button style={styles.darkCardButton} onClick={() => setView("existingPet")}>
@@ -538,8 +538,8 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
       <div style={styles.buttonSubtitle}>
         Search by pet name, phone number, and email.
       </div>
-      <span style={styles.cardCtaBlue}>Check In Now -&gt;</span>
     </div>
+    <span style={styles.cardCtaBlue}>Check In Now -&gt;</span>
   </button>
 </div> <button
   style={styles.staffLinkButton}
@@ -1604,10 +1604,12 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: "#ffffff",
     borderRadius: 8,
     padding: "14px 18px",
-    marginTop: 18,
+    marginTop: 12,
     textAlign: "center",
     fontWeight: 800,
     width: "100%",
+    gridColumn: "1 / -1",
+    boxSizing: "border-box",
   },
   cardCtaBlue: {
     display: "block",
@@ -1615,10 +1617,12 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: "#ffffff",
     borderRadius: 8,
     padding: "14px 18px",
-    marginTop: 18,
+    marginTop: 12,
     textAlign: "center",
     fontWeight: 800,
     width: "100%",
+    gridColumn: "1 / -1",
+    boxSizing: "border-box",
   },
   buttonRow: {
     display: "grid",
@@ -1632,12 +1636,15 @@ const styles: { [key: string]: React.CSSProperties } = {
     padding: 22,
     borderRadius: 8,
     cursor: "pointer",
-    display: "flex",
+    display: "grid",
+    gridTemplateColumns: "62px 1fr",
     alignItems: "flex-start",
     gap: 16,
     textAlign: "left",
     fontSize: 18,
-    minHeight: 190,
+    minHeight: 188,
+    width: "100%",
+    boxSizing: "border-box",
   },
   darkCardButton: {
     background: "linear-gradient(135deg, #f8fbff, #edf5ff)",
@@ -1646,12 +1653,15 @@ const styles: { [key: string]: React.CSSProperties } = {
     padding: 22,
     borderRadius: 8,
     cursor: "pointer",
-    display: "flex",
+    display: "grid",
+    gridTemplateColumns: "62px 1fr",
     alignItems: "flex-start",
     gap: 16,
     textAlign: "left",
     fontSize: 18,
-    minHeight: 190,
+    minHeight: 188,
+    width: "100%",
+    boxSizing: "border-box",
   },
   staffLinkButton: {
   gridColumn: "1 / -1",
@@ -1678,6 +1688,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     flexDirection: "column",
     gap: 6,
     width: "100%",
+    minWidth: 0,
   },
   buttonTitle: {
     fontSize: 28,
