@@ -2384,7 +2384,7 @@ bottomNavActive: {
 },
 
 petTitle: {
-  fontSize: 32,
+  fontSize: 24,
   fontWeight: 800,
   margin: 0,
 },
@@ -2392,9 +2392,10 @@ petTitle: {
 statusBadge: {
   background: "#e6f7f5",
   color: "#0f766e",
-  padding: "8px 14px",
+  padding: "5px 9px",
   borderRadius: 8,
   fontWeight: 700,
+  fontSize: 12,
 },
 
 detailsCard: {
