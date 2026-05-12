@@ -589,23 +589,23 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
   <button style={styles.primaryCardButton} onClick={() => setView("newPet")}>
     <span style={styles.bigIcon}><MiniIcon type="paw" /></span>
       <div style={styles.buttonText}>
-      <div style={styles.buttonTitle}>Register<br />New Pet</div>
+      <div style={styles.buttonTitle}>New Pet<br />Check-in</div>
       <div style={styles.buttonSubtitle}>
-        Create a new pet profile and submit a visit request.
+        Create your pet&apos;s profile and start receiving live care updates.
       </div>
     </div>
-    <span style={styles.cardCta}>Register New Pet -&gt;</span>
+    <span style={styles.cardCta}>New Pet Check-in -&gt;</span>
   </button>
 
             <button style={styles.darkCardButton} onClick={() => setView("existingPet")}>
     <span style={styles.bigIcon}><MiniIcon type="search" /></span>
     <div style={styles.buttonText}>
-      <div style={styles.buttonTitle}>Check In<br />Existing Pet</div>
+      <div style={styles.buttonTitle}>Track Your<br />Pet&apos;s Visit</div>
       <div style={styles.buttonSubtitle}>
-        Search by pet name, phone number, and email.
+        Already checked in? Enter your pet&apos;s name and your email or phone number to view live updates.
       </div>
     </div>
-    <span style={styles.cardCtaBlue}>Check In Now -&gt;</span>
+    <span style={styles.cardCtaBlue}>Track Visit -&gt;</span>
   </button>
 </div> <button
   style={styles.staffLinkButton}
