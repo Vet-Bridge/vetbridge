@@ -478,11 +478,7 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
       <section style={styles.hero}>
         <div style={styles.heroLeft}>
           <div style={styles.brandRow}>
-            <LogoMark />
-            <div>
-              <h1 style={styles.logo}>MyPawLink</h1>
-              <p style={styles.tagline}>Care updates, made calmer.</p>
-            </div>
+            <img src="/mypawlink-logo.png" alt="MyPawLink" style={styles.logoImage} />
           </div>
 
           <h2 style={styles.heroTitle}>
@@ -519,15 +515,15 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
           </div>
 
           <div style={styles.startHeader}>
-            <h2>Let&apos;s get started</h2>
-            <p>Choose an option below to connect with your pet&apos;s care team.</p>
+            <h2 style={styles.startHeaderTitle}>Let&apos;s get started</h2>
+            <p style={styles.startHeaderText}>Choose an option below to connect with your pet&apos;s care team.</p>
           </div>
 
           <div style={styles.buttonRow}>
   <button style={styles.primaryCardButton} onClick={() => setView("newPet")}>
     <span style={styles.bigIcon}><MiniIcon type="paw" /></span>
-    <div style={styles.buttonText}>
-      <div style={styles.buttonTitle}>Register New Pet</div>
+      <div style={styles.buttonText}>
+      <div style={styles.buttonTitle}>Register<br />New Pet</div>
       <div style={styles.buttonSubtitle}>
         Create a new pet profile and submit a visit request.
       </div>
@@ -538,7 +534,7 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
             <button style={styles.darkCardButton} onClick={() => setView("existingPet")}>
     <span style={styles.bigIcon}><MiniIcon type="search" /></span>
     <div style={styles.buttonText}>
-      <div style={styles.buttonTitle}>Check In Existing Pet</div>
+      <div style={styles.buttonTitle}>Check In<br />Existing Pet</div>
       <div style={styles.buttonSubtitle}>
         Search by pet name, phone number, and email.
       </div>
@@ -1328,24 +1324,6 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
   );
 }
 
-function LogoMark() {
-  return (
-    <svg width="74" height="74" viewBox="0 0 74 74" role="img" aria-label="MyPawLink logo">
-      <path
-        d="M37 64 C19 52 8 40 8 25 C8 13 18 8 27 13 C31 15 34 18 37 23 C40 18 43 15 47 13 C56 8 66 13 66 25 C66 40 55 52 37 64 Z"
-        fill="#e7fbf7"
-        stroke="#087f78"
-        strokeWidth="5"
-      />
-      <path d="M24 45 C24 34 29 27 36 24 C33 32 35 39 42 45 Z" fill="#087f78" />
-      <path d="M38 45 C42 35 47 30 54 28 C53 37 49 43 42 47 Z" fill="#0f8f86" />
-      <circle cx="31" cy="27" r="3" fill="#087f78" />
-      <circle cx="50" cy="31" r="2.6" fill="#0f8f86" />
-      <path d="M28 48 C32 43 42 43 47 48" fill="none" stroke="#087f78" strokeWidth="4" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 function MiniIcon({ type }: { type: "chat" | "check" | "heart" | "lock" | "paw" | "search" | "plus" }) {
   const stroke = type === "search" ? "#0b62d8" : "#087f78";
 
@@ -1406,8 +1384,10 @@ function InfoCard({ icon, title, text }: { icon: React.ReactNode; title: string;
   return (
     <div style={styles.infoCard}>
       <div style={styles.infoIcon}>{icon}</div>
-      <h3>{title}</h3>
-      <p style={styles.smallText}>{text}</p>
+      <div>
+        <h3 style={styles.featureTitle}>{title}</h3>
+        <p style={styles.smallText}>{text}</p>
+      </div>
     </div>
   );
 }
@@ -1456,6 +1436,12 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: "flex",
     alignItems: "center",
     gap: 14,
+  },
+  logoImage: {
+    width: "min(100%, 340px)",
+    height: "auto",
+    display: "block",
+    borderRadius: 8,
   },
   logoMark: {
     width: 58,
@@ -1552,13 +1538,13 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: "grid",
     gridTemplateColumns: "58px 1fr",
     gap: 14,
-    alignItems: "center",
+    alignItems: "start",
     textAlign: "left",
   },
   infoIcon: {
     width: 56,
     height: 56,
-    margin: "0 auto 10px",
+    margin: 0,
     borderRadius: 8,
     display: "grid",
     placeItems: "center",
@@ -1567,8 +1553,14 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: 18,
     fontWeight: 800,
   },
+  featureTitle: {
+    color: "#102a3a",
+    fontSize: 15,
+    fontWeight: 900,
+    margin: "0 0 4px",
+  },
   smallText: {
-    color: "#64717d",
+    color: "#243447",
     fontSize: 13,
     lineHeight: 1.4,
     margin: 0,
@@ -1577,9 +1569,9 @@ const styles: { [key: string]: React.CSSProperties } = {
     background: "#ffffff",
     border: "1px solid #e1ecec",
     borderRadius: 8,
-    padding: 18,
+    padding: 20,
     display: "grid",
-    gap: 18,
+    gap: 20,
     boxShadow: "0 14px 34px rgba(41, 64, 83, 0.1)",
   },
   secureLine: {
@@ -1595,29 +1587,42 @@ const styles: { [key: string]: React.CSSProperties } = {
     textAlign: "center",
     color: "#102a3a",
   },
+  startHeaderTitle: {
+    fontSize: 30,
+    fontWeight: 900,
+    margin: "0 0 8px",
+  },
+  startHeaderText: {
+    color: "#526070",
+    lineHeight: 1.5,
+    margin: 0,
+    textAlign: "center",
+  },
   cardCta: {
     display: "block",
     background: "linear-gradient(135deg, #0f9f94, #087f78)",
     color: "#ffffff",
     borderRadius: 8,
-    padding: "12px 14px",
-    marginTop: 14,
+    padding: "14px 18px",
+    marginTop: 18,
     textAlign: "center",
     fontWeight: 800,
+    width: "100%",
   },
   cardCtaBlue: {
     display: "block",
     background: "linear-gradient(135deg, #1677f2, #0b62d8)",
     color: "#ffffff",
     borderRadius: 8,
-    padding: "12px 14px",
-    marginTop: 14,
+    padding: "14px 18px",
+    marginTop: 18,
     textAlign: "center",
     fontWeight: 800,
+    width: "100%",
   },
   buttonRow: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))",
+    gridTemplateColumns: "1fr",
     gap: 16,
   },
   primaryCardButton: {
@@ -1632,7 +1637,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: 16,
     textAlign: "left",
     fontSize: 18,
-    minHeight: 170,
+    minHeight: 190,
   },
   darkCardButton: {
     background: "linear-gradient(135deg, #f8fbff, #edf5ff)",
@@ -1646,7 +1651,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: 16,
     textAlign: "left",
     fontSize: 18,
-    minHeight: 170,
+    minHeight: 190,
   },
   staffLinkButton: {
   gridColumn: "1 / -1",
@@ -1672,9 +1677,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: "flex",
     flexDirection: "column",
     gap: 6,
+    width: "100%",
   },
   buttonTitle: {
-    fontSize: 22,
+    fontSize: 28,
     fontWeight: 800,
     lineHeight: 1.2,
   },
