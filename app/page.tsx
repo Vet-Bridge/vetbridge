@@ -1442,7 +1442,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: "100%",
     height: "auto",
     display: "block",
-    transform: "translateY(-58px)",
+    transform: "translateY(-48px)",
   },
   logoMark: {
     width: 58,
