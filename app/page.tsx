@@ -46,6 +46,7 @@ type Visit = {
   estimateStatus: string;
   workflowStep: string;
   forms: VisitForm[];
+  petPhotoUrl: string;
 };
 
 type SupabaseVisit = {
@@ -130,6 +131,8 @@ export default function Home() {
   const [searchError, setSearchError] = useState("");
   const [loading, setLoading] = useState(false);
   const [selectedVisitType, setSelectedVisitType] = useState("");
+  const [petPhotoPreview, setPetPhotoPreview] = useState("");
+  const [petPhotoByVisitId, setPetPhotoByVisitId] = useState<Record<string, string>>({});
   const dogBreeds = [
     "Labrador Retriever",
     "German Shepherd",
@@ -198,6 +201,7 @@ export default function Home() {
   estimateStatus: visit.estimate_status || "",
   workflowStep: visit.workflow_step || "Request submitted",
   forms: visit.forms || [],
+  petPhotoUrl: "",
 });
 
   async function loadVisits() {
@@ -277,6 +281,7 @@ export default function Home() {
       estimateStatus: visit.estimate_status || "",
       workflowStep: visit.workflow_step || "",
       forms: visit.forms || [],
+      petPhotoUrl: petPhotoByVisitId[visit.id] || "",
     };
   });
 
@@ -286,6 +291,20 @@ export default function Home() {
 
   const getSpecies = (visit: Visit) =>
     visit.species === "Other" ? visit.otherSpecies : visit.species;
+
+  const getPetPhoto = (visit: Visit) =>
+    visit.petPhotoUrl || petPhotoByVisitId[visit.id] || "/vet-hero.jpeg";
+
+  const handlePetPhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+
+    if (!file) {
+      setPetPhotoPreview("");
+      return;
+    }
+
+    setPetPhotoPreview(URL.createObjectURL(file));
+  };
 
   const getQueueDetails = (visit: Visit) => {
     if (visit.status === "Closed" || visit.status === "Ready for pickup") {
@@ -384,9 +403,17 @@ export default function Home() {
 
   await loadVisits();
 
+  if (petPhotoPreview) {
+    setPetPhotoByVisitId((current) => ({
+      ...current,
+      [visit.id]: petPhotoPreview,
+    }));
+  }
+
   setSelectedVisitId(visit.id);
   setSelectedSpecies("");
   setSelectedVisitType("");
+  setPetPhotoPreview("");
   setView("status");
 };
 
@@ -624,6 +651,34 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
                 <input style={styles.input} name="ownerLastName" placeholder="Owner last name" required />
                 <input style={styles.input} name="phone" placeholder="Phone number" required />
                 <input style={styles.input} name="email" placeholder="Email" required />
+
+                <label style={styles.photoUploadBox}>
+                  <span style={styles.photoUploadTitle}>Pet photo (optional)</span>
+                  <span style={styles.photoUploadText}>
+                    Add a picture so the care team and owner page can show the right pet.
+                  </span>
+                  <input
+                    style={styles.hiddenFileInput}
+                    type="file"
+                    name="petPhoto"
+                    accept="image/*"
+                    onChange={handlePetPhotoChange}
+                  />
+                  <span style={styles.photoUploadButton}>
+                    {petPhotoPreview ? "Change Photo" : "Choose Photo"}
+                  </span>
+                </label>
+
+                <div style={styles.photoPreviewCard}>
+                  <img
+                    src={petPhotoPreview || "/vet-hero.jpeg"}
+                    alt="Pet preview"
+                    style={styles.photoPreviewImage}
+                  />
+                  <span>
+                    {petPhotoPreview ? "Photo selected" : "No photo yet - we'll use a sample pet image."}
+                  </span>
+                </div>
 
                 <select
                   style={styles.input}
@@ -1124,7 +1179,7 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
                         new Date(selectedVisit.createdAt).toLocaleTimeString()}
                     </p>
                   </div>
-                  <img src="/vet-hero.jpeg" alt={selectedVisit.petName} style={styles.petAvatar} />
+                  <img src={getPetPhoto(selectedVisit)} alt={selectedVisit.petName} style={styles.petAvatar} />
                 </div>
               </div>
 
@@ -1761,6 +1816,59 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: 16,
     minHeight: 120,
     outline: "none",
+  },
+  photoUploadBox: {
+    gridColumn: "1 / -1",
+    border: "1px dashed #9cc5f8",
+    borderRadius: 8,
+    padding: 16,
+    background: "#f8fbff",
+    cursor: "pointer",
+    display: "grid",
+    gap: 8,
+  },
+  photoUploadTitle: {
+    color: "#102a3a",
+    fontWeight: 900,
+    fontSize: 15,
+  },
+  photoUploadText: {
+    color: "#64717d",
+    fontSize: 14,
+    lineHeight: 1.4,
+  },
+  hiddenFileInput: {
+    display: "none",
+  },
+  photoUploadButton: {
+    display: "inline-block",
+    justifySelf: "start",
+    background: "#e7fbf7",
+    color: "#087f78",
+    border: "1px solid #bfe9e0",
+    borderRadius: 8,
+    padding: "10px 14px",
+    fontWeight: 800,
+    marginTop: 4,
+  },
+  photoPreviewCard: {
+    gridColumn: "1 / -1",
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    background: "#ffffff",
+    border: "1px solid #e1ecec",
+    borderRadius: 8,
+    padding: 12,
+    color: "#64717d",
+    fontWeight: 700,
+  },
+  photoPreviewImage: {
+    width: 64,
+    height: 64,
+    borderRadius: 8,
+    objectFit: "cover",
+    border: "2px solid #e7fbf7",
   },
   label: {
     fontWeight: 700,
