@@ -619,14 +619,6 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
 
       <section style={styles.mainGrid}>
         <div style={styles.panel}>
-          {view !== "home" && (
-            <div style={styles.panelHeader}>
-              <button style={styles.smallButton} onClick={() => setView("home")}>
-                Back home
-              </button>
-            </div>
-          )}
-
           {view === "newPet" && (
             <section>
               <h2 style={styles.title}>Pet Owner</h2>
@@ -1260,6 +1252,10 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
 
           {view === "status" && selectedVisit && (
                         <section>
+              <button style={styles.customerHomeButton} onClick={() => setView("home")}>
+                Home
+              </button>
+
               <div style={styles.ownerGreeting}>
                 <div>
                   <h2 style={styles.title}>Hi, {selectedVisit.ownerFirstName || "there"}!</h2>
