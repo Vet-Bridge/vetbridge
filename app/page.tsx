@@ -262,8 +262,8 @@ export default function Home() {
       status: visit.status || "Request submitted",
 
       updates:
-        visit.visit_updates?.length > 0
-          ? visit.visit_updates.map((update) => ({
+        (visit.visit_updates ?? []).length > 0
+          ? (visit.visit_updates ?? []).map((update) => ({
               message: update.message,
               time: new Date(update.created_at).toLocaleTimeString(),
             }))
