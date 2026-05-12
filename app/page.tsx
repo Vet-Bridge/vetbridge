@@ -1588,7 +1588,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: "#102a3a",
   },
   startHeaderTitle: {
-    fontSize: 30,
+    fontSize: 15,
     fontWeight: 900,
     margin: "0 0 8px",
   },
@@ -1691,8 +1691,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     minWidth: 0,
   },
   buttonTitle: {
-    fontSize: 28,
-    fontWeight: 800,
+    fontSize: 15,
+    fontWeight: 900,
     lineHeight: 1.2,
   },
   buttonSubtitle: {
