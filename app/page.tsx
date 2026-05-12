@@ -1431,6 +1431,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: "flex",
     alignItems: "center",
     gap: 14,
+    justifyContent: "center",
   },
   logoCrop: {
     width: "min(100%, 340px)",
@@ -1474,6 +1475,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     marginTop: 0,
     marginBottom: 12,
     color: "#243447",
+    textAlign: "center",
   },
   accentText: {
     color: "#087f78",
@@ -1484,6 +1486,9 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: 18,
     maxWidth: 500,
     lineHeight: 1.55,
+    textAlign: "center",
+    marginLeft: "auto",
+    marginRight: "auto",
   },
   mobileCue: {
     background: "#fff8f1",
