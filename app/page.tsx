@@ -486,11 +486,14 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
           <p style={styles.heroSubtitle}>
             MyPawLink helps emergency vet teams share updates, forms, and next steps with pet owners in one simple place.
           </p>
+          <div style={styles.mobileCue}>
+            Designed for quick phone check-ins and calm client updates.
+          </div>
 
           <div style={styles.featureRow}>
-            <InfoCard icon="💬" title="Real-time updates" text="Know what is happening every step of the way." />
-            <InfoCard icon="🛡️" title="Better communication" text="Stay informed without the stress of calling." />
-            <InfoCard icon="❤️" title="Stronger trust" text="Keep owners and clinics connected during care." />
+            <InfoCard icon="1" title="Live updates" text="See what is happening without calling the front desk." />
+            <InfoCard icon="2" title="Forms on phone" text="Review and sign time-sensitive forms from anywhere." />
+            <InfoCard icon="3" title="Care timeline" text="Follow doctor, vitals, and treatment updates in one place." />
           </div>
         </div>
 
@@ -501,7 +504,7 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
 
           <div style={styles.buttonRow}>
   <button style={styles.primaryCardButton} onClick={() => setView("newPet")}>
-    <span style={styles.bigIcon}>🐾</span>
+    <span style={styles.bigIcon}>+</span>
     <div style={styles.buttonText}>
       <div style={styles.buttonTitle}>Register New Pet</div>
       <div style={styles.buttonSubtitle}>
@@ -511,7 +514,7 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
   </button>
 
             <button style={styles.darkCardButton} onClick={() => setView("existingPet")}>
-    <span style={styles.bigIcon}>🔎</span>
+    <span style={styles.bigIcon}>ID</span>
     <div style={styles.buttonText}>
       <div style={styles.buttonTitle}>Check In Existing Pet</div>
       <div style={styles.buttonSubtitle}>
@@ -532,7 +535,7 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
         <div style={styles.panel}>
           <div style={styles.panelHeader}>
             <button style={styles.smallButton} onClick={() => setView("home")}>
-              ← Home
+              Back home
             </button>
           </div>
 
@@ -551,7 +554,7 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
               <p style={styles.text}>Submit a visit request</p>
 
               <div style={styles.noticeBox}>
-                <strong>We’re here to help your pet.</strong>
+                <strong>We&apos;re here to help your pet.</strong>
                 <p>
                   Please provide the details below so our team can be prepared for your arrival.
                 </p>
@@ -702,7 +705,7 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
         }
 
         if (!data || data.length === 0) {
-          setSearchError("We couldn’t find your pet. Please check your details or register.");
+          setSearchError("We couldn't find your pet. Please check your details or register.");
           return;
         }
 
@@ -754,7 +757,7 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
               setView("status");
             }}
           >
-            <strong>{visit.petName}</strong> — {visit.species}
+            <strong>{visit.petName}</strong> - {visit.species}
             <br />
             Owner: {visit.ownerFirstName} {visit.ownerLastName}
           </div>
@@ -771,7 +774,7 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
                   <p style={styles.text}>Review visit requests and send updates.</p>
                 </div>
                 <span style={styles.counter}>
-  {activeVisits.length} Active • {closedVisits.length} Closed
+  {activeVisits.length} Active / {closedVisits.length} Closed
 </span>
               </div>
 
@@ -821,12 +824,13 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
 
                     <textarea
                       style={styles.notesBox}
-                      placeholder="Clinic notes — only visible to the clinic."
+                      placeholder="Clinic notes - only visible to the clinic."
                       value={visit.clinicNotes}
                       onChange={(e) => saveClinicNotes(visit.id, e.target.value)}
                     />
 
                     <div style={styles.actionGrid}>
+                      <div style={styles.actionGroupTitle}>Visit flow</div>
                      <button
   style={{
     ...styles.greenAction,
@@ -935,6 +939,7 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
 >
   Close Request
 </button>
+<div style={styles.actionGroupTitle}>Forms and approvals</div>
 <button
   style={styles.blueAction}
   onClick={async () => {
@@ -971,6 +976,7 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
 >
   Send Form
 </button>
+<div style={styles.actionGroupTitle}>Care updates</div>
 <button
   style={styles.tealAction}
   onClick={() =>
@@ -1266,6 +1272,7 @@ function actionStyle(background: string, color: string): React.CSSProperties {
     cursor: "pointer",
     fontWeight: 700,
     boxShadow: "0 3px 8px rgba(41, 64, 83, 0.06)",
+    minHeight: 48,
   };
 }
 
@@ -1275,7 +1282,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     background: "linear-gradient(135deg, #fff8f1 0%, #eef9f7 48%, #f6fbff 100%)",
     fontFamily: "Arial, sans-serif",
     color: "#243447",
-    padding: 18,
+    padding: 14,
   },
   hero: {
     maxWidth: 1180,
@@ -1283,10 +1290,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     background: "rgba(255, 255, 255, 0.92)",
     border: "1px solid rgba(255, 255, 255, 0.75)",
     borderRadius: 8,
-    padding: 34,
+    padding: "clamp(18px, 4vw, 34px)",
     display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: 30,
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))",
+    gap: 22,
     boxShadow: "0 18px 45px rgba(41, 64, 83, 0.12)",
   },
   heroLeft: {},
@@ -1308,7 +1315,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     boxShadow: "0 10px 25px rgba(249, 115, 82, 0.22)",
   },
   logo: {
-    fontSize: 54,
+    fontSize: "clamp(40px, 9vw, 54px)",
     margin: "16px 0 0",
     color: "#12485a",
     letterSpacing: 0,
@@ -1320,9 +1327,9 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: 700,
   },
   heroTitle: {
-    fontSize: 38,
-    lineHeight: 1.1,
-    marginTop: 30,
+    fontSize: "clamp(28px, 7vw, 38px)",
+    lineHeight: 1.12,
+    marginTop: 22,
     marginBottom: 12,
     color: "#243447",
   },
@@ -1332,8 +1339,17 @@ const styles: { [key: string]: React.CSSProperties } = {
     maxWidth: 500,
     lineHeight: 1.55,
   },
+  mobileCue: {
+    background: "#fff8f1",
+    border: "1px solid #fed7c2",
+    borderRadius: 8,
+    color: "#9a3412",
+    fontWeight: 700,
+    marginTop: 16,
+    padding: "12px 14px",
+  },
   petImageBox: {
-    minHeight: 280,
+    minHeight: 220,
     borderRadius: 8,
     overflow: "hidden",
     border: "1px solid #dcefeb",
@@ -1342,13 +1358,13 @@ const styles: { [key: string]: React.CSSProperties } = {
   heroImage: {
     width: "100%",
     height: "100%",
-    minHeight: 280,
+    minHeight: 220,
     objectFit: "cover",
     display: "block",
   },
   featureRow: {
     display: "grid",
-    gridTemplateColumns: "repeat(3, 1fr)",
+    gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
     gap: 14,
     marginTop: 30,
   },
@@ -1374,7 +1390,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   buttonRow: {
     display: "grid",
-    gridTemplateColumns: "1fr 1fr",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))",
     gap: 16,
   },
   primaryCardButton: {
@@ -1389,7 +1405,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: 16,
     textAlign: "left",
     fontSize: 18,
-    minHeight: 130,
+    minHeight: 112,
   },
   darkCardButton: {
     background: "linear-gradient(135deg, #3b82f6, #2457a6)",
@@ -1403,7 +1419,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: 16,
     textAlign: "left",
     fontSize: 18,
-    minHeight: 130,
+    minHeight: 112,
   },
   staffLinkButton: {
   gridColumn: "1 / -1",
@@ -1443,7 +1459,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     background: "rgba(255, 255, 255, 0.94)",
     border: "1px solid rgba(255, 255, 255, 0.75)",
     borderRadius: 8,
-    padding: 28,
+    padding: "clamp(16px, 4vw, 28px)",
     boxShadow: "0 15px 40px rgba(41, 64, 83, 0.1)",
   },
   panelHeader: {
@@ -1453,10 +1469,10 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   homeMessage: {
     textAlign: "center",
-    padding: 40,
+    padding: "28px 12px",
   },
   title: {
-    fontSize: 28,
+    fontSize: "clamp(24px, 6vw, 28px)",
     marginBottom: 8,
     color: "#243447",
   },
@@ -1466,12 +1482,12 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   form: {
     display: "grid",
-    gridTemplateColumns: "1fr 1fr",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 260px), 1fr))",
     gap: 16,
     maxWidth: 780,
   },
   input: {
-    padding: 15,
+    padding: "16px 15px",
     borderRadius: 8,
     border: "1px solid #cfe0df",
     fontSize: 16,
@@ -1484,7 +1500,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderRadius: 8,
     border: "1px solid #cfe0df",
     fontSize: 16,
-    minHeight: 115,
+    minHeight: 120,
     outline: "none",
   },
   label: {
@@ -1494,7 +1510,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   radioRow: {
     display: "grid",
-    gridTemplateColumns: "1fr 1fr",
+    gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
     gap: 12,
   },
   radioBox: {
@@ -1515,6 +1531,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     cursor: "pointer",
     fontSize: 16,
     fontWeight: 700,
+    minHeight: 52,
   },
   secondaryButton: {
     background: "white",
@@ -1525,6 +1542,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     cursor: "pointer",
     fontSize: 15,
     width: "100%",
+    minHeight: 48,
   },
   smallButton: {
     background: "#fff0e8",
@@ -1589,6 +1607,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: "start",
     gap: 15,
     flexWrap: "wrap",
+    marginBottom: 12,
   },
   counter: {
     background: "#e6f7f5",
@@ -1639,14 +1658,14 @@ const styles: { [key: string]: React.CSSProperties } = {
     background: "#e8f2ff",
     color: "#2457a6",
     padding: "5px 10px",
-    borderRadius: 999,
+    borderRadius: 8,
     fontSize: 14,
   },
   status: {
     background: "#fff0e8",
     color: "#c24124",
     padding: "8px 12px",
-    borderRadius: 999,
+    borderRadius: 8,
     display: "inline-block",
     fontWeight: 700,
   },
@@ -1654,7 +1673,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     background: "#e6f7f5",
     color: "#0f766e",
     padding: "8px 12px",
-    borderRadius: 999,
+    borderRadius: 8,
     display: "inline-block",
     marginLeft: 8,
   },
@@ -1669,10 +1688,19 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   actionGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 150px), 1fr))",
     gap: 12,
     marginTop: 18,
     marginBottom: 18,
+  },
+  actionGroupTitle: {
+    gridColumn: "1 / -1",
+    color: "#243447",
+    fontSize: 14,
+    fontWeight: 800,
+    marginTop: 8,
+    paddingTop: 8,
+    borderTop: "1px solid #eef3f4",
   },
   greenAction: actionStyle("#ecfdf3", "#027a48"),
   blueAction: actionStyle("#eff6ff", "#1d4ed8"),
@@ -1747,3 +1775,4 @@ detailsCard: {
   marginBottom: 18,
 },
 };
+
