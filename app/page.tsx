@@ -122,6 +122,40 @@ type LoadedVisit = {
   forms: VisitForm[] | null;
 };
 
+type OwnerSearchResult = {
+  id: string;
+  created_at: string;
+  reason: string | null;
+  visit_type: string | null;
+  referral_name: string | null;
+  been_here_before: string | null;
+  clinic_notes: string | null;
+  status: string | null;
+  updates: Update[] | null;
+  owners: {
+    first_name: string | null;
+    last_name: string | null;
+    phone: string | null;
+    email: string | null;
+  } | {
+    first_name: string | null;
+    last_name: string | null;
+    phone: string | null;
+    email: string | null;
+  }[] | null;
+  pets: {
+    pet_name: string | null;
+    species: string | null;
+    other_species: string | null;
+    breed: string | null;
+  } | {
+    pet_name: string | null;
+    species: string | null;
+    other_species: string | null;
+    breed: string | null;
+  }[] | null;
+};
+
 export default function Home() {
   const [view, setView] = useState<
   "home" | "newPet" | "existingPet" | "ownerUpdates" | "clinic" | "status"
@@ -745,24 +779,42 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
 
         const form = new FormData(e.currentTarget);
 
+        const petName = String(form.get("petName") || "").trim().toLowerCase();
         const phone = String(form.get("phone") || "").trim();
         const email = String(form.get("email") || "").trim().toLowerCase();
 
-        if (!email && !phone) {
-          setSearchError("Please enter an email or phone number.");
+        if (!email && !phone && !petName) {
+          setSearchError("Please enter a pet name, email, or phone number.");
           setLoading(false);
           return;
         }
 
-        let query = supabase.from("visits").select("*");
-
-        if (email) {
-          query = query.ilike("email", email);
-        } else {
-          query = query.eq("phone", phone);
-        }
-
-        const { data, error } = await query.order("created_at", {
+        const { data, error } = await supabase
+          .from("visits")
+          .select(`
+            id,
+            created_at,
+            reason,
+            visit_type,
+            referral_name,
+            been_here_before,
+            clinic_notes,
+            status,
+            updates,
+            owners!visits_owner_id_fkey (
+              first_name,
+              last_name,
+              phone,
+              email
+            ),
+            pets!visits_pet_id_fkey (
+              pet_name,
+              species,
+              other_species,
+              breed
+            )
+          `)
+          .order("created_at", {
           ascending: false,
         });
 
@@ -774,12 +826,57 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
           return;
         }
 
-        if (!data || data.length === 0) {
+        const matches = ((data || []) as unknown as OwnerSearchResult[]).filter((visit) => {
+          const owner = Array.isArray(visit.owners) ? visit.owners[0] : visit.owners;
+          const pet = Array.isArray(visit.pets) ? visit.pets[0] : visit.pets;
+          const ownerEmail = (owner?.email || "").toLowerCase();
+          const ownerPhone = owner?.phone || "";
+          const visitPetName = (pet?.pet_name || "").toLowerCase();
+
+          const emailMatches = email ? ownerEmail === email : true;
+          const phoneMatches = phone ? ownerPhone.replace(/\D/g, "") === phone.replace(/\D/g, "") : true;
+          const petMatches = petName ? visitPetName.includes(petName) : true;
+
+          return emailMatches && phoneMatches && petMatches;
+        });
+
+        if (matches.length === 0) {
           setSearchError("We couldn't find your pet. Please check your details or register.");
           return;
         }
 
-        const visitsList = data.map(convertFromSupabase);
+        const visitsList = matches.map((visit) => {
+          const owner = Array.isArray(visit.owners) ? visit.owners[0] : visit.owners;
+          const pet = Array.isArray(visit.pets) ? visit.pets[0] : visit.pets;
+
+          return {
+          id: visit.id,
+          createdAt: visit.created_at,
+          petName: pet?.pet_name || "Unknown",
+          species: pet?.species || "",
+          otherSpecies: pet?.other_species || "",
+          breed: pet?.breed || "",
+          ownerFirstName: owner?.first_name || "",
+          ownerLastName: owner?.last_name || "",
+          phone: owner?.phone || "",
+          reason: visit.reason || "",
+          visitType: visit.visit_type || "",
+          referralName: visit.referral_name || "",
+          beenHereBefore: visit.been_here_before || "",
+          clinicNotes: visit.clinic_notes || "",
+          status: visit.status || "Request submitted",
+          updates: visit.updates || [],
+          consentFormType: "",
+          consentSignedName: "",
+          consentSignedAt: "",
+          estimateItems: [],
+          estimateTotal: 0,
+          estimateStatus: "",
+          workflowStep: "",
+          forms: [],
+          petPhotoUrl: "",
+        };
+        });
         setSearchResults(visitsList);
       }}
     >
