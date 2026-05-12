@@ -1286,23 +1286,16 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
   <p style={styles.statusBadge}>{selectedVisit.status}</p>
 </div>
 
-              <div style={styles.detailsCard}>
-                <p>Pet: {selectedVisit.petName} ({getSpecies(selectedVisit)})</p>
-                <p>Owner: {getOwnerName(selectedVisit)}</p>
-                <p>Visit Type: {selectedVisit.visitType}</p>
-                {selectedVisit.visitType === "Vet referral" && <p>Referral: {selectedVisit.referralName}</p>}
-                <p>Been here before: {selectedVisit.beenHereBefore}</p>
-              </div>
               {getQueueDetails(selectedVisit) && (
                 <div style={styles.queueGrid}>
                   <div style={styles.queueCard}>
-                    <span style={styles.queueLabel}>Estimated Wait Time</span>
+                    <span style={styles.queueLabel}>Wait time</span>
                     <strong style={styles.queueNumber}>
                       {getQueueDetails(selectedVisit)?.estimatedWaitMinutes} min
                     </strong>
                   </div>
                   <div style={styles.queueCard}>
-                    <span style={styles.queueLabel}>Pets Ahead in Line</span>
+                    <span style={styles.queueLabel}>Pets in line</span>
                     <strong style={styles.queueNumber}>
                       {getQueueDetails(selectedVisit)?.patientsAhead}
                     </strong>
