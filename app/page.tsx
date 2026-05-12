@@ -1463,7 +1463,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   heroTitle: {
     fontSize: "clamp(28px, 7vw, 38px)",
     lineHeight: 1.12,
-    marginTop: 22,
+    marginTop: 8,
     marginBottom: 12,
     color: "#243447",
   },
