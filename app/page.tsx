@@ -288,6 +288,9 @@ export default function Home() {
   const [selectedVisitType, setSelectedVisitType] = useState("");
   const [petPhotoPreview, setPetPhotoPreview] = useState("");
   const [petPhotoByVisitId, setPetPhotoByVisitId] = useState<Record<string, string>>({});
+  const [selectedAllergies, setSelectedAllergies] = useState("");
+  const [petMediaName, setPetMediaName] = useState("");
+  const [petMediaType, setPetMediaType] = useState("");
   const dogBreeds = [
     "Labrador Retriever",
     "German Shepherd",
@@ -312,6 +315,30 @@ export default function Home() {
     "Abyssinian",
     "Scottish Fold",
     "Russian Blue",
+  ];
+  const emergencyReasons = [
+    "Trouble breathing",
+    "Collapse or severe weakness",
+    "Severe vomiting or diarrhea",
+    "Trauma or hit by car",
+    "Seizure",
+    "Possible toxin ingestion",
+    "Difficulty urinating",
+    "Bleeding or open wound",
+    "Pain or unable to get comfortable",
+    "Not eating or very lethargic",
+  ];
+  const commonSymptoms = [
+    "Vomiting",
+    "Diarrhea",
+    "Labored breathing",
+    "Coughing",
+    "Limping or unable to walk",
+    "Seizure activity",
+    "Pale gums",
+    "Swollen abdomen",
+    "Excessive drooling",
+    "Lethargy or weakness",
   ];
   const [visits, setVisits] = useState<Visit[]>([]);
   const [searchResults, setSearchResults] = useState<Visit[]>([]);
@@ -458,6 +485,16 @@ export default function Home() {
 
     if (!file) {
       setPetPhotoPreview("");
+      setPetMediaName("");
+      setPetMediaType("");
+      return;
+    }
+
+    setPetMediaName(file.name);
+    setPetMediaType(file.type.startsWith("video/") ? "video" : "photo");
+
+    if (file.type.startsWith("video/")) {
+      setPetPhotoPreview("");
       return;
     }
 
@@ -491,8 +528,36 @@ export default function Home() {
 
   const form = new FormData(e.currentTarget);
   const petAge = String(form.get("petAge") || "").trim();
-  const reason = String(form.get("reason"));
-  const reasonWithAge = petAge ? `Approx. age: ${petAge}\n\n${reason}` : reason;
+  const weight = String(form.get("weight") || "").trim();
+  const allergies = String(form.get("allergies") || "");
+  const allergyDetails = String(form.get("allergyDetails") || "").trim();
+  const currentMedications = String(form.get("currentMedications") || "").trim();
+  const additionalDetails = String(form.get("reason") || "").trim();
+  const mediaFile = form.get("petPhoto") as File | null;
+  const mediaNote =
+    mediaFile && mediaFile.name
+      ? `${mediaFile.type.startsWith("video/") ? "Video" : "Photo"} selected: ${mediaFile.name}`
+      : "No photo or video selected";
+  const intakeSummary = [
+    "Emergency intake",
+    `Approx. age: ${petAge || "Not provided"}`,
+    `Sex: ${String(form.get("sex") || "Not provided")}`,
+    `Spayed/neutered: ${String(form.get("spayedNeutered") || "Not provided")}`,
+    `Weight: ${weight ? `${weight} lb` : "Not provided"}`,
+    `Emergency reason: ${String(form.get("emergencyReason") || "Not provided")}`,
+    `Primary symptom: ${String(form.get("symptoms") || "Not provided")}`,
+    `Started: ${String(form.get("whenStartedDays") || "Not provided")} day(s) ago`,
+    `Conscious: ${String(form.get("isConscious") || "Not provided")}`,
+    `Breathing normally: ${String(form.get("breathingNormally") || "Not provided")}`,
+    `Bleeding: ${String(form.get("bleeding") || "Not provided")}`,
+    `Can walk: ${String(form.get("canWalk") || "Not provided")}`,
+    `Current medications: ${currentMedications || "None provided"}`,
+    `Allergies: ${allergies || "Not provided"}${
+      allergies === "Yes" && allergyDetails ? ` - ${allergyDetails}` : ""
+    }`,
+    mediaNote,
+    `Additional details: ${additionalDetails || "None provided"}`,
+  ].join("\n");
 
   const firstUpdate = {
     message: "Visit request submitted. The clinic will review it shortly.",
@@ -547,7 +612,7 @@ export default function Home() {
         visit_type: String(form.get("visitType")),
         referral_name: String(form.get("referralName") || ""),
         been_here_before: String(form.get("beenHereBefore")),
-        reason: reasonWithAge,
+        reason: intakeSummary,
         clinic_notes: petPhotoPreview ? withPetPhotoMetadata("", petPhotoPreview) : "",
         status: "Request submitted",
       },
@@ -581,6 +646,9 @@ export default function Home() {
   setSelectedVisitId(visit.id);
   setSelectedSpecies("");
   setSelectedVisitType("");
+  setSelectedAllergies("");
+  setPetMediaName("");
+  setPetMediaType("");
   setPetPhotoPreview("");
   setView("status");
 };
@@ -870,11 +938,112 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
                   placeholder="Approx. age (optional)"
                 />
 
+                <select style={styles.input} name="sex" required>
+                  <option value="">Sex</option>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                  <option value="Unknown">Unknown</option>
+                </select>
+
+                <select style={styles.input} name="spayedNeutered" required>
+                  <option value="">Spayed/neutered?</option>
+                  <option value="Yes">Yes</option>
+                  <option value="No">No</option>
+                </select>
+
+                <input
+                  style={styles.input}
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  name="weight"
+                  placeholder="Weight in pounds (if known)"
+                />
+
                 {selectedSpecies === "Other" && (
                   <input
                     style={styles.input}
                     name="otherSpecies"
                     placeholder="Enter pet type, for example Rabbit or Bird"
+                    required
+                  />
+                )}
+
+                <select style={styles.input} name="emergencyReason" required>
+                  <option value="">Emergency reason</option>
+                  {emergencyReasons.map((reason) => (
+                    <option key={reason} value={reason}>
+                      {reason}
+                    </option>
+                  ))}
+                </select>
+
+                <select style={styles.input} name="symptoms" required>
+                  <option value="">Main symptom</option>
+                  {commonSymptoms.map((symptom) => (
+                    <option key={symptom} value={symptom}>
+                      {symptom}
+                    </option>
+                  ))}
+                </select>
+
+                <input
+                  style={styles.input}
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  name="whenStartedDays"
+                  placeholder="When started (days ago)"
+                  required
+                />
+
+                <select style={styles.input} name="isConscious" required>
+                  <option value="">Is pet conscious?</option>
+                  <option value="Yes">Yes</option>
+                  <option value="No">No</option>
+                </select>
+
+                <select style={styles.input} name="breathingNormally" required>
+                  <option value="">Breathing normally?</option>
+                  <option value="Yes">Yes</option>
+                  <option value="No">No</option>
+                </select>
+
+                <select style={styles.input} name="bleeding" required>
+                  <option value="">Bleeding?</option>
+                  <option value="Yes">Yes</option>
+                  <option value="No">No</option>
+                </select>
+
+                <select style={styles.input} name="canWalk" required>
+                  <option value="">Can walk?</option>
+                  <option value="Yes">Yes</option>
+                  <option value="No">No</option>
+                </select>
+
+                <textarea
+                  style={styles.textarea}
+                  name="currentMedications"
+                  placeholder="Current medications (if any)"
+                />
+
+                <select
+                  style={styles.input}
+                  name="allergies"
+                  required
+                  value={selectedAllergies}
+                  onChange={(e) => setSelectedAllergies(e.target.value)}
+                >
+                  <option value="">Allergies?</option>
+                  <option value="Yes">Yes</option>
+                  <option value="No">No</option>
+                </select>
+
+                {selectedAllergies === "Yes" && (
+                  <input
+                    style={styles.input}
+                    name="allergyDetails"
+                    placeholder="List known allergies"
                     required
                   />
                 )}
@@ -885,19 +1054,19 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
                 <input style={styles.input} name="email" placeholder="Email" required />
 
                 <label style={styles.photoUploadBox}>
-                  <span style={styles.photoUploadTitle}>Pet photo (optional)</span>
+                  <span style={styles.photoUploadTitle}>Pet photo/video (optional)</span>
                   <span style={styles.photoUploadText}>
-                    Add a picture so the care team and owner page can show the right pet.
+                    Add a picture or short video for the care team. Photos also show on the owner status page.
                   </span>
                   <input
                     style={styles.hiddenFileInput}
                     type="file"
                     name="petPhoto"
-                    accept="image/*"
+                    accept="image/*,video/*"
                     onChange={handlePetPhotoChange}
                   />
                   <span style={styles.photoUploadButton}>
-                    {petPhotoPreview ? "Change Photo" : "Choose Photo"}
+                    {petMediaName ? "Change File" : "Choose File"}
                   </span>
                 </label>
 
@@ -908,7 +1077,9 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
                     style={styles.photoPreviewImage}
                   />
                   <span>
-                    {petPhotoPreview ? "Photo selected" : "No photo yet - we'll use a sample pet image."}
+                    {petMediaName
+                      ? `${petMediaType === "video" ? "Video" : "Photo"} selected: ${petMediaName}`
+                      : "No photo yet - we'll use a sample pet image."}
                   </span>
                 </div>
 
@@ -937,8 +1108,7 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
                 <textarea
                   style={styles.textarea}
                   name="reason"
-                  placeholder="What is going on with your pet?"
-                  required
+                  placeholder="Additional details for the care team (optional)"
                 />
 
                 <div>
@@ -1204,7 +1374,10 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
                     {visit.consentFormType && (
   <p style={styles.text}>Form sent: {visit.consentFormType}</p>
 )}
-                    <p style={styles.text}>Reason: {visit.reason}</p>
+                    <div style={styles.intakeSummaryCard}>
+                      <strong>Intake summary</strong>
+                      <pre style={styles.intakeSummaryText}>{visit.reason}</pre>
+                    </div>
 
                     <textarea
                       style={styles.notesBox}
@@ -2371,6 +2544,23 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: 15,
     minHeight: 85,
     marginTop: 12,
+  },
+  intakeSummaryCard: {
+    background: "#f8fbff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    padding: 14,
+    marginTop: 12,
+    marginBottom: 12,
+    color: "#243447",
+  },
+  intakeSummaryText: {
+    whiteSpace: "pre-wrap",
+    margin: "8px 0 0",
+    fontFamily: "inherit",
+    fontSize: 14,
+    lineHeight: 1.45,
+    color: "#52606d",
   },
   actionGrid: {
     display: "grid",
