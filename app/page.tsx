@@ -1393,14 +1393,6 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
               <div style={styles.liveUpdateCard}>
                 <div style={styles.liveCardTop}>
                   <div style={styles.liveBadge}>Live Update</div>
-                  {getQueueDetails(selectedVisit) && (
-                    <div style={styles.liveWaitPill}>
-                      <span style={styles.liveWaitLabel}>Wait time</span>
-                      <strong style={styles.liveWaitValue}>
-                        {getQueueDetails(selectedVisit)?.estimatedWaitMinutes} min
-                      </strong>
-                    </div>
-                  )}
                 </div>
                 <div style={styles.liveUpdateBody}>
                   <div>
@@ -1410,6 +1402,16 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
                     </h3>
                   </div>
                   <img src={getPetPhoto(selectedVisit)} alt={selectedVisit.petName} style={styles.petAvatar} />
+                </div>
+                <div style={styles.liveCardBottom}>
+                  {getQueueDetails(selectedVisit) && (
+                    <div style={styles.liveWaitPill}>
+                      <span style={styles.liveWaitLabel}>Wait time</span>
+                      <strong style={styles.liveWaitValue}>
+                        {getQueueDetails(selectedVisit)?.estimatedWaitMinutes} min
+                      </strong>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -2433,9 +2435,15 @@ liveUpdateCard: {
 liveCardTop: {
   display: "flex",
   alignItems: "center",
-  justifyContent: "space-between",
+  justifyContent: "flex-start",
   gap: 10,
   marginBottom: 14,
+},
+
+liveCardBottom: {
+  display: "flex",
+  justifyContent: "flex-start",
+  marginTop: 12,
 },
 
 liveBadge: {
@@ -2444,9 +2452,10 @@ liveBadge: {
   background: "#dcfce7",
   color: "#047857",
   borderRadius: 8,
-  padding: "8px 10px",
-  fontSize: 14,
+  padding: "7px 9px",
+  fontSize: 10,
   fontWeight: 800,
+  lineHeight: 1,
 },
 
 liveWaitPill: {
