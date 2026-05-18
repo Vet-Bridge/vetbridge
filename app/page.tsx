@@ -1265,17 +1265,23 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
               </div>
 
               <div style={styles.liveUpdateCard}>
-                <div style={styles.liveBadge}>Live Update</div>
+                <div style={styles.liveCardTop}>
+                  <div style={styles.liveBadge}>Live Update</div>
+                  {getQueueDetails(selectedVisit) && (
+                    <div style={styles.liveWaitPill}>
+                      <span style={styles.liveWaitLabel}>Wait time</span>
+                      <strong style={styles.liveWaitValue}>
+                        {getQueueDetails(selectedVisit)?.estimatedWaitMinutes} min
+                      </strong>
+                    </div>
+                  )}
+                </div>
                 <div style={styles.liveUpdateBody}>
                   <div>
                     <h3 style={styles.liveUpdateTitle}>
                       {selectedVisit.updates[selectedVisit.updates.length - 1]?.message ||
                         `${selectedVisit.petName}'s visit request has been received.`}
                     </h3>
-                    <p style={styles.text}>
-                      {selectedVisit.updates[selectedVisit.updates.length - 1]?.time ||
-                        new Date(selectedVisit.createdAt).toLocaleTimeString()}
-                    </p>
                   </div>
                   <img src={getPetPhoto(selectedVisit)} alt={selectedVisit.petName} style={styles.petAvatar} />
                 </div>
@@ -1286,28 +1292,6 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
   <p style={styles.statusBadge}>{selectedVisit.status}</p>
 </div>
 
-              {getQueueDetails(selectedVisit) && (
-                <div style={styles.queueGrid}>
-                  <div style={styles.queueCard}>
-                    <span style={styles.queueLabel}>Wait time</span>
-                    <strong style={styles.queueNumber}>
-                      {getQueueDetails(selectedVisit)?.estimatedWaitMinutes} min
-                    </strong>
-                  </div>
-                  <div style={styles.queueCard}>
-                    <span style={styles.queueLabel}>Pets in line</span>
-                    <strong style={styles.queueNumber}>
-                      {getQueueDetails(selectedVisit)?.patientsAhead}
-                    </strong>
-                  </div>
-                  <div style={styles.queueCard}>
-                    <span style={styles.queueLabel}>Place in Line</span>
-                    <strong style={styles.queueNumber}>
-                      #{getQueueDetails(selectedVisit)?.position}
-                    </strong>
-                  </div>
-                </div>
-              )}
               <div style={styles.progressRail}>
                 {["Received", "In Exam", "In Treatment", "Discharge"].map((step, index) => (
                   <div key={step} style={styles.progressStep}>
@@ -2254,15 +2238,47 @@ liveUpdateCard: {
   boxShadow: "0 12px 30px rgba(41, 64, 83, 0.08)",
 },
 
+liveCardTop: {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 10,
+  marginBottom: 14,
+},
+
 liveBadge: {
-  display: "inline-block",
+  display: "inline-flex",
+  alignItems: "center",
   background: "#dcfce7",
   color: "#047857",
   borderRadius: 8,
   padding: "8px 10px",
   fontSize: 14,
   fontWeight: 800,
-  marginBottom: 14,
+},
+
+liveWaitPill: {
+  display: "flex",
+  alignItems: "center",
+  gap: 6,
+  background: "#f8fbff",
+  border: "1px solid #dcefeb",
+  borderRadius: 8,
+  padding: "7px 9px",
+  color: "#12485a",
+  flexShrink: 0,
+},
+
+liveWaitLabel: {
+  color: "#64717d",
+  fontSize: 10,
+  fontWeight: 700,
+},
+
+liveWaitValue: {
+  color: "#12485a",
+  fontSize: 14,
+  lineHeight: 1,
 },
 
 liveUpdateBody: {
