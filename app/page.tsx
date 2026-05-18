@@ -74,6 +74,11 @@ const doctorMetaEnd = "[[/MPL_DOCTOR_ASSIGNMENT]]";
 const doctorMetaPattern = new RegExp(
   `\\n?${doctorMetaStart.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([\\s\\S]*?)${doctorMetaEnd.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`
 );
+const petPhotoMetaStart = "[[MPL_PET_PHOTO]]";
+const petPhotoMetaEnd = "[[/MPL_PET_PHOTO]]";
+const petPhotoMetaPattern = new RegExp(
+  `\\n?${petPhotoMetaStart.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([\\s\\S]*?)${petPhotoMetaEnd.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`
+);
 
 const getAssignedDoctorFromNotes = (notes: string): DoctorOption | null => {
   const match = notes.match(doctorMetaPattern);
@@ -94,11 +99,76 @@ const getAssignedDoctorFromNotes = (notes: string): DoctorOption | null => {
 const removeDoctorMetadata = (notes: string) =>
   notes.replace(doctorMetaPattern, "").trim();
 
-const withDoctorMetadata = (notes: string, doctor: DoctorOption) => {
-  const visibleNotes = removeDoctorMetadata(notes);
-  const metadata = `${doctorMetaStart}${JSON.stringify(doctor)}${doctorMetaEnd}`;
-  return visibleNotes ? `${visibleNotes}\n${metadata}` : metadata;
+const getPetPhotoFromNotes = (notes: string) => {
+  const match = notes.match(petPhotoMetaPattern);
+  return match?.[1] || "";
 };
+
+const removePetPhotoMetadata = (notes: string) =>
+  notes.replace(petPhotoMetaPattern, "").trim();
+
+const removeAppMetadata = (notes: string) =>
+  removePetPhotoMetadata(removeDoctorMetadata(notes)).trim();
+
+const combineClinicNotes = (
+  visibleNotes: string,
+  doctor: DoctorOption | null,
+  petPhotoUrl: string
+) =>
+  [
+    visibleNotes.trim(),
+    doctor ? `${doctorMetaStart}${JSON.stringify(doctor)}${doctorMetaEnd}` : "",
+    petPhotoUrl ? `${petPhotoMetaStart}${petPhotoUrl}${petPhotoMetaEnd}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+const withDoctorMetadata = (notes: string, doctor: DoctorOption) => {
+  return combineClinicNotes(
+    removeAppMetadata(notes),
+    doctor,
+    getPetPhotoFromNotes(notes)
+  );
+};
+
+const withPetPhotoMetadata = (notes: string, petPhotoUrl: string) =>
+  combineClinicNotes(
+    removeAppMetadata(notes),
+    getAssignedDoctorFromNotes(notes),
+    petPhotoUrl
+  );
+
+const resizePetPhoto = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      const image = new Image();
+
+      image.onload = () => {
+        const maxSize = 520;
+        const scale = Math.min(1, maxSize / Math.max(image.width, image.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(image.width * scale);
+        canvas.height = Math.round(image.height * scale);
+
+        const context = canvas.getContext("2d");
+        if (!context) {
+          reject(new Error("Could not prepare pet photo."));
+          return;
+        }
+
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", 0.72));
+      };
+
+      image.onerror = () => reject(new Error("Could not load pet photo."));
+      image.src = String(reader.result);
+    };
+
+    reader.onerror = () => reject(new Error("Could not read pet photo."));
+    reader.readAsDataURL(file);
+  });
 
 type SupabaseVisit = {
   id: string;
@@ -286,7 +356,7 @@ export default function Home() {
   estimateStatus: visit.estimate_status || "",
   workflowStep: visit.workflow_step || "Request submitted",
   forms: visit.forms || [],
-  petPhotoUrl: "",
+  petPhotoUrl: getPetPhotoFromNotes(visit.clinic_notes || ""),
 });
 
   async function loadVisits() {
@@ -366,7 +436,7 @@ export default function Home() {
       estimateStatus: visit.estimate_status || "",
       workflowStep: visit.workflow_step || "",
       forms: visit.forms || [],
-      petPhotoUrl: petPhotoByVisitId[visit.id] || "",
+      petPhotoUrl: getPetPhotoFromNotes(visit.clinic_notes || "") || petPhotoByVisitId[visit.id] || "",
     };
   });
 
@@ -378,9 +448,12 @@ export default function Home() {
     visit.species === "Other" ? visit.otherSpecies : visit.species;
 
   const getPetPhoto = (visit: Visit) =>
-    visit.petPhotoUrl || petPhotoByVisitId[visit.id] || "/vet-hero.jpeg";
+    visit.petPhotoUrl ||
+    getPetPhotoFromNotes(visit.clinicNotes) ||
+    petPhotoByVisitId[visit.id] ||
+    "/vet-hero.jpeg";
 
-  const handlePetPhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePetPhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
 
     if (!file) {
@@ -388,7 +461,13 @@ export default function Home() {
       return;
     }
 
-    setPetPhotoPreview(URL.createObjectURL(file));
+    try {
+      const photoDataUrl = await resizePetPhoto(file);
+      setPetPhotoPreview(photoDataUrl);
+    } catch (error) {
+      console.error(error);
+      alert("We couldn't prepare that photo. Please try a different image.");
+    }
   };
 
   const getQueueDetails = (visit: Visit) => {
@@ -469,6 +548,7 @@ export default function Home() {
         referral_name: String(form.get("referralName") || ""),
         been_here_before: String(form.get("beenHereBefore")),
         reason: reasonWithAge,
+        clinic_notes: petPhotoPreview ? withPetPhotoMetadata("", petPhotoPreview) : "",
         status: "Request submitted",
       },
     ])
@@ -555,9 +635,10 @@ export default function Home() {
     const assignedDoctor = currentVisit
       ? getAssignedDoctorFromNotes(currentVisit.clinicNotes)
       : null;
-    const notesToSave = assignedDoctor
-      ? withDoctorMetadata(notes, assignedDoctor)
-      : notes;
+    const savedPetPhoto = currentVisit
+      ? getPetPhotoFromNotes(currentVisit.clinicNotes)
+      : "";
+    const notesToSave = combineClinicNotes(notes, assignedDoctor, savedPetPhoto);
     
     setVisits((current) =>
       current.map((visit) =>
@@ -991,7 +1072,7 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
           estimateStatus: "",
           workflowStep: "",
           forms: [],
-          petPhotoUrl: "",
+          petPhotoUrl: getPetPhotoFromNotes(visit.clinic_notes || ""),
         };
         });
         setSearchResults(visitsList);
@@ -1037,6 +1118,15 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
             key={visit.id}
             style={styles.resultCard}
             onClick={() => {
+              setVisits((current) =>
+                current.some((currentVisit) => currentVisit.id === visit.id)
+                  ? current.map((currentVisit) =>
+                      currentVisit.id === visit.id
+                        ? { ...currentVisit, ...visit }
+                        : currentVisit
+                    )
+                  : [visit, ...current]
+              );
               setSelectedVisitId(visit.id);
               setView("status");
             }}
@@ -1119,7 +1209,7 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
                     <textarea
                       style={styles.notesBox}
                       placeholder="Clinic notes - only visible to the clinic."
-                      value={removeDoctorMetadata(visit.clinicNotes)}
+                      value={removeAppMetadata(visit.clinicNotes)}
                       onChange={(e) => saveClinicNotes(visit.id, e.target.value)}
                     />
 
