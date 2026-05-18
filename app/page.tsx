@@ -49,6 +49,57 @@ type Visit = {
   petPhotoUrl: string;
 };
 
+type DoctorOption = {
+  name: string;
+  profileUrl: string;
+};
+
+const doctors: DoctorOption[] = [
+  {
+    name: "Samantha Aumann",
+    profileUrl: "https://www.medvet.com/doctor/samantha-aumann/",
+  },
+  {
+    name: "Aaron Maness",
+    profileUrl: "https://www.medvet.com/doctor/aaron-maness/",
+  },
+  {
+    name: "Tiffany McAllister-Bernal",
+    profileUrl: "https://www.medvet.com/doctor/tiffany-mcallister/",
+  },
+];
+
+const doctorMetaStart = "[[MPL_DOCTOR_ASSIGNMENT]]";
+const doctorMetaEnd = "[[/MPL_DOCTOR_ASSIGNMENT]]";
+const doctorMetaPattern = new RegExp(
+  `\\n?${doctorMetaStart.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([\\s\\S]*?)${doctorMetaEnd.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`
+);
+
+const getAssignedDoctorFromNotes = (notes: string): DoctorOption | null => {
+  const match = notes.match(doctorMetaPattern);
+  if (!match) return null;
+
+  try {
+    const doctor = JSON.parse(match[1]) as Partial<DoctorOption>;
+    if (!doctor.name || !doctor.profileUrl) return null;
+    return {
+      name: doctor.name,
+      profileUrl: doctor.profileUrl,
+    };
+  } catch {
+    return null;
+  }
+};
+
+const removeDoctorMetadata = (notes: string) =>
+  notes.replace(doctorMetaPattern, "").trim();
+
+const withDoctorMetadata = (notes: string, doctor: DoctorOption) => {
+  const visibleNotes = removeDoctorMetadata(notes);
+  const metadata = `${doctorMetaStart}${JSON.stringify(doctor)}${doctorMetaEnd}`;
+  return visibleNotes ? `${visibleNotes}\n${metadata}` : metadata;
+};
+
 type SupabaseVisit = {
   id: string;
   created_at: string;
@@ -500,26 +551,91 @@ export default function Home() {
   };
 
   const saveClinicNotes = async (visitId: string, notes: string) => {
+    const currentVisit = visits.find((visit) => visit.id === visitId);
+    const assignedDoctor = currentVisit
+      ? getAssignedDoctorFromNotes(currentVisit.clinicNotes)
+      : null;
+    const notesToSave = assignedDoctor
+      ? withDoctorMetadata(notes, assignedDoctor)
+      : notes;
     
     setVisits((current) =>
       current.map((visit) =>
-        visit.id === visitId ? { ...visit, clinicNotes: notes } : visit
+        visit.id === visitId ? { ...visit, clinicNotes: notesToSave } : visit
       )
     );
 
     const { error } = await supabase
       .from("visits")
-      .update({ clinic_notes: notes })
+      .update({ clinic_notes: notesToSave })
       .eq("id", visitId);
 
     if (error) {
       console.error("Error saving clinic notes:", error);
     }
   };
+
+  const assignDoctorToVisit = async (visitId: string, doctorName: string) => {
+    const doctor = doctors.find((item) => item.name === doctorName);
+    const visit = visits.find((item) => item.id === visitId);
+    if (!doctor || !visit) return;
+
+    const message = `Dr. ${doctor.name} is now assigned to ${visit.petName}'s case and will review the plan with you shortly.`;
+    const updatedUpdates = [
+      ...visit.updates,
+      {
+        message,
+        time: new Date().toLocaleTimeString(),
+      },
+    ];
+    const updatedNotes = withDoctorMetadata(visit.clinicNotes, doctor);
+
+    const { error } = await supabase
+      .from("visits")
+      .update({
+        clinic_notes: updatedNotes,
+        status: "Doctor assigned",
+        updates: updatedUpdates,
+      })
+      .eq("id", visitId);
+
+    if (error) {
+      alert("There was an error assigning the doctor.");
+      console.error("Error assigning doctor:", error);
+      return;
+    }
+
+    const { error: updateError } = await supabase.from("visit_updates").insert([
+      {
+        visit_id: visitId,
+        message,
+        status: "Doctor assigned",
+      },
+    ]);
+
+    if (updateError) {
+      console.error("Error saving doctor assignment update:", updateError);
+    }
+
+    setVisits((current) =>
+      current.map((item) =>
+        item.id === visitId
+          ? {
+              ...item,
+              clinicNotes: updatedNotes,
+              status: "Doctor assigned",
+              updates: updatedUpdates,
+            }
+          : item
+      )
+    );
+  };
+
   const statusOrder = [
   "Request submitted",
   "Accepted",
   "Checked in",
+  "Doctor assigned",
   "Doctor reviewing",
   "Treatment started",
   "In observation",
@@ -983,6 +1099,16 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
                         {getQueueDetails(visit)?.estimatedWaitMinutes} minutes.
                       </div>
                     )}
+                    {getAssignedDoctorFromNotes(visit.clinicNotes) && (
+                      <a
+                        href={getAssignedDoctorFromNotes(visit.clinicNotes)?.profileUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={styles.clinicDoctorLink}
+                      >
+                        Assigned doctor: Dr. {getAssignedDoctorFromNotes(visit.clinicNotes)?.name} - View profile
+                      </a>
+                    )}
                     <p style={styles.text}>Been here before: {visit.beenHereBefore}</p>
                     <p style={styles.text}>Breed: {visit.breed || "Not provided"}</p>
                     {visit.consentFormType && (
@@ -993,7 +1119,7 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
                     <textarea
                       style={styles.notesBox}
                       placeholder="Clinic notes - only visible to the clinic."
-                      value={visit.clinicNotes}
+                      value={removeDoctorMetadata(visit.clinicNotes)}
                       onChange={(e) => saveClinicNotes(visit.id, e.target.value)}
                     />
 
@@ -1157,22 +1283,22 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
 >
   Vitals Stable
 </button>
-<button
-  style={styles.purpleAction}
-  onClick={() => {
-    const doctorName = window.prompt("Doctor name");
-
-    if (!doctorName) return;
-
-    sendUpdate(
-      visit.id,
-      "Doctor assigned",
-      `Dr. ${doctorName} is now assigned to ${visit.petName}'s case and will review the plan with you shortly.`
-    );
+<select
+  style={styles.doctorSelect}
+  defaultValue=""
+  onChange={(event) => {
+    if (!event.target.value) return;
+    assignDoctorToVisit(visit.id, event.target.value);
+    event.target.value = "";
   }}
 >
-  Doctor Assigned
-</button>
+  <option value="">Assign a doctor</option>
+  {doctors.map((doctor) => (
+    <option key={doctor.name} value={doctor.name}>
+      Dr. {doctor.name}
+    </option>
+  ))}
+</select>
 <button
   style={styles.orangeAction}
   onClick={() =>
@@ -1291,6 +1417,21 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
   <h2 style={styles.petTitle}>{selectedVisit.petName}</h2>
   <p style={styles.statusBadge}>{selectedVisit.status}</p>
 </div>
+
+              {getAssignedDoctorFromNotes(selectedVisit.clinicNotes) && (
+                <a
+                  href={getAssignedDoctorFromNotes(selectedVisit.clinicNotes)?.profileUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={styles.doctorProfileCard}
+                >
+                  <span style={styles.doctorProfileLabel}>Assigned doctor</span>
+                  <strong style={styles.doctorProfileName}>
+                    Dr. {getAssignedDoctorFromNotes(selectedVisit.clinicNotes)?.name}
+                  </strong>
+                  <span style={styles.doctorProfileAction}>View profile</span>
+                </a>
+              )}
 
               <div style={styles.progressRail}>
                 {["Received", "In Exam", "In Treatment", "Discharge"].map((step, index) => (
@@ -2163,6 +2304,28 @@ const styles: { [key: string]: React.CSSProperties } = {
   orangeAction: actionStyle("#fff7ed", "#ea580c"),
   tealAction: actionStyle("#ecfeff", "#0f766e"),
   redAction: actionStyle("#fff1f2", "#e11d48"),
+  doctorSelect: {
+    minHeight: 44,
+    border: "1px solid #e9d5ff",
+    borderRadius: 8,
+    background: "#faf5ff",
+    color: "#7e22ce",
+    padding: "0 12px",
+    fontWeight: 800,
+    cursor: "pointer",
+  },
+  clinicDoctorLink: {
+    display: "inline-block",
+    background: "#faf5ff",
+    color: "#7e22ce",
+    border: "1px solid #e9d5ff",
+    borderRadius: 8,
+    padding: "9px 12px",
+    fontWeight: 800,
+    fontSize: 14,
+    textDecoration: "none",
+    marginBottom: 10,
+  },
   detailsBox: {
     background: "#f8fbff",
     borderRadius: 8,
@@ -2206,6 +2369,35 @@ const styles: { [key: string]: React.CSSProperties } = {
   justifyContent: "space-between",
   alignItems: "center",
   marginBottom: 16,
+},
+
+doctorProfileCard: {
+  display: "grid",
+  gap: 4,
+  background: "#ffffff",
+  border: "1px solid #e1ecec",
+  borderRadius: 8,
+  padding: 14,
+  marginBottom: 16,
+  textDecoration: "none",
+  boxShadow: "0 8px 20px rgba(41, 64, 83, 0.06)",
+},
+
+doctorProfileLabel: {
+  color: "#64717d",
+  fontSize: 12,
+  fontWeight: 700,
+},
+
+doctorProfileName: {
+  color: "#102a3a",
+  fontSize: 16,
+},
+
+doctorProfileAction: {
+  color: "#087f78",
+  fontSize: 13,
+  fontWeight: 800,
 },
 
 ownerGreeting: {
