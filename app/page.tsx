@@ -2531,6 +2531,8 @@ liveCardTop: {
 liveBadge: {
   display: "inline-flex",
   alignItems: "center",
+  justifyContent: "center",
+  width: 86,
   background: "#dcfce7",
   color: "#047857",
   borderRadius: 8,
@@ -2543,7 +2545,9 @@ liveBadge: {
 liveWaitPill: {
   display: "flex",
   alignItems: "center",
+  justifyContent: "center",
   gap: 6,
+  width: 86,
   background: "#f8fbff",
   border: "1px solid #dcefeb",
   borderRadius: 8,
