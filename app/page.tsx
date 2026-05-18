@@ -1393,6 +1393,14 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
               <div style={styles.liveUpdateCard}>
                 <div style={styles.liveCardTop}>
                   <div style={styles.liveBadge}>Live Update</div>
+                  {getQueueDetails(selectedVisit) && (
+                    <div style={styles.liveWaitPill}>
+                      <span style={styles.liveWaitLabel}>Wait time</span>
+                      <strong style={styles.liveWaitValue}>
+                        {getQueueDetails(selectedVisit)?.estimatedWaitMinutes} min
+                      </strong>
+                    </div>
+                  )}
                 </div>
                 <div style={styles.liveUpdateBody}>
                   <div>
@@ -1402,16 +1410,6 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
                     </h3>
                   </div>
                   <img src={getPetPhoto(selectedVisit)} alt={selectedVisit.petName} style={styles.petAvatar} />
-                </div>
-                <div style={styles.liveCardBottom}>
-                  {getQueueDetails(selectedVisit) && (
-                    <div style={styles.liveWaitPill}>
-                      <span style={styles.liveWaitLabel}>Wait time</span>
-                      <strong style={styles.liveWaitValue}>
-                        {getQueueDetails(selectedVisit)?.estimatedWaitMinutes} min
-                      </strong>
-                    </div>
-                  )}
                 </div>
               </div>
 
@@ -2435,15 +2433,9 @@ liveUpdateCard: {
 liveCardTop: {
   display: "flex",
   alignItems: "center",
-  justifyContent: "flex-start",
+  justifyContent: "space-between",
   gap: 10,
   marginBottom: 14,
-},
-
-liveCardBottom: {
-  display: "flex",
-  justifyContent: "flex-start",
-  marginTop: 12,
 },
 
 liveBadge: {
@@ -2478,7 +2470,8 @@ liveWaitLabel: {
 
 liveWaitValue: {
   color: "#12485a",
-  fontSize: 14,
+  fontSize: 10,
+  fontWeight: 800,
   lineHeight: 1,
 },
 
@@ -2491,9 +2484,9 @@ liveUpdateBody: {
 
 liveUpdateTitle: {
   color: "#102a3a",
-  fontSize: 17,
-  lineHeight: 1.35,
-  margin: "0 0 12px",
+  fontSize: 14,
+  lineHeight: 1.3,
+  margin: 0,
 },
 
 petAvatar: {
