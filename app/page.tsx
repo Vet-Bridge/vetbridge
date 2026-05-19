@@ -901,27 +901,75 @@ export default function Home() {
     );
   };
 
-  const statusOrder = [
-  "Request submitted",
-  "Referral received",
-  "Accepted",
-  "Checked in",
-  "Doctor assigned",
-  "Doctor reviewing",
-  "Treatment started",
-  "In observation",
-  "Ready for pickup",
-  "Closed",
-];
+  const sendFormToVisit = async (
+    visit: Visit,
+    formType: string,
+    formBody: string,
+    updateMessage: string
+  ) => {
+    const { error } = await supabase.from("forms").insert([
+      {
+        visit_id: visit.id,
+        form_type: formType,
+        form_body: formBody,
+        form_status: "Sent",
+      },
+    ]);
 
-const isStepLocked = (currentStatus: string, buttonStatus: string) => {
-  const currentIndex = statusOrder.indexOf(currentStatus);
-  const buttonIndex = statusOrder.indexOf(buttonStatus);
+    if (error) {
+      console.error(error);
+      alert("Error sending form");
+      return;
+    }
 
-  if (currentIndex === -1 || buttonIndex === -1) return false;
+    await sendUpdate(visit.id, visit.status, updateMessage);
+    alert(`${formType} sent to customer`);
+    loadVisits();
+  };
 
-  return currentIndex >= buttonIndex;
-};
+  const sendCustomCareUpdate = (
+    visit: Visit,
+    status: string,
+    promptTitle: string,
+    fallbackMessage: string
+  ) => {
+    const detail = window.prompt(promptTitle);
+    sendUpdate(visit.id, status, detail || fallbackMessage);
+  };
+
+  const sendEstimateApproval = (visit: Visit) => {
+    const estimateTotal = window.prompt("Estimate total or range, for example $1,200-$1,800");
+    if (!estimateTotal) return;
+
+    const estimateDetails = window.prompt("What is included in the estimate?");
+    if (!estimateDetails) return;
+
+    sendFormToVisit(
+      visit,
+      "Estimate approval",
+      [
+        `Estimated total: ${estimateTotal}`,
+        "",
+        "Included items:",
+        estimateDetails,
+        "",
+        "Owner may approve, decline, or request a doctor discussion before proceeding.",
+      ].join("\n"),
+      `An estimate is ready for ${visit.petName}. Please review and respond in MyPawLink.`
+    );
+  };
+
+  const sendDischargeInstructions = (visit: Visit) => {
+    const instructions = window.prompt("Enter discharge instructions for the owner");
+    if (!instructions) return;
+
+    sendFormToVisit(
+      visit,
+      "Discharge instructions acknowledgement",
+      instructions,
+      `${visit.petName}'s discharge instructions are ready for review.`
+    );
+  };
 
   return (
     <main style={styles.page}>
@@ -1669,241 +1717,422 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
                     />
 
                     <div style={styles.actionGrid}>
-                      <div style={styles.actionGroupTitle}>Visit flow</div>
-                     <button
-  style={{
-    ...styles.greenAction,
-    opacity: isStepLocked(visit.status, "Accepted") ? 0.5 : 1,
-    cursor: isStepLocked(visit.status, "Accepted") ? "not-allowed" : "pointer",
-  }}
-  disabled={isStepLocked(visit.status, "Accepted")}
-  onClick={() =>
-    sendUpdate(
-      visit.id,
-      "Accepted",
-      `Your visit request for ${visit.petName} has been accepted.`
-    )
-  }
->
-  Accept Visit
-</button>
+                      <div style={styles.actionGroupTitle}>Phase 2 - Arrival / triage</div>
+                      <button
+                        style={styles.greenAction}
+                        onClick={() =>
+                          sendUpdate(
+                            visit.id,
+                            "Accepted",
+                            `Your visit request for ${visit.petName} has been received by the emergency team.`
+                          )
+                        }
+                      >
+                        Accept Visit
+                      </button>
+                      <button
+                        style={styles.blueAction}
+                        onClick={() =>
+                          sendUpdate(
+                            visit.id,
+                            "Checked in",
+                            `${visit.petName} has arrived and check-in has started.`
+                          )
+                        }
+                      >
+                        Checked In
+                      </button>
+                      <button
+                        style={styles.redAction}
+                        onClick={() =>
+                          sendUpdate(
+                            visit.id,
+                            "RED triage",
+                            `${visit.petName} has been triaged as critical and moved immediately to the treatment area. The team is providing urgent care now.`
+                          )
+                        }
+                      >
+                        RED Triage
+                      </button>
+                      <button
+                        style={styles.orangeAction}
+                        onClick={() =>
+                          sendUpdate(
+                            visit.id,
+                            "Urgent triage",
+                            `${visit.petName} has been triaged as urgent and is being stabilized by the medical team.`
+                          )
+                        }
+                      >
+                        Orange / Yellow
+                      </button>
+                      <button
+                        style={styles.tealAction}
+                        onClick={() =>
+                          sendUpdate(
+                            visit.id,
+                            "Standard queue",
+                            `${visit.petName} has been triaged as stable and placed in the standard emergency queue.`
+                          )
+                        }
+                      >
+                        Green / Stable
+                      </button>
+                      <button
+                        style={styles.tealAction}
+                        onClick={() =>
+                          sendCustomCareUpdate(
+                            visit,
+                            visit.status,
+                            "Enter a short vitals update for the owner",
+                            `${visit.petName}'s vital signs were checked and are stable at this time.`
+                          )
+                        }
+                      >
+                        Vitals Update
+                      </button>
 
+                      <div style={styles.actionGroupTitle}>Phases 3-5 - Registration, consent, deposit</div>
                       <button
-  style={{
-    ...styles.blueAction,
-    opacity: visit.status !== "Accepted" ? 0.5 : 1,
-    cursor: visit.status !== "Accepted" ? "not-allowed" : "pointer",
-  }}
-  disabled={visit.status !== "Accepted"}
-  onClick={() =>
-    sendUpdate(
-      visit.id,
-      "Checked in",
-      `${visit.petName} has been checked in and is waiting for the medical team.`
-    )
-  }
->
-  Checked In
-</button>
+                        style={styles.blueAction}
+                        onClick={() =>
+                          sendUpdate(
+                            visit.id,
+                            visit.status,
+                            `${visit.petName}'s registration information has been received.`
+                          )
+                        }
+                      >
+                        Registration Complete
+                      </button>
+                      <button
+                        style={styles.purpleAction}
+                        onClick={() =>
+                          sendFormToVisit(
+                            visit,
+                            "Treatment authorization",
+                            [
+                              "I authorize the emergency team to examine my pet and provide emergency stabilization as needed.",
+                              "I understand I am financially responsible for care provided.",
+                              "I authorize MyPawLink updates by SMS/email when available.",
+                            ].join("\n\n"),
+                            `A treatment authorization form is ready for ${visit.petName}.`
+                          )
+                        }
+                      >
+                        Send Care Consent
+                      </button>
+                      <button
+                        style={styles.purpleAction}
+                        onClick={() =>
+                          sendFormToVisit(
+                            visit,
+                            "CPR / DNR preference",
+                            [
+                              "Please choose and sign a resuscitation preference for your pet.",
+                              "Options include Full CPR, DNR, or Limited CPR.",
+                              "Full CPR may include chest compressions, intubation, emergency drugs, defibrillation, and advanced life support.",
+                            ].join("\n\n"),
+                            `A CPR/DNR preference form is ready for ${visit.petName}.`
+                          )
+                        }
+                      >
+                        Send CPR / DNR
+                      </button>
+                      <button
+                        style={styles.orangeAction}
+                        onClick={() =>
+                          sendCustomCareUpdate(
+                            visit,
+                            "Deposit requested",
+                            "Enter deposit request, for example: A $1,000 deposit is requested to continue care.",
+                            `A deposit is requested to continue care for ${visit.petName}.`
+                          )
+                        }
+                      >
+                        Request Deposit
+                      </button>
 
+                      <div style={styles.actionGroupTitle}>Phases 6-8 - Doctor, diagnostics, estimate</div>
+                      <select
+                        style={styles.doctorSelect}
+                        defaultValue=""
+                        onChange={(event) => {
+                          if (!event.target.value) return;
+                          assignDoctorToVisit(visit.id, event.target.value);
+                          event.target.value = "";
+                        }}
+                      >
+                        <option value="">Assign a doctor</option>
+                        {doctors.map((doctor) => (
+                          <option key={doctor.name} value={doctor.name}>
+                            Dr. {doctor.name}
+                          </option>
+                        ))}
+                      </select>
                       <button
-  style={{
-    ...styles.purpleAction,
-    opacity: isStepLocked(visit.status, "Doctor reviewing") ? 0.5 : 1,
-    cursor: isStepLocked(visit.status, "Doctor reviewing") ? "not-allowed" : "pointer",
-  }}
-  disabled={isStepLocked(visit.status, "Doctor reviewing")}
-  onClick={() =>
-    sendUpdate(
-      visit.id,
-      "Doctor reviewing",
-      `The doctor is reviewing ${visit.petName}'s case now.`
-    )
-  }
->
-  Doctor Reviewing
-</button>
+                        style={styles.purpleAction}
+                        onClick={() =>
+                          sendUpdate(
+                            visit.id,
+                            "Doctor reviewing",
+                            `The doctor is reviewing ${visit.petName}'s history, triage notes, and current symptoms.`
+                          )
+                        }
+                      >
+                        Doctor Reviewing
+                      </button>
+                      <button
+                        style={styles.redAction}
+                        onClick={() =>
+                          sendUpdate(
+                            visit.id,
+                            "Stabilization in progress",
+                            `${visit.petName} is being stabilized by the emergency team.`
+                          )
+                        }
+                      >
+                        Stabilizing
+                      </button>
+                      <button
+                        style={styles.blueAction}
+                        onClick={() =>
+                          sendUpdate(
+                            visit.id,
+                            "Diagnostics underway",
+                            `Diagnostics are underway for ${visit.petName}. We will update you as results are reviewed.`
+                          )
+                        }
+                      >
+                        Diagnostics Underway
+                      </button>
+                      <button
+                        style={styles.blueAction}
+                        onClick={() =>
+                          sendUpdate(
+                            visit.id,
+                            "Diagnostics underway",
+                            `Bloodwork is in progress for ${visit.petName}.`
+                          )
+                        }
+                      >
+                        Bloodwork
+                      </button>
+                      <button
+                        style={styles.blueAction}
+                        onClick={() =>
+                          sendUpdate(
+                            visit.id,
+                            "Awaiting test results",
+                            `Radiographs have been completed for ${visit.petName}. The doctor is reviewing the images.`
+                          )
+                        }
+                      >
+                        X-rays Complete
+                      </button>
+                      <button
+                        style={styles.orangeAction}
+                        onClick={() =>
+                          sendUpdate(
+                            visit.id,
+                            "Awaiting test results",
+                            `${visit.petName}'s test results are pending doctor review.`
+                          )
+                        }
+                      >
+                        Awaiting Results
+                      </button>
+                      <button style={styles.greenAction} onClick={() => sendEstimateApproval(visit)}>
+                        Send Estimate
+                      </button>
 
+                      <div style={styles.actionGroupTitle}>Phases 9-10 - Advanced consent / active treatment</div>
                       <button
-  style={{
-    ...styles.orangeAction,
-    opacity: visit.status !== "Doctor reviewing" ? 0.5 : 1,
-    cursor: visit.status !== "Doctor reviewing" ? "not-allowed" : "pointer",
-  }}
-  disabled={visit.status !== "Doctor reviewing"}
-  onClick={() =>
-    sendUpdate(
-      visit.id,
-      "Treatment started",
-      `Treatment has started for ${visit.petName}. We will continue to keep you updated.`
-    )
-  }
->
-  Treatment Started
-</button>
+                        style={styles.purpleAction}
+                        onClick={() =>
+                          sendFormToVisit(
+                            visit,
+                            "Surgery / anesthesia consent",
+                            [
+                              "I authorize anesthesia and/or surgery if recommended by the medical team.",
+                              "I understand risks may include anesthesia complications, unexpected complications, blood transfusion needs, and death.",
+                            ].join("\n\n"),
+                            `A surgery/anesthesia consent is ready for ${visit.petName}.`
+                          )
+                        }
+                      >
+                        Surgery Consent
+                      </button>
                       <button
-  style={{
-    ...styles.tealAction,
-    opacity: visit.status !== "Treatment started" ? 0.5 : 1,
-    cursor: visit.status !== "Treatment started" ? "not-allowed" : "pointer",
-  }}
-  disabled={visit.status !== "Treatment started"}
-  onClick={() =>
-    sendUpdate(
-      visit.id,
-      "In observation",
-      `${visit.petName} is resting and being monitored by the team.`
-    )
-  }
->
-  In Observation
-</button>
+                        style={styles.orangeAction}
+                        onClick={() =>
+                          sendUpdate(
+                            visit.id,
+                            "Treatment started",
+                            `Treatment has started for ${visit.petName}. We will continue to keep you updated.`
+                          )
+                        }
+                      >
+                        Treatment Started
+                      </button>
+                      <button
+                        style={styles.redAction}
+                        onClick={() =>
+                          sendUpdate(
+                            visit.id,
+                            "In surgery",
+                            `${visit.petName} is in surgery. The team will provide an update when the procedure is complete.`
+                          )
+                        }
+                      >
+                        In Surgery
+                      </button>
+                      <button
+                        style={styles.orangeAction}
+                        onClick={() =>
+                          sendUpdate(
+                            visit.id,
+                            "Recovering from anesthesia",
+                            `${visit.petName} is recovering from anesthesia and is being closely monitored.`
+                          )
+                        }
+                      >
+                        Recovering
+                      </button>
+                      <button
+                        style={styles.tealAction}
+                        onClick={() =>
+                          sendUpdate(
+                            visit.id,
+                            "Stable",
+                            `${visit.petName} is currently stable and being monitored by the care team.`
+                          )
+                        }
+                      >
+                        Stable
+                      </button>
+                      <button
+                        style={styles.redAction}
+                        onClick={() =>
+                          sendUpdate(
+                            visit.id,
+                            "Critical condition",
+                            `${visit.petName} remains in critical condition and is receiving intensive care.`
+                          )
+                        }
+                      >
+                        Critical
+                      </button>
+
+                      <div style={styles.actionGroupTitle}>Phases 11-12 - Communication / hospitalization</div>
+                      <button
+                        style={styles.orangeAction}
+                        onClick={() =>
+                          sendUpdate(
+                            visit.id,
+                            "ICU monitoring",
+                            `${visit.petName} has been hospitalized and is receiving ongoing monitoring.`
+                          )
+                        }
+                      >
+                        Hospitalized / ICU
+                      </button>
+                      <button
+                        style={styles.greenAction}
+                        onClick={() =>
+                          sendCustomCareUpdate(
+                            visit,
+                            visit.status,
+                            "Enter medication/treatment update",
+                            `${visit.petName}'s scheduled medication or treatment was completed.`
+                          )
+                        }
+                      >
+                        Medication Given
+                      </button>
+                      <button
+                        style={styles.tealAction}
+                        onClick={() =>
+                          sendCustomCareUpdate(
+                            visit,
+                            visit.status,
+                            "Enter monitoring update",
+                            `${visit.petName} is resting and being monitored by the care team.`
+                          )
+                        }
+                      >
+                        Monitoring Note
+                      </button>
+                      <button
+                        style={styles.blueAction}
+                        onClick={() =>
+                          sendCustomCareUpdate(
+                            visit,
+                            visit.status,
+                            "Enter feeding/nursing update",
+                            `${visit.petName}'s nursing care was completed.`
+                          )
+                        }
+                      >
+                        Feeding / Nursing
+                      </button>
+                      <button style={styles.blueAction} onClick={() => sendUpdate(visit.id, visit.status, `${visit.petName} was walked by the care team.`)}>
+                        Walked
+                      </button>
+                      <button style={styles.blueAction} onClick={() => sendUpdate(visit.id, visit.status, `${visit.petName} urinated during the latest care check.`)}>
+                        Urinated
+                      </button>
+                      <button style={styles.blueAction} onClick={() => sendUpdate(visit.id, visit.status, `${visit.petName} defecated during the latest care check.`)}>
+                        Defecated
+                      </button>
+
+                      <div style={styles.actionGroupTitle}>Phases 14-16 - Discharge / checkout / aftercare</div>
                       <button style={styles.redAction} onClick={() => sendUpdate(visit.id, "Ready for pickup", `${visit.petName} is ready for pickup. Please check in at the front desk when you arrive.`)}>
                         Ready for Pickup
                       </button>
+                      <button style={styles.purpleAction} onClick={() => sendDischargeInstructions(visit)}>
+                        Send Discharge
+                      </button>
+                      <button style={styles.greenAction} onClick={() => sendUpdate(visit.id, visit.status, `A follow-up reminder has been set for ${visit.petName}.`)}>
+                        Aftercare Reminder
+                      </button>
+                      <button style={styles.redAction} onClick={() => sendUpdate(visit.id, "Closed", `${visit.petName}'s visit has been completed and closed.`)}>
+                        Close Request
+                      </button>
+
+                      <div style={styles.actionGroupTitle}>Custom communication</div>
                       <button
-  style={{
-    ...styles.redAction,
-    opacity: visit.status !== "Ready for pickup" ? 0.5 : 1,
-    cursor: visit.status !== "Ready for pickup" ? "not-allowed" : "pointer",
-  }}
-  disabled={visit.status !== "Ready for pickup"}
-  onClick={() =>
-    sendUpdate(
-      visit.id,
-      "Closed",
-      `${visit.petName}'s visit has been completed and closed.`
-    )
-  }
->
-  Close Request
-</button>
-<div style={styles.actionGroupTitle}>Forms and approvals</div>
-<button
-  style={styles.blueAction}
-  onClick={async () => {
-    const formType = window.prompt(
-      "Enter form name (Consent, CPR, Treatment, etc)"
-    );
+                        style={styles.blueAction}
+                        onClick={async () => {
+                          const formType = window.prompt("Enter form name (Consent, CPR, Treatment, etc)");
+                          if (!formType) return;
 
-    if (!formType) return;
+                          const formBody = window.prompt("Enter the form details the customer needs to read before signing or declining");
+                          if (!formBody) return;
 
-    const formBody = window.prompt(
-      "Enter the form details the customer needs to read before signing or declining"
-    );
-
-    if (!formBody) return;
-
-    const { error } = await supabase.from("forms").insert([
-      {
-        visit_id: visit.id,
-        form_type: formType,
-        form_body: formBody,
-        form_status: "Sent",
-      },
-    ]);
-
-    if (error) {
-      console.error(error);
-      alert("Error sending form");
-      return;
-    }
-
-    alert("Form sent to customer");
-    loadVisits();
-  }}
->
-  Send Form
-</button>
-<div style={styles.actionGroupTitle}>Care updates</div>
-<button
-  style={styles.tealAction}
-  onClick={() =>
-    sendUpdate(
-      visit.id,
-      visit.status,
-      `${visit.petName}'s vital signs were checked and are stable at this time.`
-    )
-  }
->
-  Vitals Stable
-</button>
-<select
-  style={styles.doctorSelect}
-  defaultValue=""
-  onChange={(event) => {
-    if (!event.target.value) return;
-    assignDoctorToVisit(visit.id, event.target.value);
-    event.target.value = "";
-  }}
->
-  <option value="">Assign a doctor</option>
-  {doctors.map((doctor) => (
-    <option key={doctor.name} value={doctor.name}>
-      Dr. {doctor.name}
-    </option>
-  ))}
-</select>
-<button
-  style={styles.orangeAction}
-  onClick={() =>
-    sendUpdate(
-      visit.id,
-      "Hospitalized",
-      `${visit.petName} has been hospitalized and the care team will continue sharing treatment updates here.`
-    )
-  }
->
-  Hospitalized
-</button>
-<button
-  style={styles.blueAction}
-  onClick={() =>
-    sendUpdate(
-      visit.id,
-      visit.status,
-      `${visit.petName} was walked by the care team.`
-    )
-  }
->
-  Walked
-</button>
-<button
-  style={styles.blueAction}
-  onClick={() =>
-    sendUpdate(
-      visit.id,
-      visit.status,
-      `${visit.petName} urinated during the latest care check.`
-    )
-  }
->
-  Urinated
-</button>
-<button
-  style={styles.blueAction}
-  onClick={() =>
-    sendUpdate(
-      visit.id,
-      visit.status,
-      `${visit.petName} defecated during the latest care check.`
-    )
-  }
->
-  Defecated
-</button>
-<button
-  style={styles.greenAction}
-  onClick={() =>
-    sendUpdate(
-      visit.id,
-      visit.status,
-      `${visit.petName}'s scheduled treatment was completed.`
-    )
-  }
->
-  Treatment Done
-</button>
+                          sendFormToVisit(
+                            visit,
+                            formType,
+                            formBody,
+                            `A new ${formType} form is ready for ${visit.petName}.`
+                          );
+                        }}
+                      >
+                        Custom Form
+                      </button>
+                      <button
+                        style={styles.tealAction}
+                        onClick={() =>
+                          sendCustomCareUpdate(
+                            visit,
+                            visit.status,
+                            "Enter custom owner update",
+                            `There is a new update for ${visit.petName}.`
+                          )
+                        }
+                      >
+                        Custom Update
+                      </button>
                     </div>
 
                     <button
