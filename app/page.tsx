@@ -279,10 +279,11 @@ type OwnerSearchResult = {
 
 export default function Home() {
   const [view, setView] = useState<
-  "home" | "newPet" | "existingPet" | "ownerUpdates" | "clinic" | "status"
+  "home" | "newPet" | "existingPet" | "referral" | "ownerUpdates" | "clinic" | "status"
 >("home");
   const [selectedVisitId, setSelectedVisitId] = useState<string | null>(null);
   const [selectedSpecies, setSelectedSpecies] = useState("");
+  const [selectedReferralSpecies, setSelectedReferralSpecies] = useState("");
   const [searchError, setSearchError] = useState("");
   const [loading, setLoading] = useState(false);
   const [selectedVisitType, setSelectedVisitType] = useState("");
@@ -291,6 +292,7 @@ export default function Home() {
   const [selectedAllergies, setSelectedAllergies] = useState("");
   const [petMediaName, setPetMediaName] = useState("");
   const [petMediaType, setPetMediaType] = useState("");
+  const [referralDocumentNames, setReferralDocumentNames] = useState<string[]>([]);
   const dogBreeds = [
     "Labrador Retriever",
     "German Shepherd",
@@ -507,6 +509,11 @@ export default function Home() {
     }
   };
 
+  const handleReferralDocumentsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    setReferralDocumentNames(files.map((file) => file.name));
+  };
+
   const getQueueDetails = (visit: Visit) => {
     if (visit.status === "Closed" || visit.status === "Ready for pickup") {
       return null;
@@ -653,6 +660,120 @@ export default function Home() {
   setView("status");
 };
 
+  const createReferralVisit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    const form = new FormData(e.currentTarget);
+    const clinicName = String(form.get("referringClinic") || "").trim();
+    const doctorName = String(form.get("referringDoctor") || "").trim();
+    const doctorPhone = String(form.get("doctorPhone") || "").trim();
+    const doctorEmail = String(form.get("doctorEmail") || "").trim();
+    const ownerFirstName = String(form.get("ownerFirstName") || "").trim();
+    const ownerLastName = String(form.get("ownerLastName") || "").trim();
+    const ownerPhone = String(form.get("ownerPhone") || "").trim();
+    const ownerEmail = String(form.get("ownerEmail") || "").trim();
+    const documentsIncluded = form.getAll("documentsIncluded").map(String);
+    const referralDocuments = form
+      .getAll("referralDocuments")
+      .filter((entry): entry is File => entry instanceof File && Boolean(entry.name));
+    const transferTime = String(form.get("transferTime") || "").trim();
+    const referralName = doctorName
+      ? `${clinicName} - Dr. ${doctorName}`
+      : clinicName;
+    const uploadedDocumentNames = referralDocuments.map((file) => file.name);
+
+    const referralSummary = [
+      "Referral intake",
+      `Referring clinic: ${clinicName}`,
+      `Referring doctor: ${doctorName}`,
+      `Doctor contact: ${doctorPhone || "No phone provided"} / ${doctorEmail || "No email provided"}`,
+      `Pet owner: ${[ownerFirstName, ownerLastName].filter(Boolean).join(" ") || "Not provided"}`,
+      `Owner contact: ${ownerPhone || "No phone provided"} / ${ownerEmail || "No email provided"}`,
+      `Documents included: ${documentsIncluded.length ? documentsIncluded.join(", ") : "Not specified"}`,
+      `Uploaded files selected: ${uploadedDocumentNames.length ? uploadedDocumentNames.join(", ") : "None selected"}`,
+      `Referral notes: ${String(form.get("referralNotes") || "").trim() || "Not provided"}`,
+      `Treatment already given: ${String(form.get("treatmentGiven") || "").trim() || "Not provided"}`,
+      `Medications: ${String(form.get("medications") || "").trim() || "Not provided"}`,
+      `IV fluids: ${String(form.get("ivFluids") || "Not provided")}`,
+      `Time of transfer: ${transferTime || "Not provided"}`,
+    ].join("\n");
+
+    const { data: owner, error: ownerError } = await supabase
+      .from("owners")
+      .insert([
+        {
+          first_name: ownerFirstName || "Referral",
+          last_name: ownerLastName || clinicName,
+          phone: ownerPhone || doctorPhone,
+          email: ownerEmail || doctorEmail,
+        },
+      ])
+      .select()
+      .single();
+
+    if (ownerError) {
+      console.error(ownerError);
+      alert("Error creating referral contact");
+      return;
+    }
+
+    const { data: pet, error: petError } = await supabase
+      .from("pets")
+      .insert([
+        {
+          owner_id: owner.id,
+          pet_name: String(form.get("petName")),
+          species: String(form.get("species")),
+          other_species: String(form.get("otherSpecies") || ""),
+          breed: String(form.get("breed") || ""),
+        },
+      ])
+      .select()
+      .single();
+
+    if (petError) {
+      console.error(petError);
+      alert("Error creating referral pet");
+      return;
+    }
+
+    const { data: visit, error: visitError } = await supabase
+      .from("visits")
+      .insert([
+        {
+          owner_id: owner.id,
+          pet_id: pet.id,
+          visit_type: "Vet referral",
+          referral_name: referralName,
+          been_here_before: "Unknown",
+          reason: referralSummary,
+          status: "Referral received",
+        },
+      ])
+      .select()
+      .single();
+
+    if (visitError) {
+      console.error(visitError);
+      alert("Error creating referral");
+      return;
+    }
+
+    await supabase.from("visit_updates").insert([
+      {
+        visit_id: visit.id,
+        message: `Referral intake submitted by ${clinicName}. The emergency team will review the transfer information.`,
+        status: "Referral received",
+      },
+    ]);
+
+    await loadVisits();
+    setSelectedReferralSpecies("");
+    setReferralDocumentNames([]);
+    alert("Referral intake sent to the clinic dashboard.");
+    setView("clinic");
+  };
+
   const sendUpdate = async (visitId: string, status: string, message: string) => {
     const visit = visits.find((v) => v.id === visitId);
     if (!visit) return;
@@ -782,6 +903,7 @@ export default function Home() {
 
   const statusOrder = [
   "Request submitted",
+  "Referral received",
   "Accepted",
   "Checked in",
   "Doctor assigned",
@@ -871,6 +993,17 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
       </div>
     </div>
     <span style={styles.cardCtaBlue}>Track Visit -&gt;</span>
+  </button>
+
+            <button style={styles.referralCardButton} onClick={() => setView("referral")}>
+    <span style={styles.bigIcon}><MiniIcon type="referral" /></span>
+    <div style={styles.buttonText}>
+      <div style={styles.buttonTitle}>Referral<br />Intake</div>
+      <div style={styles.buttonSubtitle}>
+        Regular vets can send transfer notes, labs, imaging, medications, and doctor contact info.
+      </div>
+    </div>
+    <span style={styles.cardCtaReferral}>Start Referral -&gt;</span>
   </button>
 </div> <button
   style={styles.staffLinkButton}
@@ -1125,6 +1258,155 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
 
                 <button style={styles.primaryButton} type="submit">
                   Submit Visit Request
+                </button>
+              </form>
+            </section>
+          )}
+          {view === "referral" && (
+            <section>
+              <h2 style={styles.title}>Referral Intake Portal</h2>
+              <p style={styles.text}>For regular vets sending an emergency transfer.</p>
+
+              <div style={styles.noticeBox}>
+                <strong>Send the receiving team what they need before arrival.</strong>
+                <p>
+                  Add notes, diagnostics, treatment already given, medications, IV fluid status,
+                  transfer time, and direct doctor contact information.
+                </p>
+              </div>
+
+              <form onSubmit={createReferralVisit} style={styles.form}>
+                <input style={styles.input} name="referringClinic" placeholder="Referring clinic name" required />
+                <input style={styles.input} name="referringDoctor" placeholder="Referring doctor name" required />
+                <input style={styles.input} name="doctorPhone" placeholder="Doctor phone number" required />
+                <input style={styles.input} name="doctorEmail" placeholder="Doctor email" required />
+
+                <input style={styles.input} name="petName" placeholder="Pet name" required />
+                <select
+                  style={styles.input}
+                  name="species"
+                  required
+                  value={selectedReferralSpecies}
+                  onChange={(e) => setSelectedReferralSpecies(e.target.value)}
+                >
+                  <option value="">Species</option>
+                  <option value="Dog">Dog</option>
+                  <option value="Cat">Cat</option>
+                  <option value="Other">Other</option>
+                </select>
+
+                {selectedReferralSpecies === "Dog" && (
+                  <select style={styles.input} name="breed" required>
+                    <option value="">Select Dog Breed</option>
+                    {dogBreeds.map((breed) => (
+                      <option key={breed} value={breed}>
+                        {breed}
+                      </option>
+                    ))}
+                  </select>
+                )}
+
+                {selectedReferralSpecies === "Cat" && (
+                  <select style={styles.input} name="breed" required>
+                    <option value="">Select Cat Breed</option>
+                    {catBreeds.map((breed) => (
+                      <option key={breed} value={breed}>
+                        {breed}
+                      </option>
+                    ))}
+                  </select>
+                )}
+
+                {selectedReferralSpecies === "Other" && (
+                  <input
+                    style={styles.input}
+                    name="otherSpecies"
+                    placeholder="Enter pet type, for example Rabbit or Bird"
+                    required
+                  />
+                )}
+
+                <div style={styles.referralSubsection}>
+                  <strong>Pet owner contact, if available</strong>
+                  <input style={styles.input} name="ownerFirstName" placeholder="Owner first name" />
+                  <input style={styles.input} name="ownerLastName" placeholder="Owner last name" />
+                  <input style={styles.input} name="ownerPhone" placeholder="Owner phone number" />
+                  <input style={styles.input} name="ownerEmail" placeholder="Owner email" />
+                </div>
+
+                <textarea
+                  style={styles.textarea}
+                  name="referralNotes"
+                  placeholder="Referral notes"
+                  required
+                />
+
+                <div style={styles.referralSubsection}>
+                  <strong>Documents included</strong>
+                  <div style={styles.checkboxGrid}>
+                    {["Referral notes", "Lab results", "X-rays", "Ultrasound"].map((item) => (
+                      <label key={item} style={styles.radioBox}>
+                        <input type="checkbox" name="documentsIncluded" value={item} /> {item}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <label style={styles.photoUploadBox}>
+                  <span style={styles.photoUploadTitle}>Upload documents</span>
+                  <span style={styles.photoUploadText}>
+                    Select notes, lab results, X-rays, ultrasound images/videos, or PDFs.
+                  </span>
+                  <input
+                    style={styles.hiddenFileInput}
+                    type="file"
+                    name="referralDocuments"
+                    accept=".pdf,.doc,.docx,.dcm,image/*,video/*"
+                    multiple
+                    onChange={handleReferralDocumentsChange}
+                  />
+                  <span style={styles.photoUploadButton}>
+                    {referralDocumentNames.length > 0 ? "Change Documents" : "Choose Documents"}
+                  </span>
+                </label>
+
+                {referralDocumentNames.length > 0 && (
+                  <div style={styles.documentList}>
+                    {referralDocumentNames.map((name) => (
+                      <span key={name}>{name}</span>
+                    ))}
+                  </div>
+                )}
+
+                <textarea
+                  style={styles.textarea}
+                  name="treatmentGiven"
+                  placeholder="Treatment already given"
+                  required
+                />
+
+                <textarea
+                  style={styles.textarea}
+                  name="medications"
+                  placeholder="Medications given or currently prescribed"
+                  required
+                />
+
+                <select style={styles.input} name="ivFluids" required>
+                  <option value="">IV fluids?</option>
+                  <option value="Yes">Yes</option>
+                  <option value="No">No</option>
+                </select>
+
+                <input
+                  style={styles.input}
+                  type="datetime-local"
+                  name="transferTime"
+                  required
+                />
+
+                <button style={styles.primaryButton} type="submit">
+                  Submit Referral
                 </button>
               </form>
             </section>
@@ -1853,8 +2135,8 @@ const isStepLocked = (currentStatus: string, buttonStatus: string) => {
   );
 }
 
-function MiniIcon({ type }: { type: "chat" | "check" | "heart" | "lock" | "paw" | "search" | "plus" }) {
-  const stroke = type === "search" ? "#0b62d8" : "#087f78";
+function MiniIcon({ type }: { type: "chat" | "check" | "heart" | "lock" | "paw" | "search" | "plus" | "referral" }) {
+  const stroke = type === "search" ? "#0b62d8" : type === "referral" ? "#b45309" : "#087f78";
 
   return (
     <svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true">
@@ -1903,6 +2185,16 @@ function MiniIcon({ type }: { type: "chat" | "check" | "heart" | "lock" | "paw" 
         <>
           <path d="M15 7 V23" stroke={stroke} strokeWidth="4" strokeLinecap="round" />
           <path d="M7 15 H23" stroke={stroke} strokeWidth="4" strokeLinecap="round" />
+        </>
+      )}
+      {type === "referral" && (
+        <>
+          <path d="M9 4 H18 L23 9 V25 H9 Z" fill="none" stroke={stroke} strokeWidth="2" strokeLinejoin="round" />
+          <path d="M18 4 V10 H23" fill="none" stroke={stroke} strokeWidth="2" strokeLinejoin="round" />
+          <path d="M12 15 H20" stroke={stroke} strokeWidth="2" strokeLinecap="round" />
+          <path d="M12 19 H18" stroke={stroke} strokeWidth="2" strokeLinecap="round" />
+          <path d="M6 13 H12" stroke={stroke} strokeWidth="2" strokeLinecap="round" />
+          <path d="M8 10 L5 13 L8 16" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         </>
       )}
     </svg>
@@ -2168,6 +2460,21 @@ const styles: { [key: string]: React.CSSProperties } = {
     gridColumn: "1 / -1",
     boxSizing: "border-box",
   },
+  cardCtaReferral: {
+    display: "block",
+    background: "linear-gradient(135deg, #f59e0b, #b45309)",
+    color: "#ffffff",
+    borderRadius: 8,
+    padding: "9px 14px",
+    marginTop: 12,
+    textAlign: "center",
+    fontWeight: 800,
+    fontSize: 12,
+    lineHeight: 1.2,
+    width: "100%",
+    gridColumn: "1 / -1",
+    boxSizing: "border-box",
+  },
   buttonRow: {
     display: "grid",
     gridTemplateColumns: "1fr",
@@ -2194,6 +2501,23 @@ const styles: { [key: string]: React.CSSProperties } = {
     background: "linear-gradient(135deg, #f8fbff, #edf5ff)",
     color: "#0b62d8",
     border: "1px solid #bdd7ff",
+    padding: 22,
+    borderRadius: 8,
+    cursor: "pointer",
+    display: "grid",
+    gridTemplateColumns: "62px 1fr",
+    alignItems: "flex-start",
+    gap: 16,
+    textAlign: "left",
+    fontSize: 18,
+    minHeight: 188,
+    width: "100%",
+    boxSizing: "border-box",
+  },
+  referralCardButton: {
+    background: "linear-gradient(135deg, #fff8f1, #fff1dd)",
+    color: "#b45309",
+    border: "1px solid #fed7aa",
     padding: 22,
     borderRadius: 8,
     cursor: "pointer",
@@ -2348,6 +2672,34 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderRadius: 8,
     objectFit: "cover",
     border: "2px solid #e7fbf7",
+  },
+  referralSubsection: {
+    gridColumn: "1 / -1",
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))",
+    gap: 12,
+    border: "1px solid #e1ecec",
+    borderRadius: 8,
+    padding: 14,
+    background: "#ffffff",
+  },
+  checkboxGrid: {
+    gridColumn: "1 / -1",
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+    gap: 10,
+  },
+  documentList: {
+    gridColumn: "1 / -1",
+    display: "grid",
+    gap: 6,
+    background: "#fff8f1",
+    border: "1px solid #fed7aa",
+    borderRadius: 8,
+    padding: 12,
+    color: "#9a3412",
+    fontWeight: 700,
+    fontSize: 13,
   },
   label: {
     fontWeight: 700,
