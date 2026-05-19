@@ -774,6 +774,31 @@ export default function Home() {
     setView("clinic");
   };
 
+  const notifyOwnerByText = async (visit: Visit, message: string) => {
+    if (!visit.phone) return;
+
+    try {
+      const response = await fetch("/api/send-sms", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          phone: visit.phone,
+          petName: visit.petName,
+          message,
+          link: window.location.origin,
+        }),
+      });
+
+      if (!response.ok) {
+        console.error("SMS notification failed:", await response.text());
+      }
+    } catch (error) {
+      console.error("SMS notification error:", error);
+    }
+  };
+
   const sendUpdate = async (visitId: string, status: string, message: string) => {
     const visit = visits.find((v) => v.id === visitId);
     if (!visit) return;
@@ -817,6 +842,8 @@ export default function Home() {
         v.id === visitId ? { ...v, status, updates: updatedUpdates } : v
       )
     );
+
+    notifyOwnerByText(visit, message);
   };
 
   const saveClinicNotes = async (visitId: string, notes: string) => {
@@ -899,6 +926,8 @@ export default function Home() {
           : item
       )
     );
+
+    notifyOwnerByText(visit, message);
   };
 
   const sendFormToVisit = async (
