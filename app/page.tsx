@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Update = {
   message: string;
@@ -178,6 +178,10 @@ export default function Home() {
   const [selectedReferralSpecies, setSelectedReferralSpecies] = useState("");
   const [searchError, setSearchError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [submittingVisit, setSubmittingVisit] = useState(false);
+  const [submittingReferral, setSubmittingReferral] = useState(false);
+  const [clinicLoading, setClinicLoading] = useState(false);
+  const [pendingClinicActions, setPendingClinicActions] = useState<Record<string, string>>({});
   const [selectedVisitType, setSelectedVisitType] = useState("");
   const [petPhotoPreview, setPetPhotoPreview] = useState("");
   const [petPhotoByVisitId, setPetPhotoByVisitId] = useState<Record<string, string>>({});
@@ -188,6 +192,10 @@ export default function Home() {
   const [clinicPin, setClinicPin] = useState("");
   const [clinicUnlocked, setClinicUnlocked] = useState(false);
   const [clinicError, setClinicError] = useState("");
+  const submittingVisitRef = useRef(false);
+  const submittingReferralRef = useRef(false);
+  const clinicLoadingRef = useRef(false);
+  const pendingClinicActionsRef = useRef<Record<string, string>>({});
   const dogBreeds = [
     "Labrador Retriever",
     "German Shepherd",
@@ -271,7 +279,10 @@ export default function Home() {
   }, []);
 
   async function loadVisits(pin = clinicPin) {
-    if (!pin) return;
+    if (!pin || clinicLoadingRef.current) return;
+
+    clinicLoadingRef.current = true;
+    setClinicLoading(true);
 
     try {
       const result = await apiRequest<{ visits: Visit[] }>({
@@ -284,6 +295,9 @@ export default function Home() {
     } catch (error) {
       setClinicUnlocked(false);
       setClinicError(error instanceof Error ? error.message : "Unable to load clinic visits.");
+    } finally {
+      clinicLoadingRef.current = false;
+      setClinicLoading(false);
     }
   }
   const getOwnerName = (visit: Visit) => `${visit.ownerFirstName} ${visit.ownerLastName}`;
@@ -345,8 +359,31 @@ export default function Home() {
     };
   };
 
+  const beginClinicAction = (visitId: string, label = "Sending update...") => {
+    if (pendingClinicActionsRef.current[visitId]) return false;
+
+    const next = {
+      ...pendingClinicActionsRef.current,
+      [visitId]: label,
+    };
+    pendingClinicActionsRef.current = next;
+    setPendingClinicActions(next);
+    return true;
+  };
+
+  const finishClinicAction = (visitId: string) => {
+    const next = { ...pendingClinicActionsRef.current };
+    delete next[visitId];
+    pendingClinicActionsRef.current = next;
+    setPendingClinicActions(next);
+  };
+
   const createVisit = async (e: React.FormEvent<HTMLFormElement>) => {
   e.preventDefault();
+
+  if (submittingVisitRef.current) return;
+  submittingVisitRef.current = true;
+  setSubmittingVisit(true);
 
   const form = new FormData(e.currentTarget);
   const petAge = String(form.get("petAge") || "").trim();
@@ -418,6 +455,8 @@ export default function Home() {
   } catch (error) {
     console.error(error);
     alert(error instanceof Error ? error.message : "Error creating visit");
+    submittingVisitRef.current = false;
+    setSubmittingVisit(false);
     return;
   }
 
@@ -437,10 +476,16 @@ export default function Home() {
   setPetMediaType("");
   setPetPhotoPreview("");
   setView("status");
+  submittingVisitRef.current = false;
+  setSubmittingVisit(false);
 };
 
   const createReferralVisit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+
+    if (submittingReferralRef.current) return;
+    submittingReferralRef.current = true;
+    setSubmittingReferral(true);
 
     const form = new FormData(e.currentTarget);
     const clinicName = String(form.get("referringClinic") || "").trim();
@@ -505,9 +550,11 @@ export default function Home() {
         firstUpdateStatus: "Referral received",
       });
       visit = result.visit;
-    } catch (error) {
+  } catch (error) {
       console.error(error);
       alert(error instanceof Error ? error.message : "Error creating referral");
+      submittingReferralRef.current = false;
+      setSubmittingReferral(false);
       return;
     }
 
@@ -516,9 +563,18 @@ export default function Home() {
     setReferralDocumentNames([]);
     alert("Referral intake sent to the clinic dashboard.");
     setView(clinicUnlocked ? "clinic" : "home");
+    submittingReferralRef.current = false;
+    setSubmittingReferral(false);
   };
 
-  const sendUpdate = async (visitId: string, status: string, message: string) => {
+  const sendUpdate = async (
+    visitId: string,
+    status: string,
+    message: string,
+    actionLabel = "Sending update..."
+  ) => {
+    if (!beginClinicAction(visitId, actionLabel)) return;
+
     try {
       const result = await apiRequest<{ visit: Visit }>({
         action: "sendUpdate",
@@ -533,6 +589,8 @@ export default function Home() {
     } catch (error) {
       alert("There was an error updating the visit.");
       console.error(error);
+    } finally {
+      finishClinicAction(visitId);
     }
   };
 
@@ -571,6 +629,7 @@ export default function Home() {
     const doctor = doctors.find((item) => item.name === doctorName);
     const visit = visits.find((item) => item.id === visitId);
     if (!doctor || !visit) return;
+    if (!beginClinicAction(visitId, "Assigning doctor...")) return;
 
     const message = `Dr. ${doctor.name} is now assigned to ${visit.petName}'s case and will review the plan with you shortly.`;
     const updatedNotes = withDoctorMetadata(visit.clinicNotes, doctor);
@@ -589,6 +648,8 @@ export default function Home() {
     } catch (error) {
       alert("There was an error assigning the doctor.");
       console.error("Error assigning doctor:", error);
+    } finally {
+      finishClinicAction(visitId);
     }
   };
 
@@ -598,6 +659,8 @@ export default function Home() {
     formBody: string,
     updateMessage: string
   ) => {
+    if (!beginClinicAction(visit.id, "Sending form...")) return;
+
     try {
       const result = await apiRequest<{ visit: Visit }>({
         action: "sendForm",
@@ -615,6 +678,8 @@ export default function Home() {
     } catch (error) {
       console.error(error);
       alert("Error sending form");
+    } finally {
+      finishClinicAction(visit.id);
     }
   };
 
@@ -995,8 +1060,15 @@ export default function Home() {
                   </div>
                 </div>
 
-                <button style={styles.primaryButton} type="submit">
-                  Submit Visit Request
+                <button
+                  style={{
+                    ...styles.primaryButton,
+                    ...(submittingVisit ? styles.disabledButton : {}),
+                  }}
+                  type="submit"
+                  disabled={submittingVisit}
+                >
+                  {submittingVisit ? "Submitting Visit..." : "Submit Visit Request"}
                 </button>
               </form>
             </section>
@@ -1144,8 +1216,15 @@ export default function Home() {
                   required
                 />
 
-                <button style={styles.primaryButton} type="submit">
-                  Submit Referral
+                <button
+                  style={{
+                    ...styles.primaryButton,
+                    ...(submittingReferral ? styles.disabledButton : {}),
+                  }}
+                  type="submit"
+                  disabled={submittingReferral}
+                >
+                  {submittingReferral ? "Submitting Referral..." : "Submit Referral"}
                 </button>
               </form>
             </section>
@@ -1218,8 +1297,15 @@ export default function Home() {
         placeholder="Email (recommended)"
       />
 
-      <button style={styles.primaryButton} type="submit">
-        Find My Pet
+      <button
+        style={{
+          ...styles.primaryButton,
+          ...(loading ? styles.disabledButton : {}),
+        }}
+        type="submit"
+        disabled={loading}
+      >
+        {loading ? "Searching..." : "Find My Pet"}
       </button>
     </form>
 
@@ -1283,8 +1369,15 @@ export default function Home() {
                       placeholder="Clinic PIN"
                       required
                     />
-                    <button style={styles.primaryButton} type="submit">
-                      Open Dashboard
+                    <button
+                      style={{
+                        ...styles.primaryButton,
+                        ...(clinicLoading ? styles.disabledButton : {}),
+                      }}
+                      type="submit"
+                      disabled={clinicLoading}
+                    >
+                      {clinicLoading ? "Opening..." : "Open Dashboard"}
                     </button>
                   </form>
                   {clinicError && <div style={styles.errorBox}>{clinicError}</div>}
@@ -1365,7 +1458,19 @@ export default function Home() {
                       onChange={(e) => saveClinicNotes(visit.id, e.target.value)}
                     />
 
-                    <div style={styles.actionGrid}>
+                    {pendingClinicActions[visit.id] && (
+                      <div style={styles.pendingActionNotice}>
+                        {pendingClinicActions[visit.id]}
+                      </div>
+                    )}
+
+                    <fieldset
+                      disabled={Boolean(pendingClinicActions[visit.id])}
+                      style={{
+                        ...styles.actionGrid,
+                        ...(pendingClinicActions[visit.id] ? styles.disabledActionGrid : {}),
+                      }}
+                    >
                       <div style={styles.actionGroupTitle}>Phase 2 - Arrival / triage</div>
                       <button
                         style={styles.greenAction}
@@ -1782,7 +1887,7 @@ export default function Home() {
                       >
                         Custom Update
                       </button>
-                    </div>
+                    </fieldset>
 
                     <button
                       style={styles.secondaryButton}
@@ -2643,6 +2748,11 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: 700,
     minHeight: 52,
   },
+  disabledButton: {
+    opacity: 0.62,
+    cursor: "not-allowed",
+    filter: "saturate(0.75)",
+  },
   secondaryButton: {
     background: "white",
     color: "#2457a6",
@@ -2839,6 +2949,23 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: 12,
     marginTop: 18,
     marginBottom: 18,
+    border: "none",
+    padding: 0,
+    minInlineSize: 0,
+  },
+  disabledActionGrid: {
+    opacity: 0.58,
+    cursor: "wait",
+  },
+  pendingActionNotice: {
+    background: "#f0fbf8",
+    border: "1px solid #bfe9e0",
+    color: "#087f78",
+    borderRadius: 8,
+    padding: "10px 12px",
+    marginTop: 14,
+    fontSize: 14,
+    fontWeight: 800,
   },
   actionGroupTitle: {
     gridColumn: "1 / -1",
