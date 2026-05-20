@@ -192,6 +192,7 @@ export default function Home() {
   const [clinicPin, setClinicPin] = useState("");
   const [clinicUnlocked, setClinicUnlocked] = useState(false);
   const [clinicError, setClinicError] = useState("");
+  const [expandedUpdatesVisitId, setExpandedUpdatesVisitId] = useState<string | null>(null);
   const submittingVisitRef = useRef(false);
   const submittingReferralRef = useRef(false);
   const clinicLoadingRef = useRef(false);
@@ -248,6 +249,12 @@ export default function Home() {
   const [visits, setVisits] = useState<Visit[]>([]);
   const [searchResults, setSearchResults] = useState<Visit[]>([]);
   const selectedVisit = visits.find((v) => v.id === selectedVisitId) || null;
+  const selectedUpdates = selectedVisit?.updates || [];
+  const latestOwnerUpdate = selectedUpdates[selectedUpdates.length - 1];
+  const previousOwnerUpdates = selectedUpdates.slice(0, -1).reverse();
+  const showPreviousUpdates = Boolean(
+    selectedVisitId && expandedUpdatesVisitId === selectedVisitId
+  );
   const activeVisits = visits.filter((visit) => visit.status !== "Closed");
   const closedVisits = visits.filter((visit) => visit.status === "Closed");
   const queueVisits = activeVisits
@@ -1935,12 +1942,39 @@ export default function Home() {
                 <div style={styles.liveUpdateBody}>
                   <div>
                     <h3 style={styles.liveUpdateTitle}>
-                      {selectedVisit.updates[selectedVisit.updates.length - 1]?.message ||
+                      {latestOwnerUpdate?.message ||
                         `${selectedVisit.petName}'s visit request has been received.`}
                     </h3>
                   </div>
                   <img src={getPetPhoto(selectedVisit)} alt={selectedVisit.petName} style={styles.petAvatar} />
                 </div>
+                {previousOwnerUpdates.length > 0 && (
+                  <div style={styles.previousUpdatesPanel}>
+                    <button
+                      type="button"
+                      style={styles.previousUpdatesButton}
+                      onClick={() =>
+                        setExpandedUpdatesVisitId((current) =>
+                          current === selectedVisit.id ? null : selectedVisit.id
+                        )
+                      }
+                    >
+                      {showPreviousUpdates
+                        ? "Hide previous updates"
+                        : `Show previous updates (${previousOwnerUpdates.length})`}
+                    </button>
+
+                    {showPreviousUpdates && (
+                      <div style={styles.previousUpdatesList}>
+                        {previousOwnerUpdates.map((update, index) => (
+                          <div key={`${update.message}-${index}`} style={styles.previousUpdateItem}>
+                            {update.message}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div style={styles.statusHeader}>
@@ -2119,20 +2153,8 @@ export default function Home() {
 )}
               <div style={styles.ownerActionCard}>
                 <h3 style={styles.sectionTitle}>What you can do</h3>
-                <button style={styles.ownerMenuButton}>View All Updates <span>&gt;</span></button>
                 <button style={styles.ownerMenuButton}>Clinic Information <span>&gt;</span></button>
                 <button style={styles.ownerMenuButton}>Contact the Clinic <span>&gt;</span></button>
-              </div>
-              <div style={styles.timeline}>
-                {selectedVisit.updates.map((update, index) => (
-                  <div key={index} style={styles.timelineItem}>
-                    <div style={styles.timelineDot}>OK</div>
-                    <div style={styles.timelineContent}>
-                      <p style={styles.timelineMessage}>{update.message}</p>
-                      <small>{update.time}</small>
-                    </div>
-                  </div>
-                ))}
               </div>
 
               <div style={styles.noticeBox}>
@@ -3174,6 +3196,40 @@ liveUpdateTitle: {
   fontSize: 14,
   lineHeight: 1.3,
   margin: 0,
+},
+
+previousUpdatesPanel: {
+  borderTop: "1px solid #eef3f4",
+  marginTop: 14,
+  paddingTop: 12,
+},
+
+previousUpdatesButton: {
+  width: "100%",
+  background: "#f8fbff",
+  border: "1px solid #dcefeb",
+  color: "#087f78",
+  borderRadius: 8,
+  padding: "10px 12px",
+  cursor: "pointer",
+  fontSize: 13,
+  fontWeight: 800,
+},
+
+previousUpdatesList: {
+  display: "grid",
+  gap: 8,
+  marginTop: 10,
+},
+
+previousUpdateItem: {
+  background: "#f8fbff",
+  border: "1px solid #e1ecec",
+  borderRadius: 8,
+  padding: 10,
+  color: "#52606d",
+  fontSize: 13,
+  lineHeight: 1.35,
 },
 
 petAvatar: {
