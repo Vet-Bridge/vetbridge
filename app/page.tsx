@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { Session } from "@supabase/supabase-js";
+import { supabase } from "../lib/supabase";
 
 type Update = {
   message: string;
@@ -51,6 +53,14 @@ type Visit = {
 type DoctorOption = {
   name: string;
   profileUrl: string;
+};
+
+type StaffRole = "Front Desk" | "Technician" | "Veterinarian" | "Admin";
+
+type StaffProfile = {
+  email: string;
+  fullName: string;
+  role: StaffRole;
 };
 
 type CareHubForm = {
@@ -431,6 +441,13 @@ export default function Home() {
   const [clinicPin, setClinicPin] = useState("");
   const [clinicUnlocked, setClinicUnlocked] = useState(false);
   const [clinicError, setClinicError] = useState("");
+  const [authUserEmail, setAuthUserEmail] = useState("");
+  const [staffProfile, setStaffProfile] = useState<StaffProfile | null>(null);
+  const [authMessage, setAuthMessage] = useState("");
+  const [staffLoginEmail, setStaffLoginEmail] = useState("");
+  const [staffLoginPassword, setStaffLoginPassword] = useState("");
+  const [ownerMagicEmail, setOwnerMagicEmail] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
   const [expandedUpdatesVisitId, setExpandedUpdatesVisitId] = useState<string | null>(null);
   const [careHubOpen, setCareHubOpen] = useState(false);
   const [selectedCareHubCategoryId, setSelectedCareHubCategoryId] = useState<string | null>(null);
@@ -523,12 +540,15 @@ export default function Home() {
     );
 
   const apiRequest = async <T,>(payload: Record<string, unknown>): Promise<T> => {
+    const { data } = await supabase.auth.getSession();
+    const authToken = data.session?.access_token;
+
     const response = await fetch("/api/mypawlink", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(authToken ? { ...payload, authToken } : payload),
     });
 
     if (!response.ok) {
@@ -539,12 +559,63 @@ export default function Home() {
     return response.json() as Promise<T>;
   };
 
+  const syncStaffProfile = async (session: Session | null) => {
+    setAuthUserEmail(session?.user.email || "");
+
+    if (!session) {
+      setStaffProfile(null);
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/mypawlink", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "getStaffProfile",
+          authToken: session.access_token,
+        }),
+      });
+      if (!response.ok) throw new Error("Unable to load staff profile.");
+
+      const result = (await response.json()) as { staffProfile: StaffProfile | null };
+      setStaffProfile(result.staffProfile);
+    } catch {
+      setStaffProfile(null);
+    }
+  };
+
   useEffect(() => {
     loadVisits();
   }, []);
 
+  useEffect(() => {
+    let active = true;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (!active) return;
+      syncStaffProfile(data.session);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!active) return;
+      syncStaffProfile(session);
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
   async function loadVisits(pin = clinicPin) {
-    if (!pin || clinicLoadingRef.current) return;
+    const { data } = await supabase.auth.getSession();
+    if (!pin && !data.session?.access_token) return;
+    if (clinicLoadingRef.current) return;
 
     clinicLoadingRef.current = true;
     setClinicLoading(true);
@@ -565,6 +636,62 @@ export default function Home() {
       setClinicLoading(false);
     }
   }
+
+  const signInClinicStaff = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setAuthLoading(true);
+    setAuthMessage("");
+    setClinicError("");
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: staffLoginEmail.trim(),
+      password: staffLoginPassword,
+    });
+
+    if (error) {
+      setAuthLoading(false);
+      setAuthMessage(error.message);
+      return;
+    }
+
+    await syncStaffProfile(data.session);
+    setAuthMessage("Clinic staff signed in.");
+    setAuthLoading(false);
+    await loadVisits();
+  };
+
+  const sendOwnerMagicLink = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setAuthLoading(true);
+    setAuthMessage("");
+
+    const { error } = await supabase.auth.signInWithOtp({
+      email: ownerMagicEmail.trim(),
+      options: {
+        emailRedirectTo: window.location.origin,
+      },
+    });
+
+    setAuthLoading(false);
+
+    if (error) {
+      setAuthMessage(error.message);
+      return;
+    }
+
+    setAuthMessage("Magic link sent. Please check your email to continue.");
+  };
+
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    setAuthUserEmail("");
+    setStaffProfile(null);
+    setClinicUnlocked(false);
+    setVisits([]);
+    setClinicPin("");
+    setAuthMessage("Signed out.");
+  };
+
   const getOwnerName = (visit: Visit) => `${visit.ownerFirstName} ${visit.ownerLastName}`;
 
   const getSpecies = (visit: Visit) =>
@@ -1590,6 +1717,35 @@ export default function Home() {
       Enter your email or phone number to find your pet.
     </p>
 
+    <div style={styles.authPanel}>
+      <strong>Secure owner access</strong>
+      <p style={styles.authHelpText}>
+        Send yourself a magic link for a secure owner session. Visit-specific links come next in Phase 3.
+      </p>
+      <form style={styles.authInlineForm} onSubmit={sendOwnerMagicLink}>
+        <input
+          style={styles.input}
+          type="email"
+          value={ownerMagicEmail}
+          onChange={(event) => setOwnerMagicEmail(event.target.value)}
+          placeholder="Owner email"
+          required
+        />
+        <button
+          style={{
+            ...styles.secondaryButton,
+            ...(authLoading ? styles.disabledButton : {}),
+          }}
+          type="submit"
+          disabled={authLoading}
+        >
+          Send Magic Link
+        </button>
+      </form>
+      {authUserEmail && <p style={styles.authSignedInText}>Signed in as {authUserEmail}</p>}
+      {authMessage && <div style={styles.authMessage}>{authMessage}</div>}
+    </div>
+
     <form
       style={styles.form}
       onSubmit={async (e) => {
@@ -1707,7 +1863,40 @@ export default function Home() {
               {!clinicUnlocked ? (
                 <div style={styles.clinicLoginCard}>
                   <h2 style={styles.title}>Clinic Dashboard</h2>
-                  <p style={styles.text}>Enter the clinic PIN to view requests and send updates.</p>
+                  <p style={styles.text}>Sign in with your clinic staff account to view requests and send updates.</p>
+                  <form style={styles.authForm} onSubmit={signInClinicStaff}>
+                    <input
+                      style={styles.input}
+                      type="email"
+                      value={staffLoginEmail}
+                      onChange={(event) => setStaffLoginEmail(event.target.value)}
+                      placeholder="Staff email"
+                      required
+                    />
+                    <input
+                      style={styles.input}
+                      type="password"
+                      value={staffLoginPassword}
+                      onChange={(event) => setStaffLoginPassword(event.target.value)}
+                      placeholder="Password"
+                      required
+                    />
+                    <button
+                      style={{
+                        ...styles.primaryButton,
+                        ...(authLoading ? styles.disabledButton : {}),
+                      }}
+                      type="submit"
+                      disabled={authLoading}
+                    >
+                      {authLoading ? "Signing in..." : "Sign In as Clinic Staff"}
+                    </button>
+                  </form>
+
+                  <div style={styles.authDivider}>Demo fallback</div>
+                  <p style={styles.authHelpText}>
+                    Keep using the PIN while staff accounts are being created in Supabase.
+                  </p>
                   <form
                     style={styles.form}
                     onSubmit={(event) => {
@@ -1734,6 +1923,7 @@ export default function Home() {
                       {clinicLoading ? "Opening..." : "Open Dashboard"}
                     </button>
                   </form>
+                  {authMessage && <div style={styles.authMessage}>{authMessage}</div>}
                   {clinicError && <div style={styles.errorBox}>{clinicError}</div>}
                 </div>
               ) : (
@@ -1741,8 +1931,19 @@ export default function Home() {
               <div style={styles.dashboardHeader}>
                 <div>
                   <h2 style={styles.title}>Clinic Dashboard</h2>
-                  <p style={styles.text}>Review visit requests and send updates.</p>
+                  <p style={styles.text}>
+                    {staffProfile
+                      ? `${staffProfile.fullName || staffProfile.email} - ${staffProfile.role}`
+                      : authUserEmail
+                        ? `Signed in as ${authUserEmail}`
+                        : "Review visit requests and send updates."}
+                  </p>
                 </div>
+                {authUserEmail && (
+                  <button style={styles.staffSignOutButton} onClick={signOut}>
+                    Sign Out
+                  </button>
+                )}
                 <span style={styles.counter}>
   {activeVisits.length} Active / {closedVisits.length} Closed
 </span>
@@ -3502,6 +3703,68 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderRadius: 8,
     padding: 22,
     boxShadow: "0 8px 20px rgba(41, 64, 83, 0.06)",
+  },
+  authPanel: {
+    background: "#f8fbff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    padding: 14,
+    marginBottom: 18,
+    display: "grid",
+    gap: 10,
+  },
+  authForm: {
+    display: "grid",
+    gridTemplateColumns: "1fr",
+    gap: 12,
+    maxWidth: 780,
+    marginBottom: 14,
+  },
+  authInlineForm: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))",
+    gap: 10,
+  },
+  authHelpText: {
+    color: "#64717d",
+    fontSize: 13,
+    lineHeight: 1.4,
+    margin: 0,
+  },
+  authMessage: {
+    background: "#f0fbf8",
+    border: "1px solid #bfe9e0",
+    color: "#087f78",
+    borderRadius: 8,
+    padding: "9px 10px",
+    fontSize: 13,
+    fontWeight: 800,
+  },
+  authSignedInText: {
+    color: "#087f78",
+    fontSize: 13,
+    fontWeight: 800,
+    margin: 0,
+  },
+  authDivider: {
+    color: "#64717d",
+    fontSize: 12,
+    fontWeight: 900,
+    textTransform: "uppercase",
+    letterSpacing: 0,
+    borderTop: "1px solid #e1ecec",
+    paddingTop: 14,
+    marginTop: 2,
+  },
+  staffSignOutButton: {
+    background: "#ffffff",
+    border: "1px solid #dcefeb",
+    color: "#087f78",
+    borderRadius: 8,
+    padding: "9px 12px",
+    cursor: "pointer",
+    fontSize: 13,
+    fontWeight: 900,
   },
   resultCard: {
   border: "1px solid #dcecec",

@@ -9,6 +9,14 @@ type Update = {
   time: string;
 };
 
+type StaffRole = "Front Desk" | "Technician" | "Veterinarian" | "Admin";
+
+type StaffProfile = {
+  email: string;
+  fullName: string;
+  role: StaffRole;
+};
+
 type RequestBody = Record<string, unknown>;
 type DbRecord = Record<string, unknown>;
 
@@ -58,6 +66,7 @@ const arrayValue = (value: unknown): DbRecord[] => {
 };
 
 const normalizePhone = (phone: string) => phone.replace(/\D/g, "");
+const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
 const getPetPhotoFromNotes = (notes: string) => {
   const match = notes.match(/\n?\[\[MPL_PET_PHOTO\]\]([\s\S]*?)\[\[\/MPL_PET_PHOTO\]\]/);
@@ -110,22 +119,106 @@ const mapVisit = (visit: DbRecord) => {
   };
 };
 
-const requireClinicPin = (body: RequestBody) => {
+const staffRoles: StaffRole[] = ["Front Desk", "Technician", "Veterinarian", "Admin"];
+
+const getStaffProfileFromSession = async (body: RequestBody) => {
+  const authToken = stringValue(body.authToken);
+
+  if (!authToken) {
+    return { allowed: false, profile: null as StaffProfile | null, reason: "No staff session." };
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data: userData, error: userError } = await supabase.auth.getUser(authToken);
+  const user = userData.user;
+
+  if (userError || !user?.email) {
+    return {
+      allowed: false,
+      profile: null as StaffProfile | null,
+      reason: "Invalid staff session.",
+    };
+  }
+
+  const email = normalizeEmail(user.email);
+  const allowedEmails = (process.env.CLINIC_STAFF_EMAILS || "")
+    .split(",")
+    .map((item) => normalizeEmail(item))
+    .filter(Boolean);
+
+  const fallbackProfile: StaffProfile | null = allowedEmails.includes(email)
+    ? {
+        email,
+        fullName: user.user_metadata?.full_name || email,
+        role: "Admin",
+      }
+    : null;
+
+  const { data: profileData, error: profileError } = await supabase
+    .from("clinic_staff_profiles")
+    .select("email, full_name, role, is_active")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (profileError) {
+    return {
+      allowed: Boolean(fallbackProfile),
+      profile: fallbackProfile,
+      reason: fallbackProfile ? "" : "Staff profile is not configured.",
+    };
+  }
+
+  const profile = (profileData || {}) as DbRecord;
+  const roleValue = stringValue(profile.role);
+  const role = staffRoles.includes(roleValue as StaffRole)
+    ? (roleValue as StaffRole)
+    : "Front Desk";
+  const isActive = profile.is_active !== false;
+
+  if (profileData && isActive) {
+    return {
+      allowed: true,
+      profile: {
+        email: normalizeEmail(stringValue(profile.email, email)),
+        fullName: stringValue(profile.full_name, email),
+        role,
+      },
+      reason: "",
+    };
+  }
+
+  return {
+    allowed: Boolean(fallbackProfile),
+    profile: fallbackProfile,
+    reason: fallbackProfile ? "" : "This staff account is not active.",
+  };
+};
+
+const requireClinicAccess = async (body: RequestBody) => {
   const configuredPin = process.env.CLINIC_DASHBOARD_PIN;
   const providedPin = stringValue(body.clinicPin);
 
-  if (!configuredPin) {
+  if (configuredPin && providedPin === configuredPin) {
+    return null;
+  }
+
+  const staffAccess = await getStaffProfileFromSession(body);
+
+  if (staffAccess.allowed) {
+    return null;
+  }
+
+  if (!configuredPin && !stringValue(body.authToken)) {
     return NextResponse.json(
-      { error: "Clinic PIN is not configured on the server." },
+      { error: "Clinic authentication is not configured on the server." },
       { status: 500 }
     );
   }
 
-  if (providedPin !== configuredPin) {
-    return NextResponse.json({ error: "Invalid clinic PIN." }, { status: 401 });
-  }
-
-  return null;
+  return NextResponse.json(
+    { error: staffAccess.reason || "Please sign in as clinic staff." },
+    { status: 401 }
+  );
 };
 
 const fetchVisitById = async (visitId: string) => {
@@ -265,9 +358,14 @@ export async function POST(request: Request) {
     const action = stringValue(body.action);
     const supabase = getSupabaseAdmin();
 
+    if (action === "getStaffProfile") {
+      const staffAccess = await getStaffProfileFromSession(body);
+      return NextResponse.json({ staffProfile: staffAccess.profile });
+    }
+
     if (action === "loadVisits") {
-      const pinError = requireClinicPin(body);
-      if (pinError) return pinError;
+      const accessError = await requireClinicAccess(body);
+      if (accessError) return accessError;
 
       const { data, error } = await supabase
         .from("visits")
@@ -345,8 +443,8 @@ export async function POST(request: Request) {
     }
 
     if (action === "sendUpdate") {
-      const pinError = requireClinicPin(body);
-      if (pinError) return pinError;
+      const accessError = await requireClinicAccess(body);
+      if (accessError) return accessError;
 
       const visit = await addVisitUpdate({
         visitId: stringValue(body.visitId),
@@ -358,8 +456,8 @@ export async function POST(request: Request) {
     }
 
     if (action === "saveClinicNotes") {
-      const pinError = requireClinicPin(body);
-      if (pinError) return pinError;
+      const accessError = await requireClinicAccess(body);
+      if (accessError) return accessError;
 
       const { error } = await supabase
         .from("visits")
@@ -371,8 +469,8 @@ export async function POST(request: Request) {
     }
 
     if (action === "assignDoctor") {
-      const pinError = requireClinicPin(body);
-      if (pinError) return pinError;
+      const accessError = await requireClinicAccess(body);
+      if (accessError) return accessError;
 
       const visitId = stringValue(body.visitId);
       const message = stringValue(body.message);
@@ -395,8 +493,8 @@ export async function POST(request: Request) {
     }
 
     if (action === "sendForm") {
-      const pinError = requireClinicPin(body);
-      if (pinError) return pinError;
+      const accessError = await requireClinicAccess(body);
+      if (accessError) return accessError;
 
       const visitId = stringValue(body.visitId);
       const { error } = await supabase.from("forms").insert([
