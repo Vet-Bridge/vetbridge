@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "../lib/supabase";
 
 type Update = {
   message: string;
@@ -170,113 +169,6 @@ const resizePetPhoto = (file: File) =>
     reader.readAsDataURL(file);
   });
 
-type SupabaseVisit = {
-  id: string;
-  created_at: string;
-  pet_name: string;
-  species: string;
-  other_species: string | null;
-  owner_first_name: string;
-  owner_last_name: string;
-  phone: string;
-  reason: string;
-  visit_type: string;
-  referral_name: string | null;
-  been_here_before: string;
-  clinic_notes: string | null;
-  status: string;
-  updates: Update[];
-
-  breed: string | null;
-consent_form_type: string | null;
-consent_signed_name: string | null;
-consent_signed_at: string | null;
-estimate_items: EstimateItem[] | null;
-estimate_total: number | null;
-estimate_status: string | null;
-workflow_step: string | null;
-forms?: VisitForm[];
-};
-
-type LoadedVisitUpdate = {
-  message: string;
-  created_at: string;
-};
-
-type LoadedVisit = {
-  id: string;
-  created_at: string;
-  pet_name: string | null;
-  species: string | null;
-  other_species: string | null;
-  owner_first_name: string | null;
-  owner_last_name: string | null;
-  phone: string | null;
-  reason: string | null;
-  visit_type: string | null;
-  referral_name: string | null;
-  been_here_before: string | null;
-  clinic_notes: string | null;
-  status: string | null;
-  updates: Update[] | null;
-  breed: string | null;
-  consent_form_type: string | null;
-  consent_signed_name: string | null;
-  consent_signed_at: string | null;
-  estimate_items: EstimateItem[] | null;
-  estimate_total: number | null;
-  estimate_status: string | null;
-  workflow_step: string | null;
-  owners: {
-    first_name: string | null;
-    last_name: string | null;
-    phone: string | null;
-    email: string | null;
-  } | null;
-  pets: {
-    pet_name: string | null;
-    species: string | null;
-    other_species: string | null;
-    breed: string | null;
-  } | null;
-  visit_updates: LoadedVisitUpdate[] | null;
-  forms: VisitForm[] | null;
-};
-
-type OwnerSearchResult = {
-  id: string;
-  created_at: string;
-  reason: string | null;
-  visit_type: string | null;
-  referral_name: string | null;
-  been_here_before: string | null;
-  clinic_notes: string | null;
-  status: string | null;
-  updates: Update[] | null;
-  owners: {
-    first_name: string | null;
-    last_name: string | null;
-    phone: string | null;
-    email: string | null;
-  } | {
-    first_name: string | null;
-    last_name: string | null;
-    phone: string | null;
-    email: string | null;
-  }[] | null;
-  pets: {
-    pet_name: string | null;
-    species: string | null;
-    other_species: string | null;
-    breed: string | null;
-  } | {
-    pet_name: string | null;
-    species: string | null;
-    other_species: string | null;
-    breed: string | null;
-  }[] | null;
-};
-
 export default function Home() {
   const [view, setView] = useState<
   "home" | "newPet" | "existingPet" | "referral" | "ownerUpdates" | "clinic" | "status"
@@ -293,6 +185,9 @@ export default function Home() {
   const [petMediaName, setPetMediaName] = useState("");
   const [petMediaType, setPetMediaType] = useState("");
   const [referralDocumentNames, setReferralDocumentNames] = useState<string[]>([]);
+  const [clinicPin, setClinicPin] = useState("");
+  const [clinicUnlocked, setClinicUnlocked] = useState(false);
+  const [clinicError, setClinicError] = useState("");
   const dogBreeds = [
     "Labrador Retriever",
     "German Shepherd",
@@ -354,123 +249,43 @@ export default function Home() {
         new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
     );
 
+  const apiRequest = async <T,>(payload: Record<string, unknown>): Promise<T> => {
+    const response = await fetch("/api/mypawlink", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const result = (await response.json().catch(() => null)) as { error?: string } | null;
+      throw new Error(result?.error || "Request failed.");
+    }
+
+    return response.json() as Promise<T>;
+  };
+
   useEffect(() => {
     loadVisits();
   }, []);
 
-  const convertFromSupabase = (visit: SupabaseVisit): Visit => ({
-  id: visit.id,
-  createdAt: visit.created_at,
-  petName: visit.pet_name,
-  species: visit.species,
-  otherSpecies: visit.other_species || "",
-  ownerFirstName: visit.owner_first_name,
-  ownerLastName: visit.owner_last_name,
-  phone: visit.phone,
-  reason: visit.reason,
-  visitType: visit.visit_type,
-  referralName: visit.referral_name || "",
-  beenHereBefore: visit.been_here_before,
-  clinicNotes: visit.clinic_notes || "",
-  status: visit.status,
-  updates: visit.updates || [],
+  async function loadVisits(pin = clinicPin) {
+    if (!pin) return;
 
-  // new fields
-  breed: visit.breed || "",
-  consentFormType: visit.consent_form_type || "",
-  consentSignedName: visit.consent_signed_name || "",
-  consentSignedAt: visit.consent_signed_at || "",
-  estimateItems: visit.estimate_items || [],
-  estimateTotal: visit.estimate_total || 0,
-  estimateStatus: visit.estimate_status || "",
-  workflowStep: visit.workflow_step || "Request submitted",
-  forms: visit.forms || [],
-  petPhotoUrl: getPetPhotoFromNotes(visit.clinic_notes || ""),
-});
-
-  async function loadVisits() {
-  const { data, error } = await supabase
-    .from("visits")
-    .select(`
-      *,
-      owners!visits_owner_id_fkey (
-        first_name,
-        last_name,
-        phone,
-        email
-      ),
-      pets!visits_pet_id_fkey (
-        pet_name,
-        species,
-        other_species,
-        breed
-      ),
-      visit_updates (
-        message,
-        status,
-        created_at
-      ), 
-      forms (
-        id,
-        form_type,
-        form_body,
-        form_status,
-        signed_name,
-        signed_at,
-        decline_reason,
-        declined_at
-      )
-    `)
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    console.error("Error loading visits:", error);
-    return;
+    try {
+      const result = await apiRequest<{ visits: Visit[] }>({
+        action: "loadVisits",
+        clinicPin: pin,
+      });
+      setVisits(result.visits);
+      setClinicError("");
+      setClinicUnlocked(true);
+    } catch (error) {
+      setClinicUnlocked(false);
+      setClinicError(error instanceof Error ? error.message : "Unable to load clinic visits.");
+    }
   }
-
-  const formattedVisits = ((data || []) as LoadedVisit[]).map((visit) => {
-    return {
-      id: visit.id,
-      createdAt: visit.created_at,
-
-      petName: visit.pets?.pet_name || visit.pet_name || "Unknown",
-      species: visit.pets?.species || visit.species || "",
-      otherSpecies: visit.pets?.other_species || visit.other_species || "",
-      breed: visit.pets?.breed || visit.breed || "",
-
-      ownerFirstName: visit.owners?.first_name || visit.owner_first_name || "",
-      ownerLastName: visit.owners?.last_name || visit.owner_last_name || "",
-      phone: visit.owners?.phone || visit.phone || "",
-
-      reason: visit.reason || "",
-      visitType: visit.visit_type || "",
-      referralName: visit.referral_name || "",
-      beenHereBefore: visit.been_here_before || "",
-      clinicNotes: visit.clinic_notes || "",
-      status: visit.status || "Request submitted",
-
-      updates:
-        (visit.visit_updates ?? []).length > 0
-          ? (visit.visit_updates ?? []).map((update) => ({
-              message: update.message,
-              time: new Date(update.created_at).toLocaleTimeString(),
-            }))
-          : visit.updates || [],
-
-      consentFormType: visit.consent_form_type || "",
-      consentSignedName: visit.consent_signed_name || "",
-      consentSignedAt: visit.consent_signed_at || "",
-      estimateItems: visit.estimate_items || [],
-      estimateTotal: visit.estimate_total || 0,
-      estimateStatus: visit.estimate_status || "",
-      workflowStep: visit.workflow_step || "",
-      forms: visit.forms || [],
-      petPhotoUrl: getPetPhotoFromNotes(visit.clinic_notes || "") || petPhotoByVisitId[visit.id] || "",
-    };
-  });
-
-  setVisits(formattedVisits);
-}
   const getOwnerName = (visit: Visit) => `${visit.ownerFirstName} ${visit.ownerLastName}`;
 
   const getSpecies = (visit: Visit) =>
@@ -571,51 +386,24 @@ export default function Home() {
     status: "Request submitted",
   };
 
-  const { data: owner, error: ownerError } = await supabase
-    .from("owners")
-    .insert([
-      {
+  let visit: Visit;
+
+  try {
+    const result = await apiRequest<{ visit: Visit }>({
+      action: "createVisit",
+      owner: {
         first_name: String(form.get("ownerFirstName")),
         last_name: String(form.get("ownerLastName")),
         phone: String(form.get("phone")),
         email: String(form.get("email")),
       },
-    ])
-    .select()
-    .single();
-
-  if (ownerError) {
-    console.error(ownerError);
-    alert("Error creating owner");
-    return;
-  }
-
-  const { data: pet, error: petError } = await supabase
-    .from("pets")
-    .insert([
-      {
-        owner_id: owner.id,
+      pet: {
         pet_name: String(form.get("petName")),
         species: String(form.get("species")),
         other_species: String(form.get("otherSpecies") || ""),
         breed: String(form.get("breed") || ""),
       },
-    ])
-    .select()
-    .single();
-
-  if (petError) {
-    console.error(petError);
-    alert("Error creating pet");
-    return;
-  }
-
-  const { data: visit, error: visitError } = await supabase
-    .from("visits")
-    .insert([
-      {
-        owner_id: owner.id,
-        pet_id: pet.id,
+      visit: {
         visit_type: String(form.get("visitType")),
         referral_name: String(form.get("referralName") || ""),
         been_here_before: String(form.get("beenHereBefore")),
@@ -623,25 +411,15 @@ export default function Home() {
         clinic_notes: petPhotoPreview ? withPetPhotoMetadata("", petPhotoPreview) : "",
         status: "Request submitted",
       },
-    ])
-    .select()
-    .single();
-
-  if (visitError) {
-    console.error(visitError);
-    alert("Error creating visit");
+      firstUpdateMessage: firstUpdate.message,
+      firstUpdateStatus: firstUpdate.status,
+    });
+    visit = result.visit;
+  } catch (error) {
+    console.error(error);
+    alert(error instanceof Error ? error.message : "Error creating visit");
     return;
   }
-
-  await supabase.from("visit_updates").insert([
-    {
-      visit_id: visit.id,
-      message: firstUpdate.message,
-      status: firstUpdate.status,
-    },
-  ]);
-
-  await loadVisits();
 
   if (petPhotoPreview) {
     setPetPhotoByVisitId((current) => ({
@@ -650,6 +428,7 @@ export default function Home() {
     }));
   }
 
+  setVisits((current) => [visit, ...current.filter((item) => item.id !== visit.id)]);
   setSelectedVisitId(visit.id);
   setSelectedSpecies("");
   setSelectedVisitType("");
@@ -698,152 +477,63 @@ export default function Home() {
       `Time of transfer: ${transferTime || "Not provided"}`,
     ].join("\n");
 
-    const { data: owner, error: ownerError } = await supabase
-      .from("owners")
-      .insert([
-        {
+    let visit: Visit;
+
+    try {
+      const result = await apiRequest<{ visit: Visit }>({
+        action: "createReferral",
+        owner: {
           first_name: ownerFirstName || "Referral",
           last_name: ownerLastName || clinicName,
           phone: ownerPhone || doctorPhone,
           email: ownerEmail || doctorEmail,
         },
-      ])
-      .select()
-      .single();
-
-    if (ownerError) {
-      console.error(ownerError);
-      alert("Error creating referral contact");
-      return;
-    }
-
-    const { data: pet, error: petError } = await supabase
-      .from("pets")
-      .insert([
-        {
-          owner_id: owner.id,
+        pet: {
           pet_name: String(form.get("petName")),
           species: String(form.get("species")),
           other_species: String(form.get("otherSpecies") || ""),
           breed: String(form.get("breed") || ""),
         },
-      ])
-      .select()
-      .single();
-
-    if (petError) {
-      console.error(petError);
-      alert("Error creating referral pet");
-      return;
-    }
-
-    const { data: visit, error: visitError } = await supabase
-      .from("visits")
-      .insert([
-        {
-          owner_id: owner.id,
-          pet_id: pet.id,
+        visit: {
           visit_type: "Vet referral",
           referral_name: referralName,
           been_here_before: "Unknown",
           reason: referralSummary,
           status: "Referral received",
         },
-      ])
-      .select()
-      .single();
-
-    if (visitError) {
-      console.error(visitError);
-      alert("Error creating referral");
+        firstUpdateMessage: `Referral intake submitted by ${clinicName}. The emergency team will review the transfer information.`,
+        firstUpdateStatus: "Referral received",
+      });
+      visit = result.visit;
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? error.message : "Error creating referral");
       return;
     }
 
-    await supabase.from("visit_updates").insert([
-      {
-        visit_id: visit.id,
-        message: `Referral intake submitted by ${clinicName}. The emergency team will review the transfer information.`,
-        status: "Referral received",
-      },
-    ]);
-
-    await loadVisits();
+    setVisits((current) => [visit, ...current.filter((item) => item.id !== visit.id)]);
     setSelectedReferralSpecies("");
     setReferralDocumentNames([]);
     alert("Referral intake sent to the clinic dashboard.");
-    setView("clinic");
-  };
-
-  const notifyOwnerByText = async (visit: Visit, message: string) => {
-    if (!visit.phone) return;
-
-    try {
-      const response = await fetch("/api/send-sms", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          phone: visit.phone,
-          petName: visit.petName,
-          message,
-          link: window.location.origin,
-        }),
-      });
-
-      if (!response.ok) {
-        console.error("SMS notification failed:", await response.text());
-      }
-    } catch (error) {
-      console.error("SMS notification error:", error);
-    }
+    setView(clinicUnlocked ? "clinic" : "home");
   };
 
   const sendUpdate = async (visitId: string, status: string, message: string) => {
-    const visit = visits.find((v) => v.id === visitId);
-    if (!visit) return;
-
-    const updatedUpdates = [
-      ...visit.updates,
-      {
-        message,
-        time: new Date().toLocaleTimeString(),
-      },
-    ];
-
-    const { error } = await supabase
-      .from("visits")
-      .update({
+    try {
+      const result = await apiRequest<{ visit: Visit }>({
+        action: "sendUpdate",
+        visitId,
         status,
-        updates: updatedUpdates,
-      })
-      .eq("id", visitId);
-
-    if (error) {
+        message,
+        clinicPin,
+      });
+      setVisits((current) =>
+        current.map((visit) => (visit.id === visitId ? result.visit : visit))
+      );
+    } catch (error) {
       alert("There was an error updating the visit.");
-      console.error("Error updating visit:", error);
-      return;
+      console.error(error);
     }
-
-    const { error: updateError } = await supabase.from("visit_updates").insert([
-      {
-        visit_id: visitId,
-        message,
-        status,
-      },
-    ]);
-
-    if (updateError) {
-      console.error("Error saving visit update:", updateError);
-    }
-
-    setVisits((current) =>
-      current.map((v) =>
-        v.id === visitId ? { ...v, status, updates: updatedUpdates } : v
-      )
-    );
-
-    notifyOwnerByText(visit, message);
   };
 
   const saveClinicNotes = async (visitId: string, notes: string) => {
@@ -862,12 +552,17 @@ export default function Home() {
       )
     );
 
-    const { error } = await supabase
-      .from("visits")
-      .update({ clinic_notes: notesToSave })
-      .eq("id", visitId);
-
-    if (error) {
+    try {
+      const result = await apiRequest<{ visit: Visit }>({
+        action: "saveClinicNotes",
+        visitId,
+        clinicNotes: notesToSave,
+        clinicPin,
+      });
+      setVisits((current) =>
+        current.map((visit) => (visit.id === visitId ? result.visit : visit))
+      );
+    } catch (error) {
       console.error("Error saving clinic notes:", error);
     }
   };
@@ -878,56 +573,23 @@ export default function Home() {
     if (!doctor || !visit) return;
 
     const message = `Dr. ${doctor.name} is now assigned to ${visit.petName}'s case and will review the plan with you shortly.`;
-    const updatedUpdates = [
-      ...visit.updates,
-      {
-        message,
-        time: new Date().toLocaleTimeString(),
-      },
-    ];
     const updatedNotes = withDoctorMetadata(visit.clinicNotes, doctor);
 
-    const { error } = await supabase
-      .from("visits")
-      .update({
-        clinic_notes: updatedNotes,
-        status: "Doctor assigned",
-        updates: updatedUpdates,
-      })
-      .eq("id", visitId);
-
-    if (error) {
+    try {
+      const result = await apiRequest<{ visit: Visit }>({
+        action: "assignDoctor",
+        visitId,
+        clinicNotes: updatedNotes,
+        message,
+        clinicPin,
+      });
+      setVisits((current) =>
+        current.map((item) => (item.id === visitId ? result.visit : item))
+      );
+    } catch (error) {
       alert("There was an error assigning the doctor.");
       console.error("Error assigning doctor:", error);
-      return;
     }
-
-    const { error: updateError } = await supabase.from("visit_updates").insert([
-      {
-        visit_id: visitId,
-        message,
-        status: "Doctor assigned",
-      },
-    ]);
-
-    if (updateError) {
-      console.error("Error saving doctor assignment update:", updateError);
-    }
-
-    setVisits((current) =>
-      current.map((item) =>
-        item.id === visitId
-          ? {
-              ...item,
-              clinicNotes: updatedNotes,
-              status: "Doctor assigned",
-              updates: updatedUpdates,
-            }
-          : item
-      )
-    );
-
-    notifyOwnerByText(visit, message);
   };
 
   const sendFormToVisit = async (
@@ -936,24 +598,24 @@ export default function Home() {
     formBody: string,
     updateMessage: string
   ) => {
-    const { error } = await supabase.from("forms").insert([
-      {
-        visit_id: visit.id,
-        form_type: formType,
-        form_body: formBody,
-        form_status: "Sent",
-      },
-    ]);
-
-    if (error) {
+    try {
+      const result = await apiRequest<{ visit: Visit }>({
+        action: "sendForm",
+        visitId: visit.id,
+        formType,
+        formBody,
+        status: visit.status,
+        message: updateMessage,
+        clinicPin,
+      });
+      setVisits((current) =>
+        current.map((item) => (item.id === visit.id ? result.visit : item))
+      );
+      alert(`${formType} sent to customer`);
+    } catch (error) {
       console.error(error);
       alert("Error sending form");
-      return;
     }
-
-    await sendUpdate(visit.id, visit.status, updateMessage);
-    alert(`${formType} sent to customer`);
-    loadVisits();
   };
 
   const sendCustomCareUpdate = (
@@ -1516,95 +1178,26 @@ export default function Home() {
           return;
         }
 
-        const { data, error } = await supabase
-          .from("visits")
-          .select(`
-            id,
-            created_at,
-            reason,
-            visit_type,
-            referral_name,
-            been_here_before,
-            clinic_notes,
-            status,
-            updates,
-            owners!visits_owner_id_fkey (
-              first_name,
-              last_name,
-              phone,
-              email
-            ),
-            pets!visits_pet_id_fkey (
-              pet_name,
-              species,
-              other_species,
-              breed
-            )
-          `)
-          .order("created_at", {
-          ascending: false,
-        });
+        try {
+          const result = await apiRequest<{ visits: Visit[] }>({
+            action: "searchVisits",
+            petName,
+            phone,
+            email,
+          });
+          setLoading(false);
 
-        setLoading(false);
+          if (result.visits.length === 0) {
+            setSearchError("We couldn't find your pet. Please check your details or register.");
+            return;
+          }
 
-        if (error) {
+          setSearchResults(result.visits);
+        } catch (error) {
+          setLoading(false);
           setSearchError("Something went wrong. Please try again.");
           console.error(error);
-          return;
         }
-
-        const matches = ((data || []) as unknown as OwnerSearchResult[]).filter((visit) => {
-          const owner = Array.isArray(visit.owners) ? visit.owners[0] : visit.owners;
-          const pet = Array.isArray(visit.pets) ? visit.pets[0] : visit.pets;
-          const ownerEmail = (owner?.email || "").toLowerCase();
-          const ownerPhone = owner?.phone || "";
-          const visitPetName = (pet?.pet_name || "").toLowerCase();
-
-          const emailMatches = email ? ownerEmail === email : true;
-          const phoneMatches = phone ? ownerPhone.replace(/\D/g, "") === phone.replace(/\D/g, "") : true;
-          const petMatches = petName ? visitPetName.includes(petName) : true;
-
-          return emailMatches && phoneMatches && petMatches;
-        });
-
-        if (matches.length === 0) {
-          setSearchError("We couldn't find your pet. Please check your details or register.");
-          return;
-        }
-
-        const visitsList = matches.map((visit) => {
-          const owner = Array.isArray(visit.owners) ? visit.owners[0] : visit.owners;
-          const pet = Array.isArray(visit.pets) ? visit.pets[0] : visit.pets;
-
-          return {
-          id: visit.id,
-          createdAt: visit.created_at,
-          petName: pet?.pet_name || "Unknown",
-          species: pet?.species || "",
-          otherSpecies: pet?.other_species || "",
-          breed: pet?.breed || "",
-          ownerFirstName: owner?.first_name || "",
-          ownerLastName: owner?.last_name || "",
-          phone: owner?.phone || "",
-          reason: visit.reason || "",
-          visitType: visit.visit_type || "",
-          referralName: visit.referral_name || "",
-          beenHereBefore: visit.been_here_before || "",
-          clinicNotes: visit.clinic_notes || "",
-          status: visit.status || "Request submitted",
-          updates: visit.updates || [],
-          consentFormType: "",
-          consentSignedName: "",
-          consentSignedAt: "",
-          estimateItems: [],
-          estimateTotal: 0,
-          estimateStatus: "",
-          workflowStep: "",
-          forms: [],
-          petPhotoUrl: getPetPhotoFromNotes(visit.clinic_notes || ""),
-        };
-        });
-        setSearchResults(visitsList);
       }}
     >
       <input
@@ -1671,6 +1264,33 @@ export default function Home() {
 )}
     {view === "clinic" && (
             <section>
+              {!clinicUnlocked ? (
+                <div style={styles.clinicLoginCard}>
+                  <h2 style={styles.title}>Clinic Dashboard</h2>
+                  <p style={styles.text}>Enter the clinic PIN to view requests and send updates.</p>
+                  <form
+                    style={styles.form}
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      loadVisits(clinicPin);
+                    }}
+                  >
+                    <input
+                      style={styles.input}
+                      type="password"
+                      value={clinicPin}
+                      onChange={(event) => setClinicPin(event.target.value)}
+                      placeholder="Clinic PIN"
+                      required
+                    />
+                    <button style={styles.primaryButton} type="submit">
+                      Open Dashboard
+                    </button>
+                  </form>
+                  {clinicError && <div style={styles.errorBox}>{clinicError}</div>}
+                </div>
+              ) : (
+                <>
               <div style={styles.dashboardHeader}>
                 <div>
                   <h2 style={styles.title}>Clinic Dashboard</h2>
@@ -2176,6 +1796,8 @@ export default function Home() {
                   </div>
                 ))}
               </div>
+                </>
+              )}
             </section>
           )}
 
@@ -2288,23 +1910,39 @@ export default function Home() {
 
                 if (!signedName) return;
 
-                const { error } = await supabase
-                  .from("forms")
-                  .update({
-                    form_status: "Signed",
-                    signed_name: signedName,
-                    signed_at: new Date().toISOString(),
-                  })
-                  .eq("id", form.id);
-
-                if (error) {
+                try {
+                  await apiRequest<{ ok: boolean }>({
+                    action: "respondForm",
+                    formId: form.id,
+                    formStatus: "Signed",
+                    signedName,
+                  });
+                  setVisits((current) =>
+                    current.map((visit) =>
+                      visit.id === selectedVisit.id
+                        ? {
+                            ...visit,
+                            forms: visit.forms.map((item) =>
+                              item.id === form.id
+                                ? {
+                                    ...item,
+                                    form_status: "Signed",
+                                    signed_name: signedName,
+                                    signed_at: new Date().toISOString(),
+                                  }
+                                : item
+                            ),
+                          }
+                        : visit
+                    )
+                  );
+                } catch (error) {
                   console.error(error);
                   alert("Error signing form");
                   return;
                 }
 
                 alert("Form signed successfully");
-                loadVisits();
               }}
             >
               Sign Form
@@ -2319,23 +1957,39 @@ export default function Home() {
 
                 if (!reason) return;
 
-                const { error } = await supabase
-                  .from("forms")
-                  .update({
-                    form_status: "Declined",
-                    decline_reason: reason,
-                    declined_at: new Date().toISOString(),
-                  })
-                  .eq("id", form.id);
-
-                if (error) {
+                try {
+                  await apiRequest<{ ok: boolean }>({
+                    action: "respondForm",
+                    formId: form.id,
+                    formStatus: "Declined",
+                    declineReason: reason,
+                  });
+                  setVisits((current) =>
+                    current.map((visit) =>
+                      visit.id === selectedVisit.id
+                        ? {
+                            ...visit,
+                            forms: visit.forms.map((item) =>
+                              item.id === form.id
+                                ? {
+                                    ...item,
+                                    form_status: "Declined",
+                                    decline_reason: reason,
+                                    declined_at: new Date().toISOString(),
+                                  }
+                                : item
+                            ),
+                          }
+                        : visit
+                    )
+                  );
+                } catch (error) {
                   console.error(error);
                   alert("Error declining form");
                   return;
                 }
 
                 alert("Form declined. The clinic has been notified.");
-                loadVisits();
               }}
             >
               Decline / Do Not Sign
@@ -3090,6 +2744,13 @@ const styles: { [key: string]: React.CSSProperties } = {
     border: "1px dashed #a7c9f7",
     borderRadius: 8,
     padding: 22,
+  },
+  clinicLoginCard: {
+    background: "#ffffff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    padding: 22,
+    boxShadow: "0 8px 20px rgba(41, 64, 83, 0.06)",
   },
   resultCard: {
   border: "1px solid #dcecec",
