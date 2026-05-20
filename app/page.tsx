@@ -2152,9 +2152,24 @@ export default function Home() {
   </div>
 )}
               <div style={styles.ownerActionCard}>
-                <h3 style={styles.sectionTitle}>What you can do</h3>
-                <button style={styles.ownerMenuButton}>Clinic Information <span>&gt;</span></button>
-                <button style={styles.ownerMenuButton}>Contact the Clinic <span>&gt;</span></button>
+                <h3 style={styles.sectionTitle}>VetBridge Care Hub</h3>
+                <button style={styles.careHubButton}>
+                  Open Care Hub <span>&gt;</span>
+                </button>
+                <div style={styles.careHubActionList}>
+                  {[
+                    "🐾 Admission Forms",
+                    "💳 Financial Approvals",
+                    "❤️ Emergency Decisions",
+                    "📋 Treatment Consents",
+                    "🩺 Procedure Authorizations",
+                    "🏠 Discharge Instructions",
+                  ].map((item) => (
+                    <div key={item} style={styles.careHubActionItem}>
+                      {item}
+                    </div>
+                  ))}
+                </div>
               </div>
 
               <div style={styles.noticeBox}>
@@ -3308,6 +3323,38 @@ ownerMenuButton: {
   cursor: "pointer",
   fontWeight: 800,
   fontSize: 15,
+},
+
+careHubButton: {
+  width: "100%",
+  minHeight: 48,
+  background: "linear-gradient(135deg, #13a89e, #0f766e)",
+  border: "none",
+  borderRadius: 8,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  padding: "12px 14px",
+  color: "#ffffff",
+  cursor: "pointer",
+  fontWeight: 900,
+  fontSize: 15,
+},
+
+careHubActionList: {
+  display: "grid",
+  gap: 8,
+  marginTop: 12,
+},
+
+careHubActionItem: {
+  background: "#f8fbff",
+  border: "1px solid #e1ecec",
+  borderRadius: 8,
+  padding: "10px 12px",
+  color: "#102a3a",
+  fontSize: 14,
+  fontWeight: 800,
 },
 
 bottomNav: {
