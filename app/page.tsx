@@ -1127,6 +1127,54 @@ export default function Home() {
 
       <section style={styles.mainGrid}>
         <div style={styles.panel}>
+          {view === "home" && (
+            <section style={styles.homeProductSections}>
+              <div style={styles.homeInfoSection}>
+                <h2 style={styles.homeSectionTitle}>Built for Emergency Veterinary Hospitals</h2>
+                <div style={styles.homeBenefitGrid}>
+                  {[
+                    "Reduce owner phone calls",
+                    "Speed up digital intake",
+                    "Collect signed consents",
+                    "Send real-time updates",
+                    "Improve client trust",
+                    "Streamline discharge communication",
+                  ].map((benefit) => (
+                    <div key={benefit} style={styles.homeBenefitCard}>
+                      <span style={styles.homeBenefitCheck}>OK</span>
+                      <strong>{benefit}</strong>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div style={styles.homeInfoSection}>
+                <h2 style={styles.homeSectionTitle}>How MyPawLink Works</h2>
+                <div style={styles.homeStepList}>
+                  {[
+                    "Start New Visit",
+                    "Clinic accepts and triages",
+                    "Receive live updates",
+                    "Review and sign forms",
+                    "Approve treatment estimates",
+                    "Receive discharge instructions",
+                  ].map((step, index) => (
+                    <div key={step} style={styles.homeStepCard}>
+                      <span style={styles.homeStepNumber}>{index + 1}</span>
+                      <strong>{step}</strong>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div style={styles.homeDisclaimer}>
+                MyPawLink does not replace emergency veterinary medical advice. If your pet is
+                experiencing a life-threatening emergency, contact your nearest emergency
+                veterinary hospital immediately.
+              </div>
+            </section>
+          )}
+
           {view === "newPet" && (
             <section>
               <h2 style={styles.title}>Pet Owner</h2>
@@ -3109,6 +3157,85 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderRadius: 8,
     padding: "clamp(16px, 4vw, 28px)",
     boxShadow: "0 15px 40px rgba(41, 64, 83, 0.1)",
+  },
+  homeProductSections: {
+    display: "grid",
+    gap: 20,
+  },
+  homeInfoSection: {
+    display: "grid",
+    gap: 14,
+  },
+  homeSectionTitle: {
+    color: "#102a3a",
+    fontSize: "clamp(22px, 5vw, 28px)",
+    lineHeight: 1.15,
+    margin: 0,
+    textAlign: "center",
+  },
+  homeBenefitGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 190px), 1fr))",
+    gap: 10,
+  },
+  homeBenefitCard: {
+    background: "#ffffff",
+    border: "1px solid #e1ecec",
+    borderRadius: 8,
+    padding: 14,
+    display: "grid",
+    gridTemplateColumns: "34px 1fr",
+    alignItems: "center",
+    gap: 10,
+    color: "#102a3a",
+    boxShadow: "0 8px 18px rgba(41, 64, 83, 0.05)",
+  },
+  homeBenefitCheck: {
+    width: 30,
+    height: 30,
+    borderRadius: "50%",
+    background: "#ecfdf3",
+    color: "#027a48",
+    display: "grid",
+    placeItems: "center",
+    fontSize: 10,
+    fontWeight: 900,
+  },
+  homeStepList: {
+    display: "grid",
+    gap: 10,
+  },
+  homeStepCard: {
+    background: "linear-gradient(135deg, #fbffff, #f2fbfa)",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    padding: 14,
+    display: "grid",
+    gridTemplateColumns: "38px 1fr",
+    alignItems: "center",
+    gap: 12,
+    color: "#102a3a",
+  },
+  homeStepNumber: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    background: "#087f78",
+    color: "#ffffff",
+    display: "grid",
+    placeItems: "center",
+    fontSize: 14,
+    fontWeight: 900,
+  },
+  homeDisclaimer: {
+    background: "#fff8f1",
+    border: "1px solid #fed7aa",
+    borderRadius: 8,
+    padding: 14,
+    color: "#9a3412",
+    fontSize: 13,
+    lineHeight: 1.45,
+    fontWeight: 700,
   },
   panelHeader: {
     display: "flex",
