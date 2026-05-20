@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { randomBytes } from "crypto";
 import { getSupabaseAdmin } from "../../../lib/supabase-admin";
 import { sendSmsNotification } from "../../../lib/sms";
 
@@ -65,8 +66,17 @@ const arrayValue = (value: unknown): DbRecord[] => {
   return value.filter((item): item is DbRecord => Boolean(item) && typeof item === "object");
 };
 
-const normalizePhone = (phone: string) => phone.replace(/\D/g, "");
 const normalizeEmail = (email: string) => email.trim().toLowerCase();
+
+const buildVisitAccessUrl = (token: string) => {
+  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://mypawlink.com").replace(
+    /\/$/,
+    ""
+  );
+  return `${siteUrl}/visit/${token}`;
+};
+
+const createVisitToken = () => randomBytes(18).toString("base64url");
 
 const getPetPhotoFromNotes = (notes: string) => {
   const match = notes.match(/\n?\[\[MPL_PET_PHOTO\]\]([\s\S]*?)\[\[\/MPL_PET_PHOTO\]\]/);
@@ -116,6 +126,64 @@ const mapVisit = (visit: DbRecord) => {
     workflowStep: stringValue(visit.workflow_step),
     forms: Array.isArray(visit.forms) ? visit.forms : [],
     petPhotoUrl: getPetPhotoFromNotes(clinicNotes),
+  };
+};
+
+const createVisitAccessToken = async ({
+  visitId,
+  ownerEmail,
+}: {
+  visitId: string;
+  ownerEmail?: string;
+}) => {
+  const supabase = getSupabaseAdmin();
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const token = createVisitToken();
+    const { data, error } = await supabase
+      .from("visit_access_tokens")
+      .insert([
+        {
+          visit_id: visitId,
+          token,
+          owner_email: ownerEmail || null,
+        },
+      ])
+      .select("token")
+      .single();
+
+    if (!error && data?.token) return String(data.token);
+    if (error && error.code !== "23505") throw error;
+  }
+
+  throw new Error("Unable to create visit access token.");
+};
+
+const ensureVisitAccessToken = async (visitId: string, ownerEmail?: string) => {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("visit_access_tokens")
+    .select("token")
+    .eq("visit_id", visitId)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (data?.token) return String(data.token);
+
+  return createVisitAccessToken({ visitId, ownerEmail });
+};
+
+const withVisitAccess = async (visit: DbRecord) => {
+  const mappedVisit = mapVisit(visit);
+  const owner = recordValue(visit.owners);
+  const token = await ensureVisitAccessToken(mappedVisit.id, stringValue(owner.email));
+
+  return {
+    ...mappedVisit,
+    accessToken: token,
+    accessUrl: buildVisitAccessUrl(token),
   };
 };
 
@@ -214,7 +282,7 @@ const fetchVisitById = async (visitId: string) => {
     .single();
 
   if (error) throw error;
-  return mapVisit(data as DbRecord);
+  return withVisitAccess(data as DbRecord);
 };
 
 const addVisitUpdate = async ({
@@ -357,7 +425,8 @@ export async function POST(request: Request) {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      return NextResponse.json({ visits: ((data || []) as DbRecord[]).map(mapVisit) });
+      const visits = await Promise.all(((data || []) as DbRecord[]).map(withVisitAccess));
+      return NextResponse.json({ visits });
     }
 
     if (action === "createVisit") {
@@ -389,41 +458,50 @@ export async function POST(request: Request) {
     }
 
     if (action === "searchVisits") {
-      const petName = stringValue(body.petName).trim().toLowerCase();
-      const phone = normalizePhone(stringValue(body.phone));
-      const email = stringValue(body.email).trim().toLowerCase();
+      return NextResponse.json(
+        { error: "Pet-name lookup has been replaced with secure visit access links." },
+        { status: 410 }
+      );
+    }
 
-      if (!petName && !phone && !email) {
+    if (action === "loadVisitByToken") {
+      const token = stringValue(body.token).trim();
+
+      if (!token) {
         return NextResponse.json(
-          { error: "Please enter a pet name, email, or phone number." },
+          { error: "Visit access code is required." },
           { status: 400 }
         );
       }
 
-      const { data, error } = await supabase
-        .from("visits")
-        .select(visitSelect)
-        .order("created_at", { ascending: false });
+      const { data: tokenRow, error: tokenError } = await supabase
+        .from("visit_access_tokens")
+        .select("visit_id, expires_at")
+        .eq("token", token)
+        .maybeSingle();
 
-      if (error) throw error;
+      if (tokenError) throw tokenError;
 
-      const visits = ((data || []) as DbRecord[])
-        .filter((visit) => {
-          const owner = recordValue(visit.owners);
-          const pet = recordValue(visit.pets);
-          const ownerEmail = stringValue(owner.email).toLowerCase();
-          const ownerPhone = normalizePhone(stringValue(owner.phone));
-          const visitPetName = stringValue(pet.pet_name).toLowerCase();
+      const visitId = stringValue((tokenRow as DbRecord | null)?.visit_id);
 
-          const emailMatches = email ? ownerEmail === email : true;
-          const phoneMatches = phone ? ownerPhone === phone : true;
-          const petMatches = petName ? visitPetName.includes(petName) : true;
+      if (!visitId) {
+        return NextResponse.json({ error: "Invalid visit access link." }, { status: 404 });
+      }
 
-          return emailMatches && phoneMatches && petMatches;
-        })
-        .map(mapVisit);
+      const expiresAt = stringValue((tokenRow as DbRecord).expires_at);
+      if (expiresAt && new Date(expiresAt).getTime() < Date.now()) {
+        return NextResponse.json(
+          { error: "This visit access link has expired." },
+          { status: 410 }
+        );
+      }
 
-      return NextResponse.json({ visits });
+      await supabase
+        .from("visit_access_tokens")
+        .update({ last_used_at: new Date().toISOString() })
+        .eq("token", token);
+
+      return NextResponse.json({ visit: await fetchVisitById(visitId) });
     }
 
     if (action === "sendUpdate") {

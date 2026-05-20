@@ -52,6 +52,10 @@ create table if not exists public.visit_access_tokens (
 create index if not exists visit_access_tokens_visit_id_idx
   on public.visit_access_tokens(visit_id);
 
+create unique index if not exists visit_access_tokens_visit_id_unique_idx
+  on public.visit_access_tokens(visit_id);
+
 alter table public.visit_access_tokens enable row level security;
 
--- Phase 3 will generate and use visit_access_tokens for /visit/[token] links.
+-- Phase 3 generates and uses visit_access_tokens for secure /visit/[token] links.
+-- Run the unique index statement above if this file was already applied before Phase 3.

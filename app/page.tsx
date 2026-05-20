@@ -48,6 +48,8 @@ type Visit = {
   workflowStep: string;
   forms: VisitForm[];
   petPhotoUrl: string;
+  accessToken: string;
+  accessUrl: string;
 };
 
 type DoctorOption = {
@@ -446,6 +448,7 @@ export default function Home() {
   const [staffLoginEmail, setStaffLoginEmail] = useState("");
   const [staffLoginPassword, setStaffLoginPassword] = useState("");
   const [ownerMagicEmail, setOwnerMagicEmail] = useState("");
+  const [visitAccessInput, setVisitAccessInput] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [expandedUpdatesVisitId, setExpandedUpdatesVisitId] = useState<string | null>(null);
   const [careHubOpen, setCareHubOpen] = useState(false);
@@ -508,7 +511,6 @@ export default function Home() {
     "Lethargy or weakness",
   ];
   const [visits, setVisits] = useState<Visit[]>([]);
-  const [searchResults, setSearchResults] = useState<Visit[]>([]);
   const selectedVisit = visits.find((v) => v.id === selectedVisitId) || null;
   const selectedUpdates = selectedVisit?.updates || [];
   const latestOwnerUpdate = selectedUpdates[selectedUpdates.length - 1];
@@ -708,6 +710,26 @@ export default function Home() {
     getPetPhotoFromNotes(visit.clinicNotes) ||
     petPhotoByVisitId[visit.id] ||
     "/vet-hero.jpeg";
+
+  const getTokenFromInput = (value: string) => {
+    const trimmed = value.trim();
+    const match = trimmed.match(/\/visit\/([^/?#]+)/);
+    return decodeURIComponent(match?.[1] || trimmed);
+  };
+
+  const copyVisitLink = async (visit: Visit) => {
+    if (!visit.accessUrl) {
+      alert("This visit does not have a secure link yet. Refresh the dashboard and try again.");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(visit.accessUrl);
+      alert("Secure visit link copied.");
+    } catch {
+      window.prompt("Copy this secure visit link", visit.accessUrl);
+    }
+  };
 
   const handlePetPhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1228,7 +1250,7 @@ export default function Home() {
     <div style={styles.buttonText}>
       <div style={styles.buttonTitle}>Track Your<br />Pet&apos;s Visit</div>
       <div style={styles.buttonSubtitle}>
-        Already checked in? Enter your pet&apos;s name and your email or phone number to view live updates.
+        Already checked in? Use your secure visit link or access code to view live updates.
       </div>
     </div>
     <span style={styles.cardCtaBlue}>Track Visit -&gt;</span>
@@ -1714,15 +1736,15 @@ export default function Home() {
           )}
           {view === "existingPet" && (
   <section>
-    <h2 style={styles.title}>Find Your Pet</h2>
+    <h2 style={styles.title}>Track Your Pet&apos;s Visit</h2>
     <p style={styles.text}>
-      Enter your email or phone number to find your pet.
+      Enter the secure access code or full visit link provided by the clinic.
     </p>
 
     <div style={styles.authPanel}>
       <strong>Secure owner access</strong>
       <p style={styles.authHelpText}>
-        Send yourself a magic link for a secure owner session. Visit-specific links come next in Phase 3.
+        Magic links can secure your owner session. Your pet&apos;s live updates now open with a private visit link from the clinic.
       </p>
       <form style={styles.authInlineForm} onSubmit={sendOwnerMagicLink}>
         <input
@@ -1754,59 +1776,50 @@ export default function Home() {
         e.preventDefault();
 
         setSearchError("");
-        setSearchResults([]);
         setLoading(true);
 
-        const form = new FormData(e.currentTarget);
+        const token = getTokenFromInput(visitAccessInput);
 
-        const petName = String(form.get("petName") || "").trim().toLowerCase();
-        const phone = String(form.get("phone") || "").trim();
-        const email = String(form.get("email") || "").trim().toLowerCase();
-
-        if (!email && !phone && !petName) {
-          setSearchError("Please enter a pet name, email, or phone number.");
+        if (!token) {
+          setSearchError("Please enter your secure visit access code or link.");
           setLoading(false);
           return;
         }
 
         try {
-          const result = await apiRequest<{ visits: Visit[] }>({
-            action: "searchVisits",
-            petName,
-            phone,
-            email,
+          const result = await apiRequest<{ visit: Visit }>({
+            action: "loadVisitByToken",
+            token,
           });
           setLoading(false);
 
-          if (result.visits.length === 0) {
-            setSearchError("We couldn't find your pet. Please check your details or register.");
-            return;
-          }
-
-          setSearchResults(result.visits);
+          setVisits((current) =>
+            current.some((currentVisit) => currentVisit.id === result.visit.id)
+              ? current.map((currentVisit) =>
+                  currentVisit.id === result.visit.id
+                    ? { ...currentVisit, ...result.visit }
+                    : currentVisit
+                )
+              : [result.visit, ...current]
+          );
+          setSelectedVisitId(result.visit.id);
+          setView("status");
         } catch (error) {
           setLoading(false);
-          setSearchError("Something went wrong. Please try again.");
+          setSearchError(
+            error instanceof Error
+              ? error.message
+              : "We could not open that visit link. Please check the code and try again."
+          );
           console.error(error);
         }
       }}
     >
       <input
         style={styles.input}
-        name="petName"
-        placeholder="Pet name (optional)"
-      />
-
-      <input
-        style={styles.input}
-        name="phone"
-        placeholder="Phone number (optional)"
-      />
-
-      <input
-        style={styles.input}
-        name="email"
-        placeholder="Email (recommended)"
+        value={visitAccessInput}
+        onChange={(event) => setVisitAccessInput(event.target.value)}
+        placeholder="Visit access code or secure link"
       />
 
       <button
@@ -1817,45 +1830,15 @@ export default function Home() {
         type="submit"
         disabled={loading}
       >
-        {loading ? "Searching..." : "Find My Pet"}
+        {loading ? "Opening..." : "Open Visit"}
       </button>
     </form>
 
-    {loading && <p style={styles.text}>Searching...</p>}
+    {loading && <p style={styles.text}>Opening secure visit...</p>}
 
     {searchError && (
       <div style={styles.errorBox}>
         {searchError}
-      </div>
-    )}
-
-    {searchResults.length > 0 && (
-      <div style={{ marginTop: 20 }}>
-        <h3 style={styles.title}>Select your pet</h3>
-
-        {searchResults.map((visit) => (
-          <div
-            key={visit.id}
-            style={styles.resultCard}
-            onClick={() => {
-              setVisits((current) =>
-                current.some((currentVisit) => currentVisit.id === visit.id)
-                  ? current.map((currentVisit) =>
-                      currentVisit.id === visit.id
-                        ? { ...currentVisit, ...visit }
-                        : currentVisit
-                    )
-                  : [visit, ...current]
-              );
-              setSelectedVisitId(visit.id);
-              setView("status");
-            }}
-          >
-            <strong>{visit.petName}</strong> - {visit.species}
-            <br />
-            Owner: {visit.ownerFirstName} {visit.ownerLastName}
-          </div>
-        ))}
       </div>
     )}
   </section>
@@ -1981,6 +1964,23 @@ export default function Home() {
                         <strong>Queue:</strong> #{getQueueDetails(visit)?.position} with{" "}
                         {getQueueDetails(visit)?.patientsAhead} patient(s) ahead. Estimated wait:{" "}
                         {getQueueDetails(visit)?.estimatedWaitMinutes} minutes.
+                      </div>
+                    )}
+                    {visit.accessUrl && (
+                      <div style={styles.secureVisitLinkCard}>
+                        <div>
+                          <strong>Owner secure visit link</strong>
+                          <p style={styles.secureVisitLinkText}>
+                            Give this link to the owner so they can open only this visit.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          style={styles.secureVisitLinkButton}
+                          onClick={() => copyVisitLink(visit)}
+                        >
+                          Copy Secure Link
+                        </button>
                       </div>
                     )}
                     {getAssignedDoctorFromNotes(visit.clinicNotes) && (
@@ -3674,6 +3674,35 @@ const styles: { [key: string]: React.CSSProperties } = {
     padding: 12,
     marginTop: 12,
     marginBottom: 12,
+  },
+  secureVisitLinkCard: {
+    background: "#f0fbf8",
+    border: "1px solid #bfe9e0",
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 12,
+    marginBottom: 12,
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1fr) auto",
+    gap: 12,
+    alignItems: "center",
+  },
+  secureVisitLinkText: {
+    color: "#52606d",
+    fontSize: 13,
+    margin: "4px 0 0",
+    lineHeight: 1.35,
+  },
+  secureVisitLinkButton: {
+    background: "#087f78",
+    border: "none",
+    color: "#ffffff",
+    borderRadius: 8,
+    padding: "10px 12px",
+    cursor: "pointer",
+    fontSize: 13,
+    fontWeight: 900,
+    whiteSpace: "nowrap",
   },
   errorBox: {
   background: "#fff1f2",
