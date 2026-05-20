@@ -1086,12 +1086,12 @@ export default function Home() {
   <button style={styles.primaryCardButton} onClick={() => setView("newPet")}>
     <span style={styles.bigIcon}><MiniIcon type="paw" /></span>
       <div style={styles.buttonText}>
-      <div style={styles.buttonTitle}>New Pet<br />Check-in</div>
+      <div style={styles.buttonTitle}>Start<br />New Visit</div>
       <div style={styles.buttonSubtitle}>
-        Create your pet&apos;s profile and start receiving live care updates.
+        Check your pet in before arrival or when you get to the hospital.
       </div>
     </div>
-    <span style={styles.cardCta}>New Pet Check-in -&gt;</span>
+    <span style={styles.cardCta}>Start New Visit -&gt;</span>
   </button>
 
             <button style={styles.darkCardButton} onClick={() => setView("existingPet")}>
