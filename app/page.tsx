@@ -438,7 +438,6 @@ export default function Home() {
   const [petMediaName, setPetMediaName] = useState("");
   const [petMediaType, setPetMediaType] = useState("");
   const [referralDocumentNames, setReferralDocumentNames] = useState<string[]>([]);
-  const [clinicPin, setClinicPin] = useState("");
   const [clinicUnlocked, setClinicUnlocked] = useState(false);
   const [clinicError, setClinicError] = useState("");
   const [authUserEmail, setAuthUserEmail] = useState("");
@@ -530,6 +529,9 @@ export default function Home() {
     (total, category) => total + category.forms.length,
     0
   );
+  const canEditClinicNotes = Boolean(
+    staffProfile && ["Technician", "Veterinarian", "Admin"].includes(staffProfile.role)
+  );
   const activeVisits = visits.filter((visit) => visit.status !== "Closed");
   const closedVisits = visits.filter((visit) => visit.status === "Closed");
   const queueVisits = activeVisits
@@ -564,7 +566,7 @@ export default function Home() {
 
     if (!session) {
       setStaffProfile(null);
-      return;
+      return null;
     }
 
     try {
@@ -582,8 +584,10 @@ export default function Home() {
 
       const result = (await response.json()) as { staffProfile: StaffProfile | null };
       setStaffProfile(result.staffProfile);
+      return result.staffProfile;
     } catch {
       setStaffProfile(null);
+      return null;
     }
   };
 
@@ -612,9 +616,9 @@ export default function Home() {
     };
   }, []);
 
-  async function loadVisits(pin = clinicPin) {
+  async function loadVisits() {
     const { data } = await supabase.auth.getSession();
-    if (!pin && !data.session?.access_token) return;
+    if (!data.session?.access_token) return;
     if (clinicLoadingRef.current) return;
 
     clinicLoadingRef.current = true;
@@ -623,7 +627,6 @@ export default function Home() {
     try {
       const result = await apiRequest<{ visits: Visit[] }>({
         action: "loadVisits",
-        clinicPin: pin,
       });
       setVisits(result.visits);
       setClinicError("");
@@ -654,10 +657,14 @@ export default function Home() {
       return;
     }
 
-    await syncStaffProfile(data.session);
-    setAuthMessage("Clinic staff signed in.");
+    const profile = await syncStaffProfile(data.session);
+    setAuthMessage(
+      profile
+        ? "Clinic staff signed in."
+        : "Signed in, but this email is not active as clinic staff yet."
+    );
     setAuthLoading(false);
-    await loadVisits();
+    if (profile) await loadVisits();
   };
 
   const sendOwnerMagicLink = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -688,7 +695,6 @@ export default function Home() {
     setStaffProfile(null);
     setClinicUnlocked(false);
     setVisits([]);
-    setClinicPin("");
     setAuthMessage("Signed out.");
   };
 
@@ -973,7 +979,6 @@ export default function Home() {
         visitId,
         status,
         message,
-        clinicPin,
       });
       setVisits((current) =>
         current.map((visit) => (visit.id === visitId ? result.visit : visit))
@@ -1007,7 +1012,6 @@ export default function Home() {
         action: "saveClinicNotes",
         visitId,
         clinicNotes: notesToSave,
-        clinicPin,
       });
       setVisits((current) =>
         current.map((visit) => (visit.id === visitId ? result.visit : visit))
@@ -1032,7 +1036,6 @@ export default function Home() {
         visitId,
         clinicNotes: updatedNotes,
         message,
-        clinicPin,
       });
       setVisits((current) =>
         current.map((item) => (item.id === visitId ? result.visit : item))
@@ -1061,7 +1064,6 @@ export default function Home() {
         formBody,
         status: visit.status,
         message: updateMessage,
-        clinicPin,
       });
       setVisits((current) =>
         current.map((item) => (item.id === visit.id ? result.visit : item))
@@ -1864,65 +1866,60 @@ export default function Home() {
                 <div style={styles.clinicLoginCard}>
                   <h2 style={styles.title}>Clinic Dashboard</h2>
                   <p style={styles.text}>Sign in with your clinic staff account to view requests and send updates.</p>
-                  <form style={styles.authForm} onSubmit={signInClinicStaff}>
-                    <input
-                      style={styles.input}
-                      type="email"
-                      value={staffLoginEmail}
-                      onChange={(event) => setStaffLoginEmail(event.target.value)}
-                      placeholder="Staff email"
-                      required
-                    />
-                    <input
-                      style={styles.input}
-                      type="password"
-                      value={staffLoginPassword}
-                      onChange={(event) => setStaffLoginPassword(event.target.value)}
-                      placeholder="Password"
-                      required
-                    />
-                    <button
-                      style={{
-                        ...styles.primaryButton,
-                        ...(authLoading ? styles.disabledButton : {}),
-                      }}
-                      type="submit"
-                      disabled={authLoading}
-                    >
-                      {authLoading ? "Signing in..." : "Sign In as Clinic Staff"}
+                  {staffProfile ? (
+                    <div style={styles.authPanel}>
+                      <strong>
+                        {staffProfile.fullName || staffProfile.email} - {staffProfile.role}
+                      </strong>
+                      <p style={styles.authHelpText}>
+                        Staff session found. Open the protected clinic dashboard.
+                      </p>
+                      <button
+                        style={{
+                          ...styles.primaryButton,
+                          ...(clinicLoading ? styles.disabledButton : {}),
+                        }}
+                        onClick={() => loadVisits()}
+                        disabled={clinicLoading}
+                      >
+                        {clinicLoading ? "Opening..." : "Open Dashboard"}
+                      </button>
+                    </div>
+                  ) : (
+                    <form style={styles.authForm} onSubmit={signInClinicStaff}>
+                      <input
+                        style={styles.input}
+                        type="email"
+                        value={staffLoginEmail}
+                        onChange={(event) => setStaffLoginEmail(event.target.value)}
+                        placeholder="Staff email"
+                        required
+                      />
+                      <input
+                        style={styles.input}
+                        type="password"
+                        value={staffLoginPassword}
+                        onChange={(event) => setStaffLoginPassword(event.target.value)}
+                        placeholder="Password"
+                        required
+                      />
+                      <button
+                        style={{
+                          ...styles.primaryButton,
+                          ...(authLoading ? styles.disabledButton : {}),
+                        }}
+                        type="submit"
+                        disabled={authLoading}
+                      >
+                        {authLoading ? "Signing in..." : "Sign In as Clinic Staff"}
+                      </button>
+                    </form>
+                  )}
+                  {authUserEmail && (
+                    <button style={styles.staffSignOutButton} onClick={signOut}>
+                      Sign Out
                     </button>
-                  </form>
-
-                  <div style={styles.authDivider}>Demo fallback</div>
-                  <p style={styles.authHelpText}>
-                    Keep using the PIN while staff accounts are being created in Supabase.
-                  </p>
-                  <form
-                    style={styles.form}
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      loadVisits(clinicPin);
-                    }}
-                  >
-                    <input
-                      style={styles.input}
-                      type="password"
-                      value={clinicPin}
-                      onChange={(event) => setClinicPin(event.target.value)}
-                      placeholder="Clinic PIN"
-                      required
-                    />
-                    <button
-                      style={{
-                        ...styles.primaryButton,
-                        ...(clinicLoading ? styles.disabledButton : {}),
-                      }}
-                      type="submit"
-                      disabled={clinicLoading}
-                    >
-                      {clinicLoading ? "Opening..." : "Open Dashboard"}
-                    </button>
-                  </form>
+                  )}
                   {authMessage && <div style={styles.authMessage}>{authMessage}</div>}
                   {clinicError && <div style={styles.errorBox}>{clinicError}</div>}
                 </div>
@@ -2007,10 +2004,20 @@ export default function Home() {
                     </div>
 
                     <textarea
-                      style={styles.notesBox}
-                      placeholder="Clinic notes - only visible to the clinic."
+                      style={{
+                        ...styles.notesBox,
+                        ...(!canEditClinicNotes ? styles.disabledButton : {}),
+                      }}
+                      placeholder={
+                        canEditClinicNotes
+                          ? "Clinic notes - only visible to the clinic."
+                          : "Clinic notes are limited to technician, veterinarian, and admin roles."
+                      }
                       value={removeAppMetadata(visit.clinicNotes)}
-                      onChange={(e) => saveClinicNotes(visit.id, e.target.value)}
+                      onChange={(e) => {
+                        if (canEditClinicNotes) saveClinicNotes(visit.id, e.target.value);
+                      }}
+                      disabled={!canEditClinicNotes}
                     />
 
                     {pendingClinicActions[visit.id] && (
@@ -3745,16 +3752,6 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: 13,
     fontWeight: 800,
     margin: 0,
-  },
-  authDivider: {
-    color: "#64717d",
-    fontSize: 12,
-    fontWeight: 900,
-    textTransform: "uppercase",
-    letterSpacing: 0,
-    borderTop: "1px solid #e1ecec",
-    paddingTop: 14,
-    marginTop: 2,
   },
   staffSignOutButton: {
     background: "#ffffff",

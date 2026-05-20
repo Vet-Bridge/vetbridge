@@ -141,18 +141,6 @@ const getStaffProfileFromSession = async (body: RequestBody) => {
   }
 
   const email = normalizeEmail(user.email);
-  const allowedEmails = (process.env.CLINIC_STAFF_EMAILS || "")
-    .split(",")
-    .map((item) => normalizeEmail(item))
-    .filter(Boolean);
-
-  const fallbackProfile: StaffProfile | null = allowedEmails.includes(email)
-    ? {
-        email,
-        fullName: user.user_metadata?.full_name || email,
-        role: "Admin",
-      }
-    : null;
 
   const { data: profileData, error: profileError } = await supabase
     .from("clinic_staff_profiles")
@@ -162,9 +150,9 @@ const getStaffProfileFromSession = async (body: RequestBody) => {
 
   if (profileError) {
     return {
-      allowed: Boolean(fallbackProfile),
-      profile: fallbackProfile,
-      reason: fallbackProfile ? "" : "Staff profile is not configured.",
+      allowed: false,
+      profile: null as StaffProfile | null,
+      reason: "Staff profile is not configured.",
     };
   }
 
@@ -188,30 +176,26 @@ const getStaffProfileFromSession = async (body: RequestBody) => {
   }
 
   return {
-    allowed: Boolean(fallbackProfile),
-    profile: fallbackProfile,
-    reason: fallbackProfile ? "" : "This staff account is not active.",
+    allowed: false,
+    profile: null as StaffProfile | null,
+    reason: profileData ? "This staff account is not active." : "This account is not a clinic staff member.",
   };
 };
 
-const requireClinicAccess = async (body: RequestBody) => {
-  const configuredPin = process.env.CLINIC_DASHBOARD_PIN;
-  const providedPin = stringValue(body.clinicPin);
-
-  if (configuredPin && providedPin === configuredPin) {
-    return null;
-  }
-
+const requireClinicAccess = async (
+  body: RequestBody,
+  allowedRoles: StaffRole[] = staffRoles
+) => {
   const staffAccess = await getStaffProfileFromSession(body);
 
-  if (staffAccess.allowed) {
+  if (staffAccess.allowed && staffAccess.profile && allowedRoles.includes(staffAccess.profile.role)) {
     return null;
   }
 
-  if (!configuredPin && !stringValue(body.authToken)) {
+  if (staffAccess.allowed && staffAccess.profile) {
     return NextResponse.json(
-      { error: "Clinic authentication is not configured on the server." },
-      { status: 500 }
+      { error: "Your clinic role does not allow this action." },
+      { status: 403 }
     );
   }
 
@@ -456,7 +440,11 @@ export async function POST(request: Request) {
     }
 
     if (action === "saveClinicNotes") {
-      const accessError = await requireClinicAccess(body);
+      const accessError = await requireClinicAccess(body, [
+        "Technician",
+        "Veterinarian",
+        "Admin",
+      ]);
       if (accessError) return accessError;
 
       const { error } = await supabase

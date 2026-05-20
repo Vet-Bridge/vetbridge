@@ -1,4 +1,4 @@
--- MyPawLink Phase 2A authentication foundation.
+-- MyPawLink Phase 2 authentication foundation.
 -- Run this in Supabase SQL Editor after creating staff users in Authentication.
 
 create table if not exists public.clinic_staff_profiles (
@@ -19,6 +19,25 @@ alter table public.clinic_staff_profiles enable row level security;
 
 -- The app reads staff profiles through the server API using the service role key.
 -- No browser/client table access is granted yet.
+-- Phase 2B requires staff users to have an active clinic_staff_profiles row.
+-- The old clinic PIN fallback has been removed from the app.
+--
+-- Example staff profile insert after creating a Supabase Auth user:
+--
+-- insert into public.clinic_staff_profiles (user_id, email, full_name, role)
+-- values (
+--   '00000000-0000-0000-0000-000000000000',
+--   'staff@example.com',
+--   'Staff Name',
+--   'Admin'
+-- );
+--
+-- Role values:
+-- Front Desk, Technician, Veterinarian, Admin
+--
+-- Current role rule:
+-- Clinic notes can be edited by Technician, Veterinarian, and Admin.
+-- All active staff roles can view visits and send owner updates/forms.
 
 create table if not exists public.visit_access_tokens (
   id uuid primary key default gen_random_uuid(),
