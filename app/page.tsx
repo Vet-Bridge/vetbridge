@@ -53,6 +53,20 @@ type DoctorOption = {
   profileUrl: string;
 };
 
+type CareHubForm = {
+  id: string;
+  title: string;
+  description: string;
+  body: string[];
+};
+
+type CareHubCategory = {
+  id: string;
+  title: string;
+  description: string;
+  forms: CareHubForm[];
+};
+
 const doctors: DoctorOption[] = [
   {
     name: "Samantha Aumann",
@@ -65,6 +79,231 @@ const doctors: DoctorOption[] = [
   {
     name: "Tiffany McAllister-Bernal",
     profileUrl: "https://www.medvet.com/doctor/tiffany-mcallister/",
+  },
+];
+
+const careHubCategories: CareHubCategory[] = [
+  {
+    id: "admission",
+    title: "Admission Forms",
+    description: "Start-of-visit authorizations and admission paperwork.",
+    forms: [
+      {
+        id: "admission-intake",
+        title: "Emergency Admission Authorization",
+        description: "Permission to admit your pet for emergency evaluation.",
+        body: [
+          "I authorize the emergency hospital team to receive and evaluate my pet.",
+          "I understand the care team may perform an initial medical assessment and recommend stabilization, diagnostics, or treatment based on my pet's condition.",
+          "I confirm that the owner/contact information provided for this visit is accurate to the best of my knowledge.",
+        ],
+      },
+      {
+        id: "general-care",
+        title: "General Care Permission",
+        description: "Allows the team to provide routine nursing support while your pet is in care.",
+        body: [
+          "I authorize reasonable nursing care, monitoring, handling, and comfort measures while my pet is at the hospital.",
+          "This may include basic cleaning, temperature support, assisted movement, and routine observation.",
+        ],
+      },
+      {
+        id: "owner-info",
+        title: "Owner Information Confirmation",
+        description: "Confirms contact details used for updates and decisions.",
+        body: [
+          "I confirm that my phone number and email may be used to contact me about this visit.",
+          "I understand that urgent medical decisions may require prompt response from the listed owner or authorized contact.",
+        ],
+      },
+    ],
+  },
+  {
+    id: "financial",
+    title: "Financial Forms",
+    description: "Estimate, deposit, and payment responsibility acknowledgements.",
+    forms: [
+      {
+        id: "financial-responsibility",
+        title: "Financial Responsibility Agreement",
+        description: "Acknowledges responsibility for charges related to this visit.",
+        body: [
+          "I understand that emergency veterinary care may include examination, stabilization, diagnostics, hospitalization, medications, procedures, and monitoring charges.",
+          "I accept financial responsibility for authorized care provided to my pet.",
+        ],
+      },
+      {
+        id: "deposit-authorization",
+        title: "Deposit Authorization",
+        description: "Approves collecting a deposit toward emergency care.",
+        body: [
+          "I understand that the hospital may request a deposit before non-immediate treatment proceeds.",
+          "If my pet is unstable, I understand emergency stabilization may begin before full financial discussion is complete.",
+        ],
+      },
+      {
+        id: "estimate-review",
+        title: "Estimate Review Acknowledgement",
+        description: "Confirms you reviewed the estimate or treatment range.",
+        body: [
+          "I acknowledge that I have reviewed the estimate or expected range for care.",
+          "I understand that the estimate may change if my pet's condition changes or additional diagnostics/treatments are needed.",
+        ],
+      },
+    ],
+  },
+  {
+    id: "emergency-decisions",
+    title: "Emergency Decisions",
+    description: "Critical care choices that may be needed quickly.",
+    forms: [
+      {
+        id: "cpr-dnr",
+        title: "CPR / DNR Preference",
+        description: "Documents resuscitation wishes in case of cardiac or respiratory arrest.",
+        body: [
+          "I understand that CPR may include chest compressions, intubation, emergency medications, defibrillation, and advanced life support.",
+          "I understand that DNR means the team will not perform resuscitation if my pet experiences cardiac or respiratory arrest.",
+          "I understand that CPR success cannot be guaranteed.",
+        ],
+      },
+      {
+        id: "emergency-stabilization",
+        title: "Emergency Stabilization Consent",
+        description: "Allows immediate stabilization if your pet is unstable.",
+        body: [
+          "I authorize immediate stabilization if the medical team believes my pet is at risk of serious harm or death without prompt intervention.",
+          "Stabilization may include oxygen, IV catheter placement, fluids, emergency medications, warming or cooling, pain control, and urgent monitoring.",
+        ],
+      },
+      {
+        id: "critical-intervention",
+        title: "Critical Intervention Preference",
+        description: "Records direction for urgent decisions while the team contacts you.",
+        body: [
+          "I understand that certain emergencies require time-sensitive decisions.",
+          "I authorize the team to contact me immediately for major decisions and understand that basic life-support stabilization may begin while contact is attempted.",
+        ],
+      },
+    ],
+  },
+  {
+    id: "treatment",
+    title: "Treatment Consents",
+    description: "Common treatment permissions during ER or hospitalization.",
+    forms: [
+      {
+        id: "medication-consent",
+        title: "Medication Administration Consent",
+        description: "Allows prescribed medications during the visit.",
+        body: [
+          "I authorize the medical team to administer medications recommended for my pet's emergency care.",
+          "These may include pain medications, anti-nausea medications, antibiotics, sedatives, or other treatments as medically indicated.",
+        ],
+      },
+      {
+        id: "hospitalization-care",
+        title: "Hospitalization Treatment Consent",
+        description: "Covers ongoing care if your pet stays in hospital.",
+        body: [
+          "I authorize hospitalization care including monitoring, nursing care, treatments, feeding plans, medication administration, and doctor reassessment.",
+          "I understand the care plan may be updated as my pet responds to treatment.",
+        ],
+      },
+      {
+        id: "pain-management",
+        title: "Pain Management Consent",
+        description: "Allows the team to provide pain relief when needed.",
+        body: [
+          "I authorize medically appropriate pain control for my pet.",
+          "I understand that medication choice and dose will be determined by the veterinarian based on my pet's condition.",
+        ],
+      },
+    ],
+  },
+  {
+    id: "procedure",
+    title: "Procedure Authorizations",
+    description: "Permissions for anesthesia, surgery, imaging, and procedures.",
+    forms: [
+      {
+        id: "anesthesia-consent",
+        title: "Anesthesia / Sedation Consent",
+        description: "Acknowledges anesthesia or sedation risks.",
+        body: [
+          "I authorize anesthesia or sedation if recommended for diagnostics, treatment, or procedures.",
+          "I understand risks may include adverse drug reaction, breathing complications, blood pressure changes, and death, even with careful monitoring.",
+        ],
+      },
+      {
+        id: "surgery-consent",
+        title: "Surgery / Procedure Consent",
+        description: "Authorizes a recommended urgent procedure.",
+        body: [
+          "I authorize the recommended surgery or procedure for my pet.",
+          "I understand risks may include bleeding, infection, pain, anesthesia complications, unexpected findings, need for additional procedures, and death.",
+        ],
+      },
+      {
+        id: "diagnostic-procedure",
+        title: "Diagnostic Procedure Authorization",
+        description: "Approves imaging or diagnostic procedures.",
+        body: [
+          "I authorize diagnostic procedures such as radiographs, ultrasound, bloodwork, urine testing, ECG, or other tests recommended by the veterinarian.",
+          "I understand these tests help guide diagnosis and treatment recommendations.",
+        ],
+      },
+    ],
+  },
+  {
+    id: "communication",
+    title: "Communication Preferences",
+    description: "How the clinic may contact you during your pet's visit.",
+    forms: [
+      {
+        id: "sms-email-consent",
+        title: "SMS / Email Communication Consent",
+        description: "Allows digital updates related to your pet's care.",
+        body: [
+          "I consent to receive visit-related updates by SMS, email, or MyPawLink portal notification.",
+          "I understand urgent medical decisions may still require a phone call.",
+        ],
+      },
+      {
+        id: "authorized-contact",
+        title: "Authorized Contact Permission",
+        description: "Allows communication with another trusted contact.",
+        body: [
+          "I authorize the hospital to discuss non-public visit updates with the contact I provide if I cannot be reached.",
+          "I understand medical and financial decisions may still require owner confirmation unless otherwise documented.",
+        ],
+      },
+    ],
+  },
+  {
+    id: "discharge",
+    title: "Discharge Documents",
+    description: "Documents for going home and aftercare.",
+    forms: [
+      {
+        id: "discharge-instructions",
+        title: "Discharge Instruction Acknowledgement",
+        description: "Confirms you received home-care instructions.",
+        body: [
+          "I acknowledge receipt of discharge instructions for my pet.",
+          "I understand medication directions, feeding instructions, activity restrictions, warning signs, and recheck recommendations should be followed as written.",
+        ],
+      },
+      {
+        id: "medication-schedule",
+        title: "Medication Schedule Acknowledgement",
+        description: "Confirms you understand take-home medication timing.",
+        body: [
+          "I acknowledge that medication instructions have been reviewed with me.",
+          "I understand I should contact the hospital if I have questions, miss a dose, or notice concerning side effects.",
+        ],
+      },
+    ],
   },
 ];
 
@@ -193,6 +432,12 @@ export default function Home() {
   const [clinicUnlocked, setClinicUnlocked] = useState(false);
   const [clinicError, setClinicError] = useState("");
   const [expandedUpdatesVisitId, setExpandedUpdatesVisitId] = useState<string | null>(null);
+  const [careHubOpen, setCareHubOpen] = useState(false);
+  const [selectedCareHubCategoryId, setSelectedCareHubCategoryId] = useState<string | null>(null);
+  const [selectedCareHubFormId, setSelectedCareHubFormId] = useState<string | null>(null);
+  const [signedCareHubForms, setSignedCareHubForms] = useState<
+    Record<string, { signedName: string; signedAt: string }>
+  >({});
   const submittingVisitRef = useRef(false);
   const submittingReferralRef = useRef(false);
   const clinicLoadingRef = useRef(false);
@@ -254,6 +499,19 @@ export default function Home() {
   const previousOwnerUpdates = selectedUpdates.slice(0, -1).reverse();
   const showPreviousUpdates = Boolean(
     selectedVisitId && expandedUpdatesVisitId === selectedVisitId
+  );
+  const selectedCareHubCategory =
+    careHubCategories.find((category) => category.id === selectedCareHubCategoryId) || null;
+  const selectedCareHubForm =
+    selectedCareHubCategory?.forms.find((form) => form.id === selectedCareHubFormId) || null;
+  const signedCareHubCount = careHubCategories.reduce(
+    (total, category) =>
+      total + category.forms.filter((form) => signedCareHubForms[form.id]).length,
+    0
+  );
+  const careHubFormCount = careHubCategories.reduce(
+    (total, category) => total + category.forms.length,
+    0
   );
   const activeVisits = visits.filter((visit) => visit.status !== "Closed");
   const closedVisits = visits.filter((visit) => visit.status === "Closed");
@@ -732,6 +990,47 @@ export default function Home() {
       instructions,
       `${visit.petName}'s discharge instructions are ready for review.`
     );
+  };
+
+  const openCareHub = () => {
+    setCareHubOpen(true);
+    setSelectedCareHubCategoryId(null);
+    setSelectedCareHubFormId(null);
+  };
+
+  const closeCareHub = () => {
+    setCareHubOpen(false);
+    setSelectedCareHubCategoryId(null);
+    setSelectedCareHubFormId(null);
+  };
+
+  const openCareHubCategory = (categoryId: string) => {
+    setSelectedCareHubCategoryId(categoryId);
+    setSelectedCareHubFormId(null);
+  };
+
+  const submitCareHubForm = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedCareHubForm) return;
+
+    const form = new FormData(event.currentTarget);
+    const signedName = String(form.get("printedName") || "").trim();
+    const signature = String(form.get("signature") || "").trim();
+    const accepted = form.get("accepted") === "on";
+
+    if (!signedName || !signature || !accepted) {
+      alert("Please complete the printed name, checkbox, and signature.");
+      return;
+    }
+
+    setSignedCareHubForms((current) => ({
+      ...current,
+      [selectedCareHubForm.id]: {
+        signedName,
+        signedAt: new Date().toLocaleString(),
+      },
+    }));
+    setSelectedCareHubFormId(null);
   };
 
   return (
@@ -2152,8 +2451,11 @@ export default function Home() {
   </div>
 )}
               <div style={styles.ownerActionCard}>
-                <h3 style={styles.sectionTitle}>VetBridge Care Hub</h3>
-                <button style={styles.careHubButton}>
+                <h3 style={styles.sectionTitle}>MyPawLink Care Hub</h3>
+                <p style={styles.careHubIntro}>
+                  Review forms, decisions, approvals, and discharge documents in one place.
+                </p>
+                <button style={styles.careHubButton} onClick={openCareHub}>
                   Open Care Hub <span>&gt;</span>
                 </button>
                 <div style={styles.careHubActionList}>
@@ -2171,6 +2473,181 @@ export default function Home() {
                   ))}
                 </div>
               </div>
+
+              {careHubOpen && (
+                <div style={styles.careHubPortal}>
+                  <div style={styles.careHubHeader}>
+                    <div>
+                      <p style={styles.careHubEyebrow}>Client Portal</p>
+                      <h3 style={styles.sectionTitle}>MyPawLink Care Hub</h3>
+                      <p style={styles.careHubIntro}>
+                        {signedCareHubCount} of {careHubFormCount} forms signed for {selectedVisit.petName}.
+                      </p>
+                    </div>
+                    <button
+                      style={styles.careHubBackButton}
+                      onClick={() => {
+                        if (selectedCareHubForm) {
+                          setSelectedCareHubFormId(null);
+                          return;
+                        }
+                        if (selectedCareHubCategory) {
+                          setSelectedCareHubCategoryId(null);
+                          return;
+                        }
+                        closeCareHub();
+                      }}
+                    >
+                      {selectedCareHubForm || selectedCareHubCategory ? "Back" : "Close"}
+                    </button>
+                  </div>
+
+                  {!selectedCareHubCategory && (
+                    <div style={styles.careHubCategoryGrid}>
+                      {careHubCategories.map((category) => {
+                        const signedCount = category.forms.filter(
+                          (form) => signedCareHubForms[form.id]
+                        ).length;
+
+                        return (
+                          <button
+                            key={category.id}
+                            style={styles.careHubCategoryCard}
+                            onClick={() => openCareHubCategory(category.id)}
+                          >
+                            <span style={styles.careHubCategoryTitle}>{category.title}</span>
+                            <span style={styles.careHubCategoryText}>{category.description}</span>
+                            <span style={styles.careHubCategoryMeta}>
+                              {signedCount}/{category.forms.length} signed
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {selectedCareHubCategory && !selectedCareHubForm && (
+                    <div>
+                      <div style={styles.careHubCategoryHeader}>
+                        <h4 style={styles.careHubFormSectionTitle}>
+                          {selectedCareHubCategory.title}
+                        </h4>
+                        <p style={styles.careHubIntro}>{selectedCareHubCategory.description}</p>
+                      </div>
+
+                      <div style={styles.careHubFormList}>
+                        {selectedCareHubCategory.forms.map((form) => {
+                          const signedInfo = signedCareHubForms[form.id];
+                          return (
+                            <div key={form.id} style={styles.careHubFormCard}>
+                              <div>
+                                <div style={styles.careHubFormTitleRow}>
+                                  <h5 style={styles.careHubFormTitle}>{form.title}</h5>
+                                  <span
+                                    style={{
+                                      ...styles.careHubStatusBadge,
+                                      ...(signedInfo ? styles.careHubSignedBadge : {}),
+                                    }}
+                                  >
+                                    {signedInfo ? "Signed" : "Ready"}
+                                  </span>
+                                </div>
+                                <p style={styles.careHubFormDescription}>{form.description}</p>
+                              </div>
+                              <button
+                                style={styles.careHubViewButton}
+                                onClick={() => setSelectedCareHubFormId(form.id)}
+                              >
+                                View Form
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedCareHubForm && (
+                    <div style={styles.careHubConsentShell}>
+                      <div style={styles.careHubConsentHeader}>
+                        <span
+                          style={{
+                            ...styles.careHubStatusBadge,
+                            ...(signedCareHubForms[selectedCareHubForm.id]
+                              ? styles.careHubSignedBadge
+                              : {}),
+                          }}
+                        >
+                          {signedCareHubForms[selectedCareHubForm.id]
+                            ? "Signed"
+                            : "Needs signature"}
+                        </span>
+                        <h4 style={styles.careHubFormSectionTitle}>
+                          {selectedCareHubForm.title}
+                        </h4>
+                        <p style={styles.careHubFormDescription}>
+                          {selectedCareHubForm.description}
+                        </p>
+                      </div>
+
+                      <div style={styles.careHubLegalBox}>
+                        <div style={styles.careHubMetaGrid}>
+                          <span>Pet: {selectedVisit.petName}</span>
+                          <span>Owner: {getOwnerName(selectedVisit)}</span>
+                          <span>Visit status: {selectedVisit.status}</span>
+                        </div>
+                        {selectedCareHubForm.body.map((paragraph) => (
+                          <p key={paragraph} style={styles.careHubLegalText}>
+                            {paragraph}
+                          </p>
+                        ))}
+                      </div>
+
+                      {signedCareHubForms[selectedCareHubForm.id] ? (
+                        <div style={styles.careHubSignedBox}>
+                          <strong>Signed</strong>
+                          <span>
+                            {signedCareHubForms[selectedCareHubForm.id].signedName} signed this
+                            form on {signedCareHubForms[selectedCareHubForm.id].signedAt}.
+                          </span>
+                        </div>
+                      ) : (
+                        <form
+                          key={selectedCareHubForm.id}
+                          style={styles.careHubSignatureForm}
+                          onSubmit={submitCareHubForm}
+                        >
+                          <input
+                            style={styles.input}
+                            name="printedName"
+                            placeholder="Printed name"
+                            required
+                          />
+                          <label style={styles.careHubCheckRow}>
+                            <input type="checkbox" name="accepted" required /> I have reviewed
+                            and agree to this form.
+                          </label>
+                          <input
+                            style={styles.input}
+                            name="signature"
+                            placeholder="Electronic signature"
+                            required
+                          />
+                          <input
+                            style={styles.input}
+                            name="dateTime"
+                            value={new Date().toLocaleString()}
+                            readOnly
+                          />
+                          <button style={styles.primaryButton} type="submit">
+                            Submit Signed Form
+                          </button>
+                        </form>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div style={styles.noticeBox}>
                 We will keep you updated every step of the way.
@@ -3341,8 +3818,235 @@ careHubButton: {
   fontSize: 15,
 },
 
-careHubActionList: {
+careHubIntro: {
+  color: "#52606d",
+  fontSize: 14,
+  lineHeight: 1.45,
+  margin: "0 0 12px",
+},
+
+careHubPortal: {
+  background: "#ffffff",
+  border: "1px solid #dcefeb",
+  borderRadius: 8,
+  padding: 16,
+  marginBottom: 20,
+  boxShadow: "0 14px 34px rgba(41, 64, 83, 0.09)",
+},
+
+careHubHeader: {
+  display: "flex",
+  alignItems: "flex-start",
+  justifyContent: "space-between",
+  gap: 12,
+  marginBottom: 14,
+},
+
+careHubEyebrow: {
+  color: "#087f78",
+  fontSize: 11,
+  fontWeight: 900,
+  margin: "0 0 5px",
+  textTransform: "uppercase",
+},
+
+careHubBackButton: {
+  background: "#f8fbff",
+  color: "#087f78",
+  border: "1px solid #dcefeb",
+  borderRadius: 8,
+  padding: "8px 10px",
+  cursor: "pointer",
+  fontSize: 12,
+  fontWeight: 900,
+},
+
+careHubCategoryGrid: {
   display: "grid",
+  gap: 10,
+},
+
+careHubCategoryCard: {
+  background: "linear-gradient(135deg, #fbffff, #f2fbfa)",
+  border: "1px solid #dcefeb",
+  borderRadius: 8,
+  padding: 14,
+  cursor: "pointer",
+  display: "grid",
+  gap: 5,
+  textAlign: "left",
+  boxShadow: "0 8px 18px rgba(41, 64, 83, 0.05)",
+},
+
+careHubCategoryTitle: {
+  color: "#102a3a",
+  fontSize: 15,
+  fontWeight: 900,
+},
+
+careHubCategoryText: {
+  color: "#52606d",
+  fontSize: 13,
+  lineHeight: 1.35,
+},
+
+careHubCategoryMeta: {
+  color: "#087f78",
+  fontSize: 12,
+  fontWeight: 900,
+  marginTop: 2,
+},
+
+careHubCategoryHeader: {
+  background: "#f8fbff",
+  border: "1px solid #e1ecec",
+  borderRadius: 8,
+  padding: 12,
+  marginBottom: 12,
+},
+
+careHubFormSectionTitle: {
+  color: "#102a3a",
+  fontSize: 18,
+  fontWeight: 900,
+  margin: "0 0 6px",
+},
+
+careHubFormList: {
+  display: "grid",
+  gap: 10,
+},
+
+careHubFormCard: {
+  background: "#ffffff",
+  border: "1px solid #e1ecec",
+  borderRadius: 8,
+  padding: 12,
+  display: "grid",
+  gap: 12,
+},
+
+careHubFormTitleRow: {
+  display: "flex",
+  alignItems: "flex-start",
+  justifyContent: "space-between",
+  gap: 10,
+},
+
+careHubFormTitle: {
+  color: "#102a3a",
+  fontSize: 15,
+  fontWeight: 900,
+  margin: 0,
+},
+
+careHubFormDescription: {
+  color: "#52606d",
+  fontSize: 13,
+  lineHeight: 1.4,
+  margin: "6px 0 0",
+},
+
+careHubStatusBadge: {
+  background: "#fff7ed",
+  color: "#c2410c",
+  border: "1px solid #fed7aa",
+  borderRadius: 8,
+  padding: "5px 8px",
+  fontSize: 11,
+  fontWeight: 900,
+  whiteSpace: "nowrap",
+},
+
+careHubSignedBadge: {
+  background: "#ecfdf3",
+  color: "#027a48",
+  border: "1px solid #bbf7d0",
+},
+
+careHubViewButton: {
+  width: "100%",
+  background: "#f0fbf8",
+  color: "#087f78",
+  border: "1px solid #bfe9e0",
+  borderRadius: 8,
+  padding: "10px 12px",
+  cursor: "pointer",
+  fontSize: 13,
+  fontWeight: 900,
+},
+
+careHubConsentShell: {
+  display: "grid",
+  gap: 12,
+},
+
+careHubConsentHeader: {
+  background: "#f0fbf8",
+  border: "1px solid #bfe9e0",
+  borderRadius: 8,
+  padding: 12,
+},
+
+careHubLegalBox: {
+  background: "#ffffff",
+  border: "1px solid #e1ecec",
+  borderRadius: 8,
+  padding: 14,
+},
+
+careHubMetaGrid: {
+  display: "grid",
+  gap: 6,
+  background: "#f8fbff",
+  borderRadius: 8,
+  padding: 10,
+  color: "#52606d",
+  fontSize: 12,
+  fontWeight: 800,
+  marginBottom: 12,
+},
+
+careHubLegalText: {
+  color: "#243447",
+  fontSize: 14,
+  lineHeight: 1.5,
+  margin: "0 0 10px",
+},
+
+careHubSignatureForm: {
+  display: "grid",
+  gridTemplateColumns: "1fr",
+  gap: 12,
+},
+
+careHubCheckRow: {
+  background: "#f8fbff",
+  border: "1px solid #dcefeb",
+  borderRadius: 8,
+  padding: 12,
+  display: "flex",
+  alignItems: "flex-start",
+  gap: 10,
+  color: "#243447",
+  fontSize: 14,
+  fontWeight: 800,
+  lineHeight: 1.35,
+},
+
+careHubSignedBox: {
+  display: "grid",
+  gap: 5,
+  background: "#ecfdf3",
+  border: "1px solid #bbf7d0",
+  borderRadius: 8,
+  padding: 12,
+  color: "#027a48",
+  fontSize: 14,
+},
+
+careHubActionList: {
+  display: "none",
   gap: 8,
   marginTop: 12,
 },
