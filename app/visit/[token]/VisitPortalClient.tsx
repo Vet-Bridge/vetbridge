@@ -27,7 +27,10 @@ export type OwnerPortalVisit = {
   createdAt: string;
   petName: string;
   species: string;
+  breed: string;
   ownerFirstName: string;
+  ownerLastName: string;
+  visitType: string;
   status: string;
   updates: OwnerPortalUpdate[];
   forms: OwnerPortalForm[];
@@ -107,6 +110,51 @@ const getRealtimeStatus = (status: string): RealtimeStatus => {
   return "Connecting";
 };
 
+const visitSteps = ["Received", "Triage", "Doctor", "Treatment", "Discharge"];
+
+const getVisitStepIndex = (status: string) => {
+  const normalizedStatus = status.toLowerCase();
+
+  if (
+    normalizedStatus.includes("discharged") ||
+    normalizedStatus.includes("closed") ||
+    normalizedStatus.includes("pickup")
+  ) {
+    return 4;
+  }
+
+  if (
+    normalizedStatus.includes("treatment") ||
+    normalizedStatus.includes("surgery") ||
+    normalizedStatus.includes("recover") ||
+    normalizedStatus.includes("icu") ||
+    normalizedStatus.includes("observation") ||
+    normalizedStatus.includes("stable") ||
+    normalizedStatus.includes("critical")
+  ) {
+    return 3;
+  }
+
+  if (normalizedStatus.includes("doctor") || normalizedStatus.includes("diagnostic")) {
+    return 2;
+  }
+
+  if (
+    normalizedStatus.includes("triage") ||
+    normalizedStatus.includes("checked in") ||
+    normalizedStatus.includes("stabil")
+  ) {
+    return 1;
+  }
+
+  return 0;
+};
+
+const isDischargeRelated = (value: string) =>
+  value.toLowerCase().includes("discharge") ||
+  value.toLowerCase().includes("medication") ||
+  value.toLowerCase().includes("follow-up");
+
 export default function VisitPortalClient({ token, initialVisit }: VisitPortalClientProps) {
   const [visit, setVisit] = useState(initialVisit);
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>("Connecting");
@@ -157,6 +205,38 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
   const pendingEstimateCount = estimates.filter(
     (estimate) => estimate.status === "Pending Owner Review"
   ).length;
+  const pendingClinicFormCount = visit.forms.filter(
+    (form) => form.form_status === "Sent"
+  ).length;
+  const pendingCareHubFormCount = careHubCategories.reduce(
+    (total, category) =>
+      total + category.forms.filter((form) => form.status !== "Signed").length,
+    0
+  );
+  const currentStepIndex = getVisitStepIndex(visit.status);
+  const dischargeCareHubForms = careHubCategories
+    .flatMap((category) => category.forms)
+    .filter((form) => isDischargeRelated(`${form.title} ${form.description} ${form.formType}`));
+  const dischargeClinicForms = visit.forms.filter((form) =>
+    isDischargeRelated(`${form.form_type} ${form.form_body || ""}`)
+  );
+  const needsAttentionCount =
+    pendingEstimateCount + pendingClinicFormCount + pendingCareHubFormCount;
+  const visitStartedLabel = visit.createdAt
+    ? new Date(visit.createdAt).toLocaleString([], {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : "In progress";
+
+  const jumpToSection = (sectionId: string) => {
+    document.getElementById(sectionId)?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  };
 
   const refreshVisit = useCallback(
     async (source: "live" | "manual" | "background") => {
@@ -527,8 +607,78 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
           </div>
         </div>
 
+        <section style={styles.ownerOverviewCard}>
+          <div style={styles.ownerOverviewHeader}>
+            <div>
+              <p style={styles.eyebrow}>Visit overview</p>
+              <h2 style={styles.overviewTitle}>{visit.petName}</h2>
+              <p style={styles.text}>
+                {[visit.breed || visit.species, visit.visitType || "Emergency visit"]
+                  .filter(Boolean)
+                  .join(" - ")}
+              </p>
+            </div>
+            <span
+              style={{
+                ...styles.attentionBadge,
+                ...(needsAttentionCount > 0 ? styles.attentionBadgeActive : {}),
+              }}
+            >
+              {needsAttentionCount > 0 ? `${needsAttentionCount} needs review` : "No action needed"}
+            </span>
+          </div>
+
+          <div style={styles.ownerMetricGrid}>
+            <div style={styles.ownerMetric}>
+              <span>Started</span>
+              <strong>{visitStartedLabel}</strong>
+            </div>
+            <div style={styles.ownerMetric}>
+              <span>Latest</span>
+              <strong>{latestUpdate?.time || "Waiting"}</strong>
+            </div>
+            <div style={styles.ownerMetric}>
+              <span>Forms</span>
+              <strong>{pendingClinicFormCount + pendingCareHubFormCount} pending</strong>
+            </div>
+            <div style={styles.ownerMetric}>
+              <span>Estimates</span>
+              <strong>{pendingEstimateCount} pending</strong>
+            </div>
+          </div>
+
+          <div style={styles.ownerProgressRail}>
+            {visitSteps.map((step, index) => (
+              <div key={step} style={styles.ownerProgressStep}>
+                <span
+                  style={{
+                    ...styles.ownerProgressDot,
+                    ...(index <= currentStepIndex ? styles.ownerProgressDotActive : {}),
+                  }}
+                />
+                <small>{step}</small>
+              </div>
+            ))}
+          </div>
+
+          <div style={styles.quickActionGrid}>
+            <button type="button" style={styles.quickActionButton} onClick={() => jumpToSection("timeline")}>
+              Updates
+            </button>
+            <button type="button" style={styles.quickActionButton} onClick={() => jumpToSection("care-hub")}>
+              Care Hub
+            </button>
+            <button type="button" style={styles.quickActionButton} onClick={() => jumpToSection("estimates")}>
+              Estimates
+            </button>
+            <button type="button" style={styles.quickActionButton} onClick={() => jumpToSection("discharge")}>
+              Discharge
+            </button>
+          </div>
+        </section>
+
         <div style={styles.grid}>
-          <section style={styles.card}>
+          <section id="timeline" style={styles.card}>
             <div style={styles.sectionHeader}>
               <h2 style={styles.sectionTitle}>Live Timeline</h2>
               <span style={styles.timelineCount}>{visit.updates.length} updates</span>
@@ -556,7 +706,7 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
             )}
           </section>
 
-          <section style={styles.card}>
+          <section id="care-hub" style={styles.card}>
             <div style={styles.sectionHeader}>
               <div>
                 <h2 style={styles.sectionTitle}>MyPawLink Care Hub</h2>
@@ -745,7 +895,7 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
             )}
           </section>
 
-          <section style={styles.card}>
+          <section id="clinic-forms" style={styles.card}>
             <h2 style={styles.sectionTitle}>Clinic-Sent Forms</h2>
             <p style={styles.text}>Forms sent directly by the clinic for this visit.</p>
             <div style={styles.formList}>
@@ -765,7 +915,7 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
             </div>
           </section>
 
-          <section style={styles.card}>
+          <section id="estimates" style={styles.card}>
             <div style={styles.sectionHeader}>
               <div>
                 <h2 style={styles.sectionTitle}>Treatment Estimates</h2>
@@ -884,11 +1034,41 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
             </div>
           </section>
 
-          <section style={styles.card}>
+          <section id="discharge" style={styles.card}>
             <h2 style={styles.sectionTitle}>Discharge Documents</h2>
             <p style={styles.text}>
-              Discharge instructions and follow-up care will appear here when ready.
+              Discharge instructions, medication acknowledgments, and follow-up care will appear
+              here when ready.
             </p>
+            <div style={styles.dischargeList}>
+              {dischargeClinicForms.map((form) => (
+                <div key={form.id} style={styles.dischargeItem}>
+                  <strong>{form.form_type || "Discharge document"}</strong>
+                  <span>{form.form_status || "Pending"}</span>
+                </div>
+              ))}
+              {dischargeCareHubForms.map((form) => (
+                <button
+                  key={form.id}
+                  type="button"
+                  style={styles.dischargeItemButton}
+                  onClick={() => {
+                    const category = careHubCategories.find((item) =>
+                      item.forms.some((categoryForm) => categoryForm.id === form.id)
+                    );
+                    setSelectedCareHubCategoryId(category?.id || null);
+                    openCareHubForm(form.id);
+                    jumpToSection("care-hub");
+                  }}
+                >
+                  <strong>{form.title}</strong>
+                  <span>{form.status}</span>
+                </button>
+              ))}
+              {dischargeClinicForms.length === 0 && dischargeCareHubForms.length === 0 && (
+                <div style={styles.emptyBox}>No discharge documents are ready yet.</div>
+              )}
+            </div>
           </section>
 
           <Link href="/" style={styles.homeLink}>
@@ -1031,6 +1211,96 @@ const styles: Record<string, CSSProperties> = {
     fontWeight: 800,
     marginTop: 14,
     paddingTop: 10,
+  },
+  ownerOverviewCard: {
+    background: "#ffffff",
+    border: "1px solid #e1ecec",
+    borderRadius: 8,
+    boxShadow: "0 12px 30px rgba(41, 64, 83, 0.08)",
+    display: "grid",
+    gap: 14,
+    marginBottom: 14,
+    padding: 16,
+  },
+  ownerOverviewHeader: {
+    alignItems: "flex-start",
+    display: "flex",
+    gap: 12,
+    justifyContent: "space-between",
+  },
+  overviewTitle: {
+    color: "#102a3a",
+    fontSize: 21,
+    lineHeight: 1.15,
+    margin: "0 0 5px",
+  },
+  attentionBadge: {
+    background: "#ecfdf3",
+    border: "1px solid #bbf7d0",
+    borderRadius: 8,
+    color: "#027a48",
+    fontSize: 11,
+    fontWeight: 900,
+    padding: "6px 8px",
+    whiteSpace: "nowrap",
+  },
+  attentionBadgeActive: {
+    background: "#fff7ed",
+    border: "1px solid #fed7aa",
+    color: "#c2410c",
+  },
+  ownerMetricGrid: {
+    display: "grid",
+    gap: 8,
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  },
+  ownerMetric: {
+    background: "#f8fbff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    display: "grid",
+    gap: 3,
+    padding: 10,
+  },
+  ownerProgressRail: {
+    display: "grid",
+    gap: 6,
+    gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+  },
+  ownerProgressStep: {
+    color: "#64717d",
+    display: "grid",
+    fontSize: 10,
+    fontWeight: 800,
+    gap: 5,
+    justifyItems: "center",
+    textAlign: "center",
+  },
+  ownerProgressDot: {
+    background: "#e2e8f0",
+    border: "3px solid #f8fbff",
+    borderRadius: "50%",
+    height: 18,
+    width: 18,
+  },
+  ownerProgressDotActive: {
+    background: "#14b8a6",
+    boxShadow: "0 0 0 3px #d9fbf4",
+  },
+  quickActionGrid: {
+    display: "grid",
+    gap: 8,
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+  },
+  quickActionButton: {
+    background: "#f0fbf8",
+    border: "1px solid #bfe9e0",
+    borderRadius: 8,
+    color: "#087f78",
+    cursor: "pointer",
+    fontSize: 12,
+    fontWeight: 900,
+    minHeight: 38,
   },
   grid: {
     display: "grid",
@@ -1439,6 +1709,35 @@ const styles: Record<string, CSSProperties> = {
     gap: 5,
     lineHeight: 1.35,
     padding: 12,
+  },
+  dischargeList: {
+    display: "grid",
+    gap: 10,
+    marginTop: 12,
+  },
+  dischargeItem: {
+    background: "#fbffff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    color: "#102a3a",
+    display: "flex",
+    fontSize: 13,
+    gap: 10,
+    justifyContent: "space-between",
+    padding: 12,
+  },
+  dischargeItemButton: {
+    background: "#fbffff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    color: "#102a3a",
+    cursor: "pointer",
+    display: "flex",
+    fontSize: 13,
+    gap: 10,
+    justifyContent: "space-between",
+    padding: 12,
+    textAlign: "left",
   },
   emptyBox: {
     background: "#f8fbff",
