@@ -462,7 +462,9 @@ export default function Home() {
   const [authMessage, setAuthMessage] = useState("");
   const [staffLoginEmail, setStaffLoginEmail] = useState("");
   const [staffLoginPassword, setStaffLoginPassword] = useState("");
-  const [ownerMagicEmail, setOwnerMagicEmail] = useState("");
+  const [ownerAccessEmail, setOwnerAccessEmail] = useState("");
+  const [ownerAccessCode, setOwnerAccessCode] = useState("");
+  const [ownerCodeSent, setOwnerCodeSent] = useState(false);
   const [ownerVisits, setOwnerVisits] = useState<Visit[]>([]);
   const [ownerVisitsLoading, setOwnerVisitsLoading] = useState(false);
   const [ownerVisitsError, setOwnerVisitsError] = useState("");
@@ -726,13 +728,14 @@ export default function Home() {
     if (profile) await loadVisits();
   };
 
-  const sendOwnerMagicLink = async (event: React.FormEvent<HTMLFormElement>) => {
+  const sendOwnerAccessCode = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setAuthLoading(true);
     setAuthMessage("");
+    setOwnerVisitsError("");
 
     const { error } = await supabase.auth.signInWithOtp({
-      email: ownerMagicEmail.trim(),
+      email: ownerAccessEmail.trim(),
       options: {
         emailRedirectTo: getOwnerMagicRedirectUrl(),
       },
@@ -745,7 +748,35 @@ export default function Home() {
       return;
     }
 
-    setAuthMessage("Magic link sent. Please check your email to continue.");
+    setOwnerCodeSent(true);
+    setAuthMessage("Security code sent. Please check your email and enter the code here.");
+  };
+
+  const verifyOwnerAccessCode = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setAuthLoading(true);
+    setAuthMessage("");
+    setOwnerVisitsError("");
+
+    const { data, error } = await supabase.auth.verifyOtp({
+      email: ownerAccessEmail.trim(),
+      token: ownerAccessCode.trim(),
+      type: "email",
+    });
+
+    if (error) {
+      setAuthLoading(false);
+      setAuthMessage(error.message);
+      return;
+    }
+
+    const profile = await syncStaffProfile(data.session);
+    if (!profile) {
+      await loadOwnerVisits();
+    }
+
+    setAuthMessage("Code verified. Your active visits are shown below.");
+    setAuthLoading(false);
   };
 
   const signOut = async () => {
@@ -756,6 +787,8 @@ export default function Home() {
     setVisits([]);
     setOwnerVisits([]);
     setOwnerVisitsError("");
+    setOwnerAccessCode("");
+    setOwnerCodeSent(false);
     setAuthMessage("Signed out.");
   };
 
@@ -1869,14 +1902,18 @@ export default function Home() {
     <div style={styles.authPanel}>
       <strong>Secure owner access</strong>
       <p style={styles.authHelpText}>
-        Magic links sign you in securely. To open a pet&apos;s live updates, use the private visit link sent by text or copied from the clinic dashboard.
+        Enter your email to receive a one-time security code. After the code is verified, you can choose from visits connected to that email.
       </p>
-      <form style={styles.authInlineForm} onSubmit={sendOwnerMagicLink}>
+      <form style={styles.authInlineForm} onSubmit={sendOwnerAccessCode}>
         <input
           style={styles.input}
           type="email"
-          value={ownerMagicEmail}
-          onChange={(event) => setOwnerMagicEmail(event.target.value)}
+          value={ownerAccessEmail}
+          onChange={(event) => {
+            setOwnerAccessEmail(event.target.value);
+            setOwnerCodeSent(false);
+            setOwnerAccessCode("");
+          }}
           placeholder="Owner email"
           required
         />
@@ -1888,9 +1925,34 @@ export default function Home() {
           type="submit"
           disabled={authLoading}
         >
-          Send Magic Link
+          {authLoading ? "Sending Code..." : ownerCodeSent ? "Resend Code" : "Send Code"}
         </button>
       </form>
+      {ownerCodeSent && (
+        <form style={styles.authInlineForm} onSubmit={verifyOwnerAccessCode}>
+          <input
+            style={styles.input}
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            value={ownerAccessCode}
+            onChange={(event) =>
+              setOwnerAccessCode(event.target.value.replace(/\D/g, "").slice(0, 6))
+            }
+            placeholder="6-digit code"
+            required
+          />
+          <button
+            style={{
+              ...styles.primaryButton,
+              ...(authLoading ? styles.disabledButton : {}),
+            }}
+            type="submit"
+            disabled={authLoading || ownerAccessCode.length < 6}
+          >
+            {authLoading ? "Verifying..." : "Verify Code"}
+          </button>
+        </form>
+      )}
       {authUserEmail && <p style={styles.authSignedInText}>Signed in as {authUserEmail}</p>}
       {authMessage && <div style={styles.authMessage}>{authMessage}</div>}
       {authUserEmail && (
