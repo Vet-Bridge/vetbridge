@@ -56,6 +56,59 @@ type Visit = {
   accessUrl: string;
 };
 
+type ReferralDocument = {
+  id: string;
+  fileName: string;
+  fileUrl: string;
+  fileType: string;
+  uploadedAt: string;
+};
+
+type ReferralMessage = {
+  id: string;
+  senderType: string;
+  senderName: string;
+  message: string;
+  createdAt: string;
+};
+
+type Referral = {
+  id: string;
+  referringClinicName: string;
+  referringDoctorName: string;
+  referringPhone: string;
+  referringEmail: string;
+  referringAddress: string;
+  preferredCallbackNumber: string;
+  petName: string;
+  species: string;
+  breed: string;
+  age: string;
+  sex: string;
+  weight: number;
+  ownerFirstName: string;
+  ownerLastName: string;
+  ownerPhone: string;
+  ownerEmail: string;
+  referralType: string;
+  reason: string;
+  presentingComplaint: string;
+  history: string;
+  currentSymptoms: string;
+  suspectedDiagnosis: string;
+  clinicalSummary: string;
+  treatmentProvided: string;
+  medicationsGiven: string;
+  ivFluids: string;
+  transferTime: string;
+  stabilityLevel: string;
+  status: string;
+  convertedVisitId: string;
+  createdAt: string;
+  documents: ReferralDocument[];
+  messages: ReferralMessage[];
+};
+
 type DoctorOption = {
   name: string;
   profileUrl: string;
@@ -80,6 +133,11 @@ type NotificationSummary = {
 type ClinicActionResult = {
   visit: Visit;
   notification?: NotificationSummary | null;
+};
+
+type ReferralWorkflowResponse = {
+  setupRequired: boolean;
+  referrals: Referral[];
 };
 
 type ClinicDashboardView = "active" | "critical" | "approvals" | "pickup" | "discharged";
@@ -511,6 +569,12 @@ export default function Home() {
   const [petMediaName, setPetMediaName] = useState("");
   const [petMediaType, setPetMediaType] = useState("");
   const [referralDocumentNames, setReferralDocumentNames] = useState<string[]>([]);
+  const [referrals, setReferrals] = useState<Referral[]>([]);
+  const [referralsLoading, setReferralsLoading] = useState(false);
+  const [referralWorkflowSetupRequired, setReferralWorkflowSetupRequired] = useState(false);
+  const [referralDashboardStatus, setReferralDashboardStatus] = useState("All referrals");
+  const [referralMessageDrafts, setReferralMessageDrafts] = useState<Record<string, string>>({});
+  const [pendingReferralActions, setPendingReferralActions] = useState<Record<string, string>>({});
   const [clinicUnlocked, setClinicUnlocked] = useState(false);
   const [clinicError, setClinicError] = useState("");
   const [clinicSettings, setClinicSettings] = useState<ClinicSettings>(defaultClinicSettings);
@@ -601,6 +665,26 @@ export default function Home() {
     "Swollen abdomen",
     "Excessive drooling",
     "Lethargy or weakness",
+  ];
+  const referralTypes = [
+    "Emergency transfer",
+    "Specialty consult",
+    "After-hours emergency",
+    "Follow-up referral",
+    "Imaging/lab review",
+    "Surgical referral",
+  ];
+  const stabilityLevels = ["Stable", "Urgent", "Critical", "Actively declining"];
+  const referralStatuses = [
+    "Referral Submitted",
+    "Records Received",
+    "Under Review",
+    "Accepted",
+    "Waiting for Patient Arrival",
+    "Patient Arrived",
+    "Converted to Visit",
+    "Declined / Redirected",
+    "Closed",
   ];
   const [visits, setVisits] = useState<Visit[]>([]);
   const selectedVisit = visits.find((v) => v.id === selectedVisitId) || null;
@@ -722,6 +806,20 @@ export default function Home() {
       }
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
+  const referralCounts = {
+    new: referrals.filter((referral) => referral.status === "Referral Submitted").length,
+    accepted: referrals.filter((referral) => referral.status === "Accepted").length,
+    waiting: referrals.filter((referral) => referral.status === "Waiting for Patient Arrival").length,
+    converted: referrals.filter((referral) => referral.status === "Converted to Visit").length,
+    closed: referrals.filter((referral) =>
+      ["Closed", "Declined / Redirected"].includes(referral.status)
+    ).length,
+  };
+  const filteredReferrals = referrals.filter(
+    (referral) =>
+      referralDashboardStatus === "All referrals" ||
+      referral.status === referralDashboardStatus
+  );
 
   const apiRequest = async <T,>(payload: Record<string, unknown>): Promise<T> => {
     const { data } = await supabase.auth.getSession();
@@ -827,6 +925,7 @@ export default function Home() {
       setVisits(result.visits);
       await loadClinicSettings();
       await loadIntegrationReadiness();
+      await loadReferrals();
       setClinicError("");
       setClinicUnlocked(true);
     } catch (error) {
@@ -856,6 +955,23 @@ export default function Home() {
       setClinicSettingsMessage(
         error instanceof Error ? error.message : "Unable to load clinic settings."
       );
+    }
+  }
+
+  async function loadReferrals() {
+    setReferralsLoading(true);
+
+    try {
+      const result = await apiRequest<{ referralWorkflow: ReferralWorkflowResponse }>({
+        action: "loadReferrals",
+      });
+      setReferrals(result.referralWorkflow.referrals);
+      setReferralWorkflowSetupRequired(result.referralWorkflow.setupRequired);
+    } catch (error) {
+      setReferralWorkflowSetupRequired(true);
+      console.error(error);
+    } finally {
+      setReferralsLoading(false);
     }
   }
 
@@ -1278,56 +1394,60 @@ export default function Home() {
       .getAll("referralDocuments")
       .filter((entry): entry is File => entry instanceof File && Boolean(entry.name));
     const transferTime = String(form.get("transferTime") || "").trim();
-    const referralName = doctorName
-      ? `${clinicName} - Dr. ${doctorName}`
-      : clinicName;
-    const uploadedDocumentNames = referralDocuments.map((file) => file.name);
-
-    const referralSummary = [
-      "Referral intake",
-      `Referring clinic: ${clinicName}`,
-      `Referring doctor: ${doctorName}`,
-      `Doctor contact: ${doctorPhone || "No phone provided"} / ${doctorEmail || "No email provided"}`,
-      `Pet owner: ${[ownerFirstName, ownerLastName].filter(Boolean).join(" ") || "Not provided"}`,
-      `Owner contact: ${ownerPhone || "No phone provided"} / ${ownerEmail || "No email provided"}`,
-      `Documents included: ${documentsIncluded.length ? documentsIncluded.join(", ") : "Not specified"}`,
-      `Uploaded files selected: ${uploadedDocumentNames.length ? uploadedDocumentNames.join(", ") : "None selected"}`,
-      `Referral notes: ${String(form.get("referralNotes") || "").trim() || "Not provided"}`,
-      `Treatment already given: ${String(form.get("treatmentGiven") || "").trim() || "Not provided"}`,
-      `Medications: ${String(form.get("medications") || "").trim() || "Not provided"}`,
-      `IV fluids: ${String(form.get("ivFluids") || "Not provided")}`,
-      `Time of transfer: ${transferTime || "Not provided"}`,
-    ].join("\n");
-
-    let visit: Visit;
+    const referralDocumentsPayload = referralDocuments.map((file) => ({
+      fileName: file.name,
+      fileUrl: "",
+      fileType: file.type || file.name.split(".").pop() || "document",
+    }));
+    const referralReason = String(form.get("reason") || "").trim();
+    const clinicalSummary = [
+      String(form.get("clinicalSummary") || "").trim(),
+      documentsIncluded.length ? `Documents included: ${documentsIncluded.join(", ")}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
 
     try {
-      const result = await apiRequest<{ visit: Visit }>({
+      const result = await apiRequest<{ referral: Referral }>({
         action: "createReferral",
-        owner: {
-          first_name: ownerFirstName || "Referral",
-          last_name: ownerLastName || clinicName,
-          phone: ownerPhone || doctorPhone,
-          email: ownerEmail || doctorEmail,
+        referral: {
+          referringClinicName: clinicName,
+          referringDoctorName: doctorName,
+          referringPhone: doctorPhone,
+          referringEmail: doctorEmail,
+          referringAddress: String(form.get("referringAddress") || "").trim(),
+          preferredCallbackNumber: String(form.get("preferredCallbackNumber") || "").trim(),
+          petName: String(form.get("petName") || "").trim(),
+          species: String(form.get("species") || "").trim(),
+          breed: String(form.get("breed") || "").trim(),
+          age: String(form.get("age") || "").trim(),
+          sex: String(form.get("sex") || "").trim(),
+          weight: String(form.get("weight") || "").trim(),
+          ownerFirstName,
+          ownerLastName,
+          ownerPhone,
+          ownerEmail,
+          referralType: String(form.get("referralType") || "").trim(),
+          reason: referralReason,
+          presentingComplaint: String(form.get("presentingComplaint") || "").trim(),
+          history: String(form.get("history") || "").trim(),
+          currentSymptoms: String(form.get("currentSymptoms") || "").trim(),
+          suspectedDiagnosis: String(form.get("suspectedDiagnosis") || "").trim(),
+          clinicalSummary,
+          treatmentProvided: String(form.get("treatmentGiven") || "").trim(),
+          medicationsGiven: String(form.get("medications") || "").trim(),
+          ivFluids: String(form.get("ivFluids") || "").trim(),
+          transferTime,
+          stabilityLevel: String(form.get("stabilityLevel") || "Stable"),
         },
-        pet: {
-          pet_name: String(form.get("petName")),
-          species: String(form.get("species")),
-          other_species: String(form.get("otherSpecies") || ""),
-          breed: String(form.get("breed") || ""),
-        },
-        visit: {
-          visit_type: "Vet referral",
-          referral_name: referralName,
-          been_here_before: "Unknown",
-          reason: referralSummary,
-          status: "Referral received",
-        },
-        firstUpdateMessage: `Referral intake submitted by ${clinicName}. The emergency team will review the transfer information.`,
-        firstUpdateStatus: "Referral received",
+        documents: referralDocumentsPayload,
       });
-      visit = result.visit;
-  } catch (error) {
+      setReferrals((current) => [
+        result.referral,
+        ...current.filter((item) => item.id !== result.referral.id),
+      ]);
+      setReferralWorkflowSetupRequired(false);
+    } catch (error) {
       console.error(error);
       alert(error instanceof Error ? error.message : "Error creating referral");
       submittingReferralRef.current = false;
@@ -1335,13 +1455,99 @@ export default function Home() {
       return;
     }
 
-    setVisits((current) => [visit, ...current.filter((item) => item.id !== visit.id)]);
     setSelectedReferralSpecies("");
     setReferralDocumentNames([]);
-    alert("Referral intake sent to the clinic dashboard.");
+    alert("Referral intake sent to the referral dashboard.");
     setView(clinicUnlocked ? "clinic" : "home");
     submittingReferralRef.current = false;
     setSubmittingReferral(false);
+  };
+
+  const setPendingReferralAction = (referralId: string, message: string) => {
+    setPendingReferralActions((current) => ({ ...current, [referralId]: message }));
+  };
+
+  const clearPendingReferralAction = (referralId: string) => {
+    setPendingReferralActions((current) => {
+      const next = { ...current };
+      delete next[referralId];
+      return next;
+    });
+  };
+
+  const updateReferralStatusFromDashboard = async (
+    referral: Referral,
+    status: string,
+    defaultMessage: string
+  ) => {
+    if (pendingReferralActions[referral.id]) return;
+
+    setPendingReferralAction(referral.id, `Updating referral to ${status}...`);
+
+    try {
+      const result = await apiRequest<{ referral: Referral }>({
+        action: "updateReferralStatus",
+        referralId: referral.id,
+        status,
+        message: defaultMessage,
+      });
+      setReferrals((current) =>
+        current.map((item) => (item.id === result.referral.id ? result.referral : item))
+      );
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Unable to update referral");
+    } finally {
+      clearPendingReferralAction(referral.id);
+    }
+  };
+
+  const sendReferralMessage = async (referral: Referral) => {
+    const message = referralMessageDrafts[referral.id]?.trim();
+    if (!message || pendingReferralActions[referral.id]) return;
+
+    setPendingReferralAction(referral.id, "Sending referral message...");
+
+    try {
+      const result = await apiRequest<{ referral: Referral }>({
+        action: "updateReferralStatus",
+        referralId: referral.id,
+        status: referral.status,
+        message,
+      });
+      setReferrals((current) =>
+        current.map((item) => (item.id === result.referral.id ? result.referral : item))
+      );
+      setReferralMessageDrafts((current) => ({ ...current, [referral.id]: "" }));
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Unable to send referral message");
+    } finally {
+      clearPendingReferralAction(referral.id);
+    }
+  };
+
+  const convertReferralFromDashboard = async (referral: Referral) => {
+    if (pendingReferralActions[referral.id]) return;
+
+    setPendingReferralAction(referral.id, "Converting referral to visit...");
+
+    try {
+      const result = await apiRequest<{ referral: Referral; visit: Visit }>({
+        action: "convertReferralToVisit",
+        referralId: referral.id,
+      });
+      setReferrals((current) =>
+        current.map((item) => (item.id === result.referral.id ? result.referral : item))
+      );
+      setVisits((current) => [
+        result.visit,
+        ...current.filter((visit) => visit.id !== result.visit.id),
+      ]);
+      setClinicDashboardView("active");
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Unable to convert referral");
+    } finally {
+      clearPendingReferralAction(referral.id);
+    }
   };
 
   const sendUpdate = async (
@@ -1983,6 +2189,30 @@ export default function Home() {
                 <input style={styles.input} name="referringDoctor" placeholder="Referring doctor name" required />
                 <input style={styles.input} name="doctorPhone" placeholder="Doctor phone number" required />
                 <input style={styles.input} name="doctorEmail" placeholder="Doctor email" required />
+                <input style={styles.input} name="referringAddress" placeholder="Referring clinic address" />
+                <input
+                  style={styles.input}
+                  name="preferredCallbackNumber"
+                  placeholder="Preferred callback number"
+                />
+
+                <select style={styles.input} name="referralType" required>
+                  <option value="">Referral type</option>
+                  {referralTypes.map((type) => (
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
+                  ))}
+                </select>
+
+                <select style={styles.input} name="stabilityLevel" required>
+                  <option value="">Stability / urgency level</option>
+                  {stabilityLevels.map((level) => (
+                    <option key={level} value={level}>
+                      {level}
+                    </option>
+                  ))}
+                </select>
 
                 <input style={styles.input} name="petName" placeholder="Pet name" required />
                 <select
@@ -2028,6 +2258,23 @@ export default function Home() {
                     required
                   />
                 )}
+                <input style={styles.input} name="age" placeholder="Approx age" />
+                <select style={styles.input} name="sex">
+                  <option value="">Sex</option>
+                  <option value="Female">Female</option>
+                  <option value="Female spayed">Female spayed</option>
+                  <option value="Male">Male</option>
+                  <option value="Male neutered">Male neutered</option>
+                  <option value="Unknown">Unknown</option>
+                </select>
+                <input
+                  style={styles.input}
+                  name="weight"
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  placeholder="Weight in pounds"
+                />
 
                 <div style={styles.referralSubsection}>
                   <strong>Pet owner contact, if available</strong>
@@ -2039,8 +2286,40 @@ export default function Home() {
 
                 <textarea
                   style={styles.textarea}
-                  name="referralNotes"
-                  placeholder="Referral notes"
+                  name="reason"
+                  placeholder="Reason for referral"
+                  required
+                />
+
+                <textarea
+                  style={styles.textarea}
+                  name="presentingComplaint"
+                  placeholder="Presenting complaint"
+                  required
+                />
+
+                <textarea
+                  style={styles.textarea}
+                  name="history"
+                  placeholder="Relevant history"
+                />
+
+                <textarea
+                  style={styles.textarea}
+                  name="currentSymptoms"
+                  placeholder="Current symptoms"
+                />
+
+                <textarea
+                  style={styles.textarea}
+                  name="suspectedDiagnosis"
+                  placeholder="Diagnosis or suspected diagnosis"
+                />
+
+                <textarea
+                  style={styles.textarea}
+                  name="clinicalSummary"
+                  placeholder="Clinical summary"
                   required
                 />
 
@@ -2780,6 +3059,252 @@ export default function Home() {
                   </button>
                 </form>
               )}
+
+              <section style={styles.referralDashboardPanel}>
+                <div style={styles.referralDashboardHeader}>
+                  <div>
+                    <h3 style={styles.ownerVisitTitle}>Referral Dashboard</h3>
+                    <p style={styles.authHelpText}>
+                      Dedicated transfer workflow for referring clinics before the patient arrives.
+                    </p>
+                  </div>
+                  <span style={styles.speciesPill}>Phase 13</span>
+                </div>
+
+                {referralWorkflowSetupRequired && (
+                  <div style={styles.queueMiniCard}>
+                    Run the Phase 13 SQL file in Supabase to store referrals separately from visits.
+                  </div>
+                )}
+
+                <div style={styles.referralStatsGrid}>
+                  <div style={styles.referralStatCard}>
+                    <span>New</span>
+                    <strong>{referralCounts.new}</strong>
+                  </div>
+                  <div style={styles.referralStatCard}>
+                    <span>Accepted</span>
+                    <strong>{referralCounts.accepted}</strong>
+                  </div>
+                  <div style={styles.referralStatCard}>
+                    <span>Waiting</span>
+                    <strong>{referralCounts.waiting}</strong>
+                  </div>
+                  <div style={styles.referralStatCard}>
+                    <span>Converted</span>
+                    <strong>{referralCounts.converted}</strong>
+                  </div>
+                  <div style={styles.referralStatCard}>
+                    <span>Closed</span>
+                    <strong>{referralCounts.closed}</strong>
+                  </div>
+                </div>
+
+                <select
+                  style={styles.clinicCompactSelect}
+                  value={referralDashboardStatus}
+                  onChange={(event) => setReferralDashboardStatus(event.target.value)}
+                >
+                  <option>All referrals</option>
+                  {referralStatuses.map((status) => (
+                    <option key={status}>{status}</option>
+                  ))}
+                </select>
+
+                {referralsLoading && (
+                  <div style={styles.emptyBox}>Loading referral dashboard...</div>
+                )}
+
+                {!referralsLoading && filteredReferrals.length === 0 && (
+                  <div style={styles.emptyBox}>No referrals match this view yet.</div>
+                )}
+
+                <div style={styles.referralCardGrid}>
+                  {filteredReferrals.map((referral) => {
+                    const pendingMessage = pendingReferralActions[referral.id];
+                    const messageDraft = referralMessageDrafts[referral.id] || "";
+                    const canConvert =
+                      referral.status !== "Converted to Visit" && !referral.convertedVisitId;
+
+                    return (
+                      <div key={referral.id} style={styles.referralCard}>
+                        <div style={styles.referralCardHeader}>
+                          <div>
+                            <h4 style={styles.referralPetName}>{referral.petName}</h4>
+                            <p style={styles.text}>
+                              {referral.species}
+                              {referral.breed ? ` - ${referral.breed}` : ""}{" "}
+                              {referral.age ? `- ${referral.age}` : ""}
+                            </p>
+                          </div>
+                          <span style={styles.referralStatusBadge}>{referral.status}</span>
+                        </div>
+
+                        <div style={styles.referralMetaGrid}>
+                          <span>
+                            <strong>Clinic</strong>
+                            {referral.referringClinicName}
+                          </span>
+                          <span>
+                            <strong>Doctor</strong>
+                            {referral.referringDoctorName}
+                          </span>
+                          <span>
+                            <strong>Type</strong>
+                            {referral.referralType}
+                          </span>
+                          <span>
+                            <strong>Urgency</strong>
+                            {referral.stabilityLevel}
+                          </span>
+                        </div>
+
+                        <div style={styles.intakeSummaryCard}>
+                          <strong>Clinical summary</strong>
+                          <pre style={styles.intakeSummaryText}>
+{[
+  `Reason: ${referral.reason}`,
+  `Complaint: ${referral.presentingComplaint || "Not provided"}`,
+  `Symptoms: ${referral.currentSymptoms || "Not provided"}`,
+  `Suspected diagnosis: ${referral.suspectedDiagnosis || "Not provided"}`,
+  `Treatment: ${referral.treatmentProvided || "Not provided"}`,
+  `Medications: ${referral.medicationsGiven || "Not provided"}`,
+  `IV fluids: ${referral.ivFluids || "Not provided"}`,
+].join("\n")}
+                          </pre>
+                        </div>
+
+                        <div style={styles.referralDocumentList}>
+                          <strong>Documents</strong>
+                          {referral.documents.length > 0 ? (
+                            referral.documents.map((document) => (
+                              <span key={document.id}>{document.fileName}</span>
+                            ))
+                          ) : (
+                            <span>No documents listed yet.</span>
+                          )}
+                        </div>
+
+                        {referral.messages.length > 0 && (
+                          <div style={styles.referralMessageList}>
+                            <strong>Messages</strong>
+                            {referral.messages.slice(-3).map((message) => (
+                              <span key={message.id}>
+                                {message.senderName}: {message.message}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {pendingMessage && (
+                          <div style={styles.pendingActionNotice}>{pendingMessage}</div>
+                        )}
+
+                        <div style={styles.referralActionGrid}>
+                          <button
+                            type="button"
+                            style={styles.blueAction}
+                            onClick={() =>
+                              updateReferralStatusFromDashboard(
+                                referral,
+                                "Under Review",
+                                "The emergency team is reviewing the referral records."
+                              )
+                            }
+                          >
+                            Review
+                          </button>
+                          <button
+                            type="button"
+                            style={styles.greenAction}
+                            onClick={() =>
+                              updateReferralStatusFromDashboard(
+                                referral,
+                                "Accepted",
+                                "Referral accepted. Please send the patient when ready."
+                              )
+                            }
+                          >
+                            Accept
+                          </button>
+                          <button
+                            type="button"
+                            style={styles.tealAction}
+                            onClick={() =>
+                              updateReferralStatusFromDashboard(
+                                referral,
+                                "Waiting for Patient Arrival",
+                                "Referral accepted. Waiting for patient arrival."
+                              )
+                            }
+                          >
+                            Waiting
+                          </button>
+                          <button
+                            type="button"
+                            style={styles.orangeAction}
+                            onClick={() =>
+                              updateReferralStatusFromDashboard(
+                                referral,
+                                "Records Received",
+                                "Records received. The emergency team will continue review."
+                              )
+                            }
+                          >
+                            Records
+                          </button>
+                          <button
+                            type="button"
+                            style={styles.redAction}
+                            onClick={() =>
+                              updateReferralStatusFromDashboard(
+                                referral,
+                                "Declined / Redirected",
+                                "Referral reviewed. Please call the emergency team for redirection."
+                              )
+                            }
+                          >
+                            Redirect
+                          </button>
+                          <button
+                            type="button"
+                            style={{
+                              ...styles.greenAction,
+                              ...(!canConvert ? styles.disabledButton : {}),
+                            }}
+                            disabled={!canConvert}
+                            onClick={() => convertReferralFromDashboard(referral)}
+                          >
+                            Convert to Visit
+                          </button>
+                        </div>
+
+                        <div style={styles.referralMessageComposer}>
+                          <textarea
+                            style={styles.textarea}
+                            value={messageDraft}
+                            onChange={(event) =>
+                              setReferralMessageDrafts((current) => ({
+                                ...current,
+                                [referral.id]: event.target.value,
+                              }))
+                            }
+                            placeholder="Message referring clinic"
+                          />
+                          <button
+                            type="button"
+                            style={styles.secondaryButton}
+                            onClick={() => sendReferralMessage(referral)}
+                            disabled={!messageDraft.trim()}
+                          >
+                            Send Message
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
 
               {visits.length === 0 && (
                 <div style={styles.emptyBox}>
@@ -4935,6 +5460,107 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: 5,
     lineHeight: 1.35,
     padding: 12,
+  },
+  referralDashboardPanel: {
+    background: "#ffffff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    boxShadow: "0 8px 20px rgba(41, 64, 83, 0.06)",
+    display: "grid",
+    gap: 14,
+    marginBottom: 18,
+    padding: 16,
+  },
+  referralDashboardHeader: {
+    alignItems: "start",
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 12,
+    justifyContent: "space-between",
+  },
+  referralStatsGrid: {
+    display: "grid",
+    gap: 8,
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 105px), 1fr))",
+  },
+  referralStatCard: {
+    background: "#f8fbff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    color: "#64717d",
+    display: "grid",
+    fontSize: 12,
+    fontWeight: 800,
+    gap: 3,
+    padding: "10px 8px",
+  },
+  referralCardGrid: {
+    display: "grid",
+    gap: 14,
+  },
+  referralCard: {
+    background: "#fbffff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    display: "grid",
+    gap: 12,
+    padding: 14,
+  },
+  referralCardHeader: {
+    alignItems: "start",
+    display: "flex",
+    gap: 10,
+    justifyContent: "space-between",
+  },
+  referralPetName: {
+    color: "#243447",
+    fontSize: 20,
+    margin: "0 0 4px",
+  },
+  referralStatusBadge: {
+    background: "#e6f7f5",
+    border: "1px solid #bfe9e0",
+    borderRadius: 8,
+    color: "#087f78",
+    fontSize: 11,
+    fontWeight: 900,
+    padding: "6px 8px",
+    textAlign: "center",
+    whiteSpace: "nowrap",
+  },
+  referralMetaGrid: {
+    display: "grid",
+    gap: 8,
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 150px), 1fr))",
+  },
+  referralDocumentList: {
+    background: "#ffffff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    color: "#52606d",
+    display: "grid",
+    fontSize: 13,
+    gap: 5,
+    padding: 12,
+  },
+  referralMessageList: {
+    background: "#f0fbf8",
+    border: "1px solid #bfe9e0",
+    borderRadius: 8,
+    color: "#087f78",
+    display: "grid",
+    fontSize: 13,
+    gap: 5,
+    padding: 12,
+  },
+  referralActionGrid: {
+    display: "grid",
+    gap: 8,
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 135px), 1fr))",
+  },
+  referralMessageComposer: {
+    display: "grid",
+    gap: 8,
   },
   staffSignOutButton: {
     background: "#ffffff",

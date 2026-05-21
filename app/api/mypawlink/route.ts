@@ -622,6 +622,18 @@ const isMissingIntegrationTableError = (error: unknown) => {
   );
 };
 
+const isMissingReferralTableError = (error: unknown) => {
+  const dbError = error as { code?: string; message?: string } | null;
+  const message = dbError?.message?.toLowerCase() || "";
+  return (
+    dbError?.code === "42P01" ||
+    dbError?.code === "42703" ||
+    message.includes("referrals") ||
+    message.includes("referral_documents") ||
+    message.includes("referral_messages")
+  );
+};
+
 const formatMoney = (amount: number) =>
   new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -970,6 +982,383 @@ const logIntegrationEvent = async ({
 
     console.error("Unable to log integration event:", error);
   }
+};
+
+const referralSelect = `
+  *,
+  referral_documents (
+    id,
+    file_name,
+    file_url,
+    file_type,
+    uploaded_at
+  ),
+  referral_messages (
+    id,
+    sender_type,
+    sender_name,
+    message,
+    created_at
+  )
+`;
+
+const mapReferral = (referral: DbRecord) => {
+  const documents = arrayValue(referral.referral_documents)
+    .sort(
+      (a, b) =>
+        new Date(stringValue(a.uploaded_at)).getTime() -
+        new Date(stringValue(b.uploaded_at)).getTime()
+    )
+    .map((document) => ({
+      id: stringValue(document.id),
+      fileName: stringValue(document.file_name),
+      fileUrl: stringValue(document.file_url),
+      fileType: stringValue(document.file_type),
+      uploadedAt: stringValue(document.uploaded_at),
+    }));
+  const messages = arrayValue(referral.referral_messages)
+    .sort(
+      (a, b) =>
+        new Date(stringValue(a.created_at)).getTime() -
+        new Date(stringValue(b.created_at)).getTime()
+    )
+    .map((message) => ({
+      id: stringValue(message.id),
+      senderType: stringValue(message.sender_type),
+      senderName: stringValue(message.sender_name),
+      message: stringValue(message.message),
+      createdAt: stringValue(message.created_at),
+    }));
+
+  return {
+    id: stringValue(referral.id),
+    clinicId: stringValue(referral.clinic_id),
+    referringClinicName: stringValue(referral.referring_clinic_name),
+    referringDoctorName: stringValue(referral.referring_doctor_name),
+    referringPhone: stringValue(referral.referring_phone),
+    referringEmail: stringValue(referral.referring_email),
+    referringAddress: stringValue(referral.referring_address),
+    preferredCallbackNumber: stringValue(referral.preferred_callback_number),
+    petName: stringValue(referral.pet_name),
+    species: stringValue(referral.species),
+    breed: stringValue(referral.breed),
+    age: stringValue(referral.age),
+    sex: stringValue(referral.sex),
+    weight:
+      typeof referral.weight === "number"
+        ? referral.weight
+        : Number(stringValue(referral.weight, "0")) || 0,
+    ownerFirstName: stringValue(referral.owner_first_name),
+    ownerLastName: stringValue(referral.owner_last_name),
+    ownerPhone: stringValue(referral.owner_phone),
+    ownerEmail: stringValue(referral.owner_email),
+    referralType: stringValue(referral.referral_type),
+    reason: stringValue(referral.reason),
+    presentingComplaint: stringValue(referral.presenting_complaint),
+    history: stringValue(referral.history),
+    currentSymptoms: stringValue(referral.current_symptoms),
+    suspectedDiagnosis: stringValue(referral.suspected_diagnosis),
+    clinicalSummary: stringValue(referral.clinical_summary),
+    treatmentProvided: stringValue(referral.treatment_provided),
+    medicationsGiven: stringValue(referral.medications_given),
+    ivFluids: stringValue(referral.iv_fluids),
+    transferTime: stringValue(referral.transfer_time),
+    stabilityLevel: stringValue(referral.stability_level, "Stable"),
+    status: stringValue(referral.status, "Referral Submitted"),
+    convertedVisitId: stringValue(referral.converted_visit_id),
+    createdAt: stringValue(referral.created_at),
+    documents,
+    messages,
+  };
+};
+
+const fetchReferralById = async (referralId: string) => {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("referrals")
+    .select(referralSelect)
+    .eq("id", referralId)
+    .single();
+
+  if (error) throw error;
+  return mapReferral((data || {}) as DbRecord);
+};
+
+const loadReferrals = async () => {
+  try {
+    const supabase = getSupabaseAdmin();
+    const clinicId = await getDemoClinicId();
+    let query = supabase
+      .from("referrals")
+      .select(referralSelect)
+      .order("created_at", { ascending: false });
+
+    if (clinicId) {
+      query = query.eq("clinic_id", clinicId);
+    }
+
+    const { data, error } = await query;
+
+    if (error) throw error;
+    return {
+      setupRequired: false,
+      referrals: ((data || []) as DbRecord[]).map(mapReferral),
+    };
+  } catch (error) {
+    if (isMissingReferralTableError(error)) {
+      return { setupRequired: true, referrals: [] };
+    }
+
+    throw error;
+  }
+};
+
+const createReferralRecord = async (body: RequestBody) => {
+  const referral = recordValue(body.referral);
+  const documents = arrayValue(body.documents);
+  const clinicId = await getDemoClinicId();
+  const weight = Number(referral.weight);
+  const transferTime = stringValue(referral.transferTime).trim();
+  const referringClinicName = stringValue(referral.referringClinicName).trim();
+  const referringDoctorName = stringValue(referral.referringDoctorName).trim();
+  const petName = stringValue(referral.petName).trim();
+  const species = stringValue(referral.species).trim();
+  const referralType = stringValue(referral.referralType).trim();
+  const reason = stringValue(referral.reason).trim();
+
+  if (!referringClinicName || !referringDoctorName || !petName || !species || !referralType || !reason) {
+    throw new Error("Referring clinic, doctor, pet, referral type, and reason are required.");
+  }
+
+  const payload = {
+    clinic_id: clinicId || null,
+    referring_clinic_name: referringClinicName,
+    referring_doctor_name: referringDoctorName,
+    referring_phone: stringValue(referral.referringPhone).trim(),
+    referring_email: normalizeEmail(stringValue(referral.referringEmail)),
+    referring_address: stringValue(referral.referringAddress).trim(),
+    preferred_callback_number: stringValue(referral.preferredCallbackNumber).trim(),
+    pet_name: petName,
+    species,
+    breed: stringValue(referral.breed).trim(),
+    age: stringValue(referral.age).trim(),
+    sex: stringValue(referral.sex).trim(),
+    weight: Number.isFinite(weight) && weight > 0 ? weight : null,
+    owner_first_name: stringValue(referral.ownerFirstName).trim(),
+    owner_last_name: stringValue(referral.ownerLastName).trim(),
+    owner_phone: stringValue(referral.ownerPhone).trim(),
+    owner_email: normalizeEmail(stringValue(referral.ownerEmail)),
+    referral_type: referralType,
+    reason,
+    presenting_complaint: stringValue(referral.presentingComplaint).trim(),
+    history: stringValue(referral.history).trim(),
+    current_symptoms: stringValue(referral.currentSymptoms).trim(),
+    suspected_diagnosis: stringValue(referral.suspectedDiagnosis).trim(),
+    clinical_summary: stringValue(referral.clinicalSummary).trim(),
+    treatment_provided: stringValue(referral.treatmentProvided).trim(),
+    medications_given: stringValue(referral.medicationsGiven).trim(),
+    iv_fluids: stringValue(referral.ivFluids).trim(),
+    transfer_time: transferTime ? new Date(transferTime).toISOString() : null,
+    stability_level: stringValue(referral.stabilityLevel, "Stable").trim(),
+    status: "Referral Submitted",
+  };
+
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase.from("referrals").insert([payload]).select("id").single();
+
+    if (error) throw error;
+
+    const referralId = stringValue((data as DbRecord).id);
+    const documentPayload = documents
+      .map((document) => ({
+        referral_id: referralId,
+        file_name: stringValue(document.fileName).trim(),
+        file_url: stringValue(document.fileUrl).trim(),
+        file_type: stringValue(document.fileType).trim(),
+      }))
+      .filter((document) => document.file_name);
+
+    if (documentPayload.length) {
+      const { error: documentError } = await supabase
+        .from("referral_documents")
+        .insert(documentPayload);
+      if (documentError) throw documentError;
+    }
+
+    const { error: messageError } = await supabase.from("referral_messages").insert([
+      {
+        referral_id: referralId,
+        sender_type: "referring_clinic",
+        sender_name: referringDoctorName
+          ? `${referringClinicName} - Dr. ${referringDoctorName}`
+          : referringClinicName,
+        message: "Referral submitted for emergency hospital review.",
+      },
+    ]);
+
+    if (messageError) throw messageError;
+
+    await logIntegrationEvent({
+      eventType: "referral.created",
+      payload: {
+        referralId,
+        petName,
+        referralType,
+        stabilityLevel: payload.stability_level,
+        source: "referral_intake_portal",
+      },
+    });
+
+    return fetchReferralById(referralId);
+  } catch (error) {
+    if (isMissingReferralTableError(error)) {
+      throw new Error("Referral workflow tables are not set up yet. Run the Phase 13 SQL first.");
+    }
+
+    throw error;
+  }
+};
+
+const updateReferralStatus = async ({
+  referralId,
+  status,
+  message,
+  senderName,
+}: {
+  referralId: string;
+  status: string;
+  message: string;
+  senderName: string;
+}) => {
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("referrals")
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq("id", referralId);
+
+  if (error) throw error;
+
+  if (message) {
+    const { error: messageError } = await supabase.from("referral_messages").insert([
+      {
+        referral_id: referralId,
+        sender_type: "emergency_clinic",
+        sender_name: senderName || "Emergency hospital",
+        message,
+      },
+    ]);
+
+    if (messageError) throw messageError;
+  }
+
+  await logIntegrationEvent({
+    eventType: "referral.status_changed",
+    payload: {
+      referralId,
+      status,
+      message,
+      source: "clinic_dashboard",
+    },
+  });
+
+  return fetchReferralById(referralId);
+};
+
+const convertReferralToVisit = async (referralId: string) => {
+  const referral = await fetchReferralById(referralId);
+  const referringName = referral.referringDoctorName
+    ? `${referral.referringClinicName} - Dr. ${referral.referringDoctorName}`
+    : referral.referringClinicName;
+  const referralSummary = [
+    "Converted referral intake",
+    `Referral type: ${referral.referralType}`,
+    `Stability: ${referral.stabilityLevel}`,
+    `Referring clinic: ${referringName}`,
+    `Callback: ${referral.preferredCallbackNumber || referral.referringPhone || "Not provided"}`,
+    `Reason: ${referral.reason}`,
+    `Presenting complaint: ${referral.presentingComplaint || "Not provided"}`,
+    `History: ${referral.history || "Not provided"}`,
+    `Current symptoms: ${referral.currentSymptoms || "Not provided"}`,
+    `Suspected diagnosis: ${referral.suspectedDiagnosis || "Not provided"}`,
+    `Clinical summary: ${referral.clinicalSummary || "Not provided"}`,
+    `Treatment provided: ${referral.treatmentProvided || "Not provided"}`,
+    `Medications: ${referral.medicationsGiven || "Not provided"}`,
+    `IV fluids: ${referral.ivFluids || "Not provided"}`,
+    `Transfer time: ${
+      referral.transferTime ? new Date(referral.transferTime).toLocaleString() : "Not provided"
+    }`,
+    `Documents: ${
+      referral.documents.length
+        ? referral.documents.map((document) => document.fileName).join(", ")
+        : "None listed"
+    }`,
+  ].join("\n");
+
+  const visit = await createOwnerPetVisit({
+    owner: {
+      first_name: referral.ownerFirstName || "Referral",
+      last_name: referral.ownerLastName || referral.referringClinicName,
+      phone: referral.ownerPhone || referral.referringPhone,
+      email: referral.ownerEmail || referral.referringEmail,
+    },
+    pet: {
+      pet_name: referral.petName,
+      species: referral.species,
+      other_species: "",
+      breed: referral.breed,
+    },
+    visit: {
+      visit_type: "Vet referral",
+      referral_name: referringName,
+      been_here_before: "Unknown",
+      reason: referralSummary,
+      status: "Referral converted to visit",
+    },
+    firstUpdate: {
+      message: `Referral for ${referral.petName} was converted to an active visit.`,
+      status: "Referral converted to visit",
+    },
+  });
+
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("referrals")
+    .update({
+      status: "Converted to Visit",
+      converted_visit_id: visit.id,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", referralId);
+
+  if (error) throw error;
+
+  const { error: messageError } = await supabase.from("referral_messages").insert([
+    {
+      referral_id: referralId,
+      sender_type: "emergency_clinic",
+      sender_name: "Emergency hospital",
+      message: `Converted to active MyPawLink visit for ${referral.petName}.`,
+    },
+  ]);
+
+  if (messageError) throw messageError;
+
+  await logIntegrationEvent({
+    visitId: visit.id,
+    eventType: "referral.converted_to_visit",
+    payload: {
+      referralId,
+      visitId: visit.id,
+      petName: referral.petName,
+      source: "clinic_dashboard",
+    },
+  });
+
+  return {
+    referral: await fetchReferralById(referralId),
+    visit,
+  };
 };
 
 const sendOwnerNotification = async ({
@@ -1773,6 +2162,15 @@ export async function POST(request: Request) {
       });
     }
 
+    if (action === "loadReferrals") {
+      const accessError = await requireClinicAccess(body);
+      if (accessError) return accessError;
+
+      return NextResponse.json({
+        referralWorkflow: await loadReferrals(),
+      });
+    }
+
     if (action === "createVisit") {
       const visit = await createOwnerPetVisit({
         owner: recordValue(body.owner),
@@ -1788,17 +2186,7 @@ export async function POST(request: Request) {
     }
 
     if (action === "createReferral") {
-      const visit = await createOwnerPetVisit({
-        owner: recordValue(body.owner),
-        pet: recordValue(body.pet),
-        visit: recordValue(body.visit),
-        firstUpdate: {
-          message: stringValue(body.firstUpdateMessage),
-          status: stringValue(body.firstUpdateStatus, "Referral received"),
-        },
-      });
-
-      return NextResponse.json({ visit });
+      return NextResponse.json({ referral: await createReferralRecord(body) });
     }
 
     if (action === "searchVisits") {
@@ -1971,6 +2359,66 @@ export async function POST(request: Request) {
       });
 
       return NextResponse.json(result);
+    }
+
+    if (action === "updateReferralStatus") {
+      const accessError = await requireClinicAccess(body);
+      if (accessError) return accessError;
+
+      const referralId = stringValue(body.referralId);
+      const status = stringValue(body.status).trim();
+      const message = stringValue(body.message).trim();
+
+      if (!referralId || !status) {
+        return NextResponse.json(
+          { error: "Referral and status are required." },
+          { status: 400 }
+        );
+      }
+
+      try {
+        const staffAccess = await getStaffProfileFromSession(body);
+        return NextResponse.json({
+          referral: await updateReferralStatus({
+            referralId,
+            status,
+            message,
+            senderName: staffAccess.profile?.fullName || "Emergency hospital",
+          }),
+        });
+      } catch (error) {
+        if (isMissingReferralTableError(error)) {
+          return NextResponse.json(
+            { error: "Referral workflow tables are not set up yet. Run the Phase 13 SQL first." },
+            { status: 500 }
+          );
+        }
+
+        throw error;
+      }
+    }
+
+    if (action === "convertReferralToVisit") {
+      const accessError = await requireClinicAccess(body);
+      if (accessError) return accessError;
+
+      const referralId = stringValue(body.referralId);
+      if (!referralId) {
+        return NextResponse.json({ error: "Referral is required." }, { status: 400 });
+      }
+
+      try {
+        return NextResponse.json(await convertReferralToVisit(referralId));
+      } catch (error) {
+        if (isMissingReferralTableError(error)) {
+          return NextResponse.json(
+            { error: "Referral workflow tables are not set up yet. Run the Phase 13 SQL first." },
+            { status: 500 }
+          );
+        }
+
+        throw error;
+      }
     }
 
     if (action === "createEstimate") {
