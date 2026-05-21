@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { getSupabaseAdmin } from "../../../lib/supabase-admin";
 import { sendSmsNotification } from "../../../lib/sms";
+import {
+  buildFallbackIntegrationReadiness,
+  integrationSupportedEvents,
+  type IntegrationProviderReadiness,
+} from "../../../lib/integration-catalog";
 
 export const runtime = "nodejs";
 
@@ -113,6 +118,11 @@ const recordValue = (value: unknown): DbRecord => {
 const arrayValue = (value: unknown): DbRecord[] => {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is DbRecord => Boolean(item) && typeof item === "object");
+};
+
+const stringArrayValue = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => stringValue(item)).filter(Boolean);
 };
 
 const normalizeEmail = (email: string) => email.trim().toLowerCase();
@@ -600,6 +610,18 @@ const isMissingClinicTableError = (error: unknown) => {
   );
 };
 
+const isMissingIntegrationTableError = (error: unknown) => {
+  const dbError = error as { code?: string; message?: string } | null;
+  const message = dbError?.message?.toLowerCase() || "";
+  return (
+    dbError?.code === "42P01" ||
+    dbError?.code === "42703" ||
+    message.includes("integration_") ||
+    message.includes("clinic_integrations") ||
+    message.includes("external_visit_mappings")
+  );
+};
+
 const formatMoney = (amount: number) =>
   new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -810,6 +832,143 @@ const updateClinicSettings = async (body: RequestBody) => {
     }
 
     throw error;
+  }
+};
+
+const getDemoClinicId = async () => {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("clinics")
+      .select("id")
+      .eq("slug", demoClinicSlug)
+      .maybeSingle();
+
+    if (error) throw error;
+    return stringValue((data as DbRecord | null)?.id);
+  } catch (error) {
+    if (isMissingClinicTableError(error)) return "";
+    throw error;
+  }
+};
+
+const getIntegrationQueueSummary = (events: DbRecord[]) => ({
+  queued: events.filter((event) => stringValue(event.status, "queued") === "queued").length,
+  processed: events.filter((event) => stringValue(event.status) === "processed").length,
+  failed: events.filter((event) => stringValue(event.status) === "failed").length,
+  lastEventAt: stringValue(events[0]?.created_at),
+});
+
+const loadIntegrationReadiness = async () => {
+  try {
+    const supabase = getSupabaseAdmin();
+    const clinicId = await getDemoClinicId();
+
+    if (!clinicId) return buildFallbackIntegrationReadiness(true);
+
+    const { data: providerData, error: providerError } = await supabase
+      .from("integration_providers")
+      .select("provider_key, name, category, direction, description, capabilities, display_order")
+      .order("display_order", { ascending: true });
+
+    if (providerError) throw providerError;
+
+    const { data: integrationData, error: integrationError } = await supabase
+      .from("clinic_integrations")
+      .select("provider_key, enabled, status, sync_mode, external_clinic_id, last_sync_at")
+      .eq("clinic_id", clinicId);
+
+    if (integrationError) throw integrationError;
+
+    const integrationByProvider = new Map(
+      ((integrationData || []) as DbRecord[]).map((integration) => [
+        stringValue(integration.provider_key),
+        integration,
+      ])
+    );
+
+    const { data: eventData, error: eventError } = await supabase
+      .from("integration_events")
+      .select("status, created_at")
+      .eq("clinic_id", clinicId)
+      .order("created_at", { ascending: false })
+      .limit(500);
+
+    if (eventError) throw eventError;
+
+    const providers: IntegrationProviderReadiness[] = ((providerData || []) as DbRecord[]).map(
+      (provider) => {
+        const integration = integrationByProvider.get(stringValue(provider.provider_key)) || {};
+
+        return {
+          key: stringValue(provider.provider_key),
+          name: stringValue(provider.name),
+          category: stringValue(provider.category),
+          direction: stringValue(provider.direction, "Two-way"),
+          description: stringValue(provider.description),
+          capabilities: stringArrayValue(provider.capabilities),
+          enabled: integration.enabled === true,
+          status: stringValue(integration.status, "Not connected"),
+          syncMode: stringValue(integration.sync_mode, "planned connector"),
+          externalClinicId: stringValue(integration.external_clinic_id),
+          lastSyncAt: stringValue(integration.last_sync_at),
+        };
+      }
+    );
+
+    return {
+      setupRequired: false,
+      providers,
+      queueSummary: getIntegrationQueueSummary((eventData || []) as DbRecord[]),
+      supportedEvents: integrationSupportedEvents,
+    };
+  } catch (error) {
+    if (isMissingIntegrationTableError(error) || isMissingClinicTableError(error)) {
+      return buildFallbackIntegrationReadiness(true);
+    }
+
+    throw error;
+  }
+};
+
+const logIntegrationEvent = async ({
+  visitId = "",
+  eventType,
+  direction = "outbound",
+  status = "queued",
+  payload = {},
+}: {
+  visitId?: string;
+  eventType: string;
+  direction?: "inbound" | "outbound";
+  status?: "queued" | "processed" | "failed";
+  payload?: DbRecord;
+}) => {
+  try {
+    const clinicId = await getDemoClinicId();
+    if (!clinicId) return;
+
+    const supabase = getSupabaseAdmin();
+    const { error } = await supabase.from("integration_events").insert([
+      {
+        clinic_id: clinicId,
+        visit_id: visitId || null,
+        provider_key: "mypawlink-api",
+        direction,
+        event_type: eventType,
+        status,
+        payload,
+      },
+    ]);
+
+    if (error) throw error;
+  } catch (error) {
+    if (isMissingIntegrationTableError(error) || isMissingClinicTableError(error)) {
+      console.info("Integration event skipped. Run the Phase 12 SQL to enable integration history.");
+      return;
+    }
+
+    console.error("Unable to log integration event:", error);
   }
 };
 
@@ -1400,6 +1559,20 @@ const addVisitUpdate = async ({
 
   if (updateError) throw updateError;
 
+  await logIntegrationEvent({
+    visitId,
+    eventType:
+      triggerType === "status_changed"
+        ? "visit.status_changed"
+        : `visit.${triggerType}`,
+    payload: {
+      status,
+      message,
+      triggerType,
+      source: "clinic_dashboard",
+    },
+  });
+
   let notification: OwnerNotificationSummary | null = null;
 
   if (sendText) {
@@ -1452,15 +1625,17 @@ const createOwnerPetVisit = async ({
 
   if (petError) throw petError;
 
+  const clinicId = await getDemoClinicId();
+  const visitPayload = {
+    ...visit,
+    owner_id: createdOwner.id,
+    pet_id: createdPet.id,
+    ...(clinicId ? { clinic_id: clinicId } : {}),
+  };
+
   const { data: createdVisit, error: visitError } = await supabase
     .from("visits")
-    .insert([
-      {
-        ...visit,
-        owner_id: createdOwner.id,
-        pet_id: createdPet.id,
-      },
-    ])
+    .insert([visitPayload])
     .select()
     .single();
 
@@ -1475,6 +1650,20 @@ const createOwnerPetVisit = async ({
   ]);
 
   if (updateError) throw updateError;
+
+  await logIntegrationEvent({
+    visitId: stringValue(createdVisit.id),
+    eventType: stringValue(visit.visit_type).toLowerCase().includes("referral")
+      ? "referral.created"
+      : "visit.created",
+    payload: {
+      status: firstUpdate.status,
+      visitType: stringValue(visit.visit_type),
+      ownerEmail,
+      petName: stringValue(pet.pet_name),
+      source: "mypawlink_intake",
+    },
+  });
 
   return fetchVisitById(String(createdVisit.id));
 };
@@ -1572,6 +1761,15 @@ export async function POST(request: Request) {
 
       return NextResponse.json({
         clinicSettings: await updateClinicSettings(body),
+      });
+    }
+
+    if (action === "loadIntegrationReadiness") {
+      const accessError = await requireClinicAccess(body);
+      if (accessError) return accessError;
+
+      return NextResponse.json({
+        integrationReadiness: await loadIntegrationReadiness(),
       });
     }
 
@@ -1848,6 +2046,7 @@ export async function POST(request: Request) {
         visitId,
         status: "Doctor assigned",
         message,
+        triggerType: "doctor_assigned",
       });
 
       return NextResponse.json(result);

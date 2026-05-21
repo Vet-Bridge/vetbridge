@@ -3,6 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
+import {
+  buildFallbackIntegrationReadiness,
+  type IntegrationReadiness,
+} from "../lib/integration-catalog";
 
 type Update = {
   message: string;
@@ -515,6 +519,10 @@ export default function Home() {
   const [clinicSettingsOpen, setClinicSettingsOpen] = useState(false);
   const [clinicSettingsMessage, setClinicSettingsMessage] = useState("");
   const [savingClinicSettings, setSavingClinicSettings] = useState(false);
+  const [integrationReadiness, setIntegrationReadiness] = useState<IntegrationReadiness>(
+    buildFallbackIntegrationReadiness(true)
+  );
+  const [integrationReadinessMessage, setIntegrationReadinessMessage] = useState("");
   const [clinicDashboardView, setClinicDashboardView] =
     useState<ClinicDashboardView>("active");
   const [clinicSearch, setClinicSearch] = useState("");
@@ -818,6 +826,7 @@ export default function Home() {
       });
       setVisits(result.visits);
       await loadClinicSettings();
+      await loadIntegrationReadiness();
       setClinicError("");
       setClinicUnlocked(true);
     } catch (error) {
@@ -846,6 +855,25 @@ export default function Home() {
       setClinicSettingsDraft(defaultClinicSettings);
       setClinicSettingsMessage(
         error instanceof Error ? error.message : "Unable to load clinic settings."
+      );
+    }
+  }
+
+  async function loadIntegrationReadiness() {
+    try {
+      const result = await apiRequest<{ integrationReadiness: IntegrationReadiness }>({
+        action: "loadIntegrationReadiness",
+      });
+      setIntegrationReadiness(result.integrationReadiness);
+      setIntegrationReadinessMessage(
+        result.integrationReadiness.setupRequired
+          ? "Run the Phase 12 SQL to turn on the integration event queue."
+          : ""
+      );
+    } catch (error) {
+      setIntegrationReadiness(buildFallbackIntegrationReadiness(true));
+      setIntegrationReadinessMessage(
+        error instanceof Error ? error.message : "Unable to load integration readiness."
       );
     }
   }
@@ -2650,6 +2678,82 @@ export default function Home() {
                       />
                       Email updates
                     </label>
+                  </div>
+
+                  <div style={styles.integrationPanel}>
+                    <div style={styles.integrationHeader}>
+                      <div>
+                        <h3 style={styles.ownerVisitTitle}>Integration Readiness</h3>
+                        <p style={styles.authHelpText}>
+                          Future API layer for PIMS, treatment-board, and referral-system
+                          connections. No live third-party connection is active yet.
+                        </p>
+                      </div>
+                      <span style={styles.speciesPill}>Phase 12</span>
+                    </div>
+
+                    {integrationReadinessMessage && (
+                      <div style={styles.queueMiniCard}>{integrationReadinessMessage}</div>
+                    )}
+
+                    <div style={styles.integrationSummaryGrid}>
+                      <div style={styles.integrationSummaryCard}>
+                        <span>Queued events</span>
+                        <strong>{integrationReadiness.queueSummary.queued}</strong>
+                      </div>
+                      <div style={styles.integrationSummaryCard}>
+                        <span>Processed</span>
+                        <strong>{integrationReadiness.queueSummary.processed}</strong>
+                      </div>
+                      <div style={styles.integrationSummaryCard}>
+                        <span>Failed</span>
+                        <strong>{integrationReadiness.queueSummary.failed}</strong>
+                      </div>
+                      <div style={styles.integrationSummaryCard}>
+                        <span>Latest event</span>
+                        <strong>
+                          {integrationReadiness.queueSummary.lastEventAt
+                            ? new Date(
+                                integrationReadiness.queueSummary.lastEventAt
+                              ).toLocaleString()
+                            : "None yet"}
+                        </strong>
+                      </div>
+                    </div>
+
+                    <div style={styles.integrationProviderGrid}>
+                      {integrationReadiness.providers.map((provider) => (
+                        <div key={provider.key} style={styles.integrationProviderCard}>
+                          <div style={styles.integrationProviderHeader}>
+                            <div>
+                              <strong>{provider.name}</strong>
+                              <span>{provider.category} - {provider.direction}</span>
+                            </div>
+                            <span
+                              style={{
+                                ...styles.integrationStatusPill,
+                                ...(provider.enabled ? styles.integrationStatusPillActive : {}),
+                              }}
+                            >
+                              {provider.status}
+                            </span>
+                          </div>
+                          <p style={styles.integrationDescription}>{provider.description}</p>
+                          <div style={styles.integrationCapabilityList}>
+                            {provider.capabilities.map((capability) => (
+                              <span key={capability} style={styles.integrationCapabilityPill}>
+                                {capability}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={styles.integrationEventList}>
+                      <strong>Supported future events</strong>
+                      <span>{integrationReadiness.supportedEvents.join(", ")}</span>
+                    </div>
                   </div>
 
                   {clinicSettingsMessage && (
@@ -4734,6 +4838,103 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: "#087f78",
     fontSize: 13,
     fontWeight: 900,
+  },
+  integrationPanel: {
+    background: "#f8fbff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    display: "grid",
+    gap: 12,
+    padding: 14,
+  },
+  integrationHeader: {
+    alignItems: "start",
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 10,
+    justifyContent: "space-between",
+  },
+  integrationSummaryGrid: {
+    display: "grid",
+    gap: 8,
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 130px), 1fr))",
+  },
+  integrationSummaryCard: {
+    background: "#ffffff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    color: "#64717d",
+    display: "grid",
+    fontSize: 12,
+    fontWeight: 800,
+    gap: 4,
+    padding: 10,
+  },
+  integrationProviderGrid: {
+    display: "grid",
+    gap: 10,
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))",
+  },
+  integrationProviderCard: {
+    background: "#ffffff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    display: "grid",
+    gap: 9,
+    padding: 12,
+  },
+  integrationProviderHeader: {
+    alignItems: "start",
+    display: "flex",
+    gap: 10,
+    justifyContent: "space-between",
+  },
+  integrationStatusPill: {
+    background: "#fff8f1",
+    border: "1px solid #fed7c2",
+    borderRadius: 8,
+    color: "#9a3412",
+    fontSize: 10,
+    fontWeight: 900,
+    padding: "5px 7px",
+    textAlign: "center",
+    whiteSpace: "nowrap",
+  },
+  integrationStatusPillActive: {
+    background: "#ecfdf3",
+    border: "1px solid #bbf7d0",
+    color: "#027a48",
+  },
+  integrationDescription: {
+    color: "#52606d",
+    fontSize: 12,
+    lineHeight: 1.35,
+    margin: 0,
+  },
+  integrationCapabilityList: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  integrationCapabilityPill: {
+    background: "#f0fbf8",
+    border: "1px solid #bfe9e0",
+    borderRadius: 8,
+    color: "#087f78",
+    fontSize: 11,
+    fontWeight: 800,
+    padding: "5px 7px",
+  },
+  integrationEventList: {
+    background: "#ffffff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    color: "#52606d",
+    display: "grid",
+    fontSize: 12,
+    gap: 5,
+    lineHeight: 1.35,
+    padding: 12,
   },
   staffSignOutButton: {
     background: "#ffffff",
