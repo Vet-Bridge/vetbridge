@@ -463,6 +463,9 @@ export default function Home() {
   const [staffLoginEmail, setStaffLoginEmail] = useState("");
   const [staffLoginPassword, setStaffLoginPassword] = useState("");
   const [ownerMagicEmail, setOwnerMagicEmail] = useState("");
+  const [ownerVisits, setOwnerVisits] = useState<Visit[]>([]);
+  const [ownerVisitsLoading, setOwnerVisitsLoading] = useState(false);
+  const [ownerVisitsError, setOwnerVisitsError] = useState("");
   const [visitAccessInput, setVisitAccessInput] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [expandedUpdatesVisitId, setExpandedUpdatesVisitId] = useState<string | null>(null);
@@ -613,18 +616,32 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("ownerAccess") !== "1") return;
+
+    window.setTimeout(() => setView("existingPet"), 0);
+    window.history.replaceState({}, "", window.location.pathname);
+  }, []);
+
+  useEffect(() => {
     let active = true;
 
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(async ({ data }) => {
       if (!active) return;
-      syncStaffProfile(data.session);
+      const profile = await syncStaffProfile(data.session);
+      if (active && data.session && !profile) {
+        await loadOwnerVisits();
+      }
     });
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (!active) return;
-      syncStaffProfile(session);
+      const profile = await syncStaffProfile(session);
+      if (active && session && !profile) {
+        await loadOwnerVisits();
+      }
     });
 
     return () => {
@@ -654,6 +671,31 @@ export default function Home() {
     } finally {
       clinicLoadingRef.current = false;
       setClinicLoading(false);
+    }
+  }
+
+  async function loadOwnerVisits() {
+    setOwnerVisitsLoading(true);
+    setOwnerVisitsError("");
+
+    try {
+      const result = await apiRequest<{ visits: Visit[] }>({
+        action: "loadOwnerVisits",
+      });
+      setOwnerVisits(result.visits);
+      setVisits((current) => {
+        const byId = new Map(current.map((visit) => [visit.id, visit]));
+        result.visits.forEach((visit) => byId.set(visit.id, visit));
+        return Array.from(byId.values());
+      });
+    } catch (error) {
+      setOwnerVisitsError(
+        error instanceof Error
+          ? error.message
+          : "Unable to load visits for this email."
+      );
+    } finally {
+      setOwnerVisitsLoading(false);
     }
   }
 
@@ -712,6 +754,8 @@ export default function Home() {
     setStaffProfile(null);
     setClinicUnlocked(false);
     setVisits([]);
+    setOwnerVisits([]);
+    setOwnerVisitsError("");
     setAuthMessage("Signed out.");
   };
 
@@ -734,13 +778,12 @@ export default function Home() {
 
   const getOwnerMagicRedirectUrl = () => {
     const configuredSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "");
-    if (configuredSiteUrl) return configuredSiteUrl;
-
-    if (window.location.hostname === "localhost") {
-      return "https://mypawlink.com";
-    }
-
-    return window.location.origin;
+    const baseUrl =
+      configuredSiteUrl ||
+      (window.location.hostname === "localhost" ? "https://mypawlink.com" : window.location.origin);
+    const callbackUrl = new URL("/auth/callback", baseUrl);
+    callbackUrl.searchParams.set("next", "/?ownerAccess=1");
+    return callbackUrl.toString();
   };
 
   const copyVisitLink = async (visit: Visit) => {
@@ -1850,7 +1893,70 @@ export default function Home() {
       </form>
       {authUserEmail && <p style={styles.authSignedInText}>Signed in as {authUserEmail}</p>}
       {authMessage && <div style={styles.authMessage}>{authMessage}</div>}
+      {authUserEmail && (
+        <button
+          style={{
+            ...styles.secondaryButton,
+            ...(ownerVisitsLoading ? styles.disabledButton : {}),
+          }}
+          type="button"
+          onClick={loadOwnerVisits}
+          disabled={ownerVisitsLoading}
+        >
+          {ownerVisitsLoading ? "Loading Visits..." : "Refresh My Visits"}
+        </button>
+      )}
     </div>
+
+    {authUserEmail && (
+      <div style={styles.ownerVisitPanel}>
+        <div>
+          <h3 style={styles.ownerVisitTitle}>Your Active Visits</h3>
+          <p style={styles.authHelpText}>
+            These visits are connected to {authUserEmail}. Tap one to open live updates.
+          </p>
+        </div>
+
+        {ownerVisitsLoading && <div style={styles.authMessage}>Loading your visits...</div>}
+        {ownerVisitsError && <div style={styles.errorBox}>{ownerVisitsError}</div>}
+        {!ownerVisitsLoading && !ownerVisitsError && ownerVisits.length === 0 && (
+          <div style={styles.emptyBox}>
+            No active visits were found for this email yet. If the clinic already checked in your
+            pet, ask them to resend or copy your secure visit link.
+          </div>
+        )}
+
+        <div style={styles.ownerVisitList}>
+          {ownerVisits.map((visit) => (
+            <button
+              key={visit.id}
+              type="button"
+              style={styles.ownerVisitCard}
+              onClick={() => {
+                setVisits((current) =>
+                  current.some((currentVisit) => currentVisit.id === visit.id)
+                    ? current.map((currentVisit) =>
+                        currentVisit.id === visit.id ? visit : currentVisit
+                      )
+                    : [visit, ...current]
+                );
+                setSelectedVisitId(visit.id);
+                setVisitAccessInput(visit.accessUrl || visit.accessToken || "");
+                setView("status");
+              }}
+            >
+              <img src={getPetPhoto(visit)} alt={visit.petName} style={styles.ownerVisitImage} />
+              <span style={styles.ownerVisitContent}>
+                <strong>{visit.petName}</strong>
+                <span>{visit.status || "Visit in progress"}</span>
+                <small>{new Date(visit.createdAt).toLocaleString()}</small>
+              </span>
+              <span style={styles.ownerVisitArrow}>Open</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    )}
 
     <form
       style={styles.form}
@@ -3863,6 +3969,56 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: 13,
     fontWeight: 800,
     margin: 0,
+  },
+  ownerVisitPanel: {
+    background: "#ffffff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    padding: 14,
+    marginBottom: 18,
+    display: "grid",
+    gap: 12,
+    boxShadow: "0 8px 20px rgba(41, 64, 83, 0.06)",
+  },
+  ownerVisitTitle: {
+    color: "#082f3f",
+    fontSize: 18,
+    margin: "0 0 4px",
+  },
+  ownerVisitList: {
+    display: "grid",
+    gap: 10,
+  },
+  ownerVisitCard: {
+    width: "100%",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    background: "#f8fbff",
+    padding: 10,
+    display: "grid",
+    gridTemplateColumns: "52px minmax(0, 1fr) auto",
+    gap: 12,
+    alignItems: "center",
+    textAlign: "left",
+    cursor: "pointer",
+  },
+  ownerVisitImage: {
+    width: 52,
+    height: 52,
+    borderRadius: 8,
+    objectFit: "cover",
+    background: "#e6f7f5",
+  },
+  ownerVisitContent: {
+    display: "grid",
+    gap: 3,
+    color: "#52606d",
+    fontSize: 13,
+  },
+  ownerVisitArrow: {
+    color: "#087f78",
+    fontSize: 13,
+    fontWeight: 900,
   },
   staffSignOutButton: {
     background: "#ffffff",

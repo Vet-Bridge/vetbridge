@@ -1244,10 +1244,15 @@ const createOwnerPetVisit = async ({
   firstUpdate: { message: string; status: string };
 }) => {
   const supabase = getSupabaseAdmin();
+  const ownerEmail = normalizeEmail(stringValue(owner.email));
+  const ownerPayload = {
+    ...owner,
+    email: ownerEmail || stringValue(owner.email),
+  };
 
   const { data: createdOwner, error: ownerError } = await supabase
     .from("owners")
-    .insert([owner])
+    .insert([ownerPayload])
     .select()
     .single();
 
@@ -1286,6 +1291,61 @@ const createOwnerPetVisit = async ({
   if (updateError) throw updateError;
 
   return fetchVisitById(String(createdVisit.id));
+};
+
+const loadOwnerVisitsForSession = async (body: RequestBody) => {
+  const authToken = stringValue(body.authToken);
+
+  if (!authToken) {
+    return {
+      error: NextResponse.json(
+        { error: "Please sign in with your owner magic link first." },
+        { status: 401 }
+      ),
+      visits: [] as unknown[],
+    };
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data: userData, error: userError } = await supabase.auth.getUser(authToken);
+  const ownerEmail = normalizeEmail(userData.user?.email || "");
+
+  if (userError || !ownerEmail) {
+    return {
+      error: NextResponse.json(
+        { error: "Please sign in with your owner magic link first." },
+        { status: 401 }
+      ),
+      visits: [] as unknown[],
+    };
+  }
+
+  const { data: ownerRows, error: ownerError } = await supabase
+    .from("owners")
+    .select("id")
+    .ilike("email", ownerEmail);
+
+  if (ownerError) throw ownerError;
+
+  const ownerIds = ((ownerRows || []) as DbRecord[])
+    .map((ownerRow) => stringValue(ownerRow.id))
+    .filter(Boolean);
+
+  if (!ownerIds.length) {
+    return { error: null, visits: [] as unknown[] };
+  }
+
+  const { data, error } = await supabase
+    .from("visits")
+    .select(visitSelect)
+    .in("owner_id", ownerIds)
+    .neq("status", "Closed")
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+
+  const visits = await Promise.all(((data || []) as DbRecord[]).map(withVisitAccess));
+  return { error: null, visits };
 };
 
 export async function POST(request: Request) {
@@ -1346,6 +1406,13 @@ export async function POST(request: Request) {
         { error: "Pet-name lookup has been replaced with secure visit access links." },
         { status: 410 }
       );
+    }
+
+    if (action === "loadOwnerVisits") {
+      const ownerVisits = await loadOwnerVisitsForSession(body);
+      if (ownerVisits.error) return ownerVisits.error;
+
+      return NextResponse.json({ visits: ownerVisits.visits });
     }
 
     if (action === "loadVisitByToken") {
