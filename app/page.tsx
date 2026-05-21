@@ -1109,26 +1109,42 @@ export default function Home() {
     sendUpdate(visit.id, status, detail || fallbackMessage);
   };
 
-  const sendEstimateApproval = (visit: Visit) => {
-    const estimateTotal = window.prompt("Estimate total or range, for example $1,200-$1,800");
+  const sendEstimateApproval = async (visit: Visit) => {
+    const estimateTitle =
+      window.prompt("Estimate title", "Emergency treatment estimate") ||
+      "Emergency treatment estimate";
+    const estimateTotal = window.prompt("Estimate total as a number, for example 1200");
     if (!estimateTotal) return;
+
+    const amount = Number(estimateTotal.replace(/[$,]/g, ""));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      alert("Please enter the estimate amount as a number.");
+      return;
+    }
 
     const estimateDetails = window.prompt("What is included in the estimate?");
     if (!estimateDetails) return;
 
-    sendFormToVisit(
-      visit,
-      "Estimate approval",
-      [
-        `Estimated total: ${estimateTotal}`,
-        "",
-        "Included items:",
-        estimateDetails,
-        "",
-        "Owner may approve, decline, or request a doctor discussion before proceeding.",
-      ].join("\n"),
-      `An estimate is ready for ${visit.petName}. Please review and respond in MyPawLink.`
-    );
+    if (!beginClinicAction(visit.id, "Sending estimate...")) return;
+
+    try {
+      const result = await apiRequest<{ visit: Visit }>({
+        action: "createEstimate",
+        visitId: visit.id,
+        title: estimateTitle,
+        amount,
+        description: estimateDetails,
+      });
+      setVisits((current) =>
+        current.map((item) => (item.id === visit.id ? result.visit : item))
+      );
+      alert("Estimate sent to owner.");
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? error.message : "Error sending estimate");
+    } finally {
+      finishClinicAction(visit.id);
+    }
   };
 
   const sendDischargeInstructions = (visit: Visit) => {

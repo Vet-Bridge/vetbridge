@@ -65,6 +65,34 @@ type CareHubResponse = {
   };
 };
 
+type OwnerEstimate = {
+  id: string;
+  visitId: string;
+  title: string;
+  amount: number;
+  description: string;
+  status: string;
+  approvedAt: string;
+  declinedAt: string;
+  discussionRequestedAt: string;
+  notes: string;
+  responseNotes: string;
+  ownerName: string;
+  createdAt: string;
+};
+
+type EstimateWorkflowResponse = {
+  estimateWorkflow: {
+    setupRequired?: boolean;
+    estimates: OwnerEstimate[];
+  };
+};
+
+type EstimateResponseDraft = {
+  ownerName: string;
+  notes: string;
+};
+
 type VisitPortalClientProps = {
   token: string;
   initialVisit: OwnerPortalVisit;
@@ -94,6 +122,11 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
   const [signatureHasInk, setSignatureHasInk] = useState(false);
   const [checkboxAgreed, setCheckboxAgreed] = useState(false);
   const [signingForm, setSigningForm] = useState(false);
+  const [estimates, setEstimates] = useState<OwnerEstimate[]>([]);
+  const [estimateLoading, setEstimateLoading] = useState(false);
+  const [estimateMessage, setEstimateMessage] = useState("");
+  const [estimateDrafts, setEstimateDrafts] = useState<Record<string, EstimateResponseDraft>>({});
+  const [respondingEstimateId, setRespondingEstimateId] = useState("");
   const signaturePadRef = useRef<SignatureCanvas | null>(null);
 
   const latestUpdate = useMemo(
@@ -121,6 +154,9 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
       total + category.forms.filter((form) => form.status === "Signed").length,
     0
   );
+  const pendingEstimateCount = estimates.filter(
+    (estimate) => estimate.status === "Pending Owner Review"
+  ).length;
 
   const refreshVisit = useCallback(
     async (source: "live" | "manual" | "background") => {
@@ -205,6 +241,124 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
     }
   }, [token]);
 
+  const loadEstimates = useCallback(
+    async (source: "manual" | "background" = "background") => {
+      if (source === "manual") setEstimateMessage("Refreshing estimates.");
+      setEstimateLoading(true);
+
+      try {
+        const response = await fetch("/api/mypawlink", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            action: "loadEstimatesByToken",
+            token,
+          }),
+        });
+
+        const result = (await response.json().catch(() => null)) as
+          | (EstimateWorkflowResponse & { error?: string })
+          | null;
+
+        if (!response.ok || !result?.estimateWorkflow) {
+          throw new Error(result?.error || "Unable to load estimates.");
+        }
+
+        setEstimates(result.estimateWorkflow.estimates);
+        setEstimateMessage(
+          result.estimateWorkflow.setupRequired
+            ? "Estimate workflow is ready in the app. Run the Phase 7 SQL to save estimates."
+            : ""
+        );
+      } catch (error) {
+        console.error(error);
+        setEstimateMessage(
+          error instanceof Error ? error.message : "Unable to load treatment estimates."
+        );
+      } finally {
+        setEstimateLoading(false);
+      }
+    },
+    [token]
+  );
+
+  const updateEstimateDraft = (
+    estimateId: string,
+    field: keyof EstimateResponseDraft,
+    value: string
+  ) => {
+    setEstimateDrafts((current) => ({
+      ...current,
+      [estimateId]: {
+        ownerName: current[estimateId]?.ownerName || "",
+        notes: current[estimateId]?.notes || "",
+        [field]: value,
+      },
+    }));
+  };
+
+  const respondToEstimate = async (
+    estimate: OwnerEstimate,
+    response: "approved" | "declined" | "discussion"
+  ) => {
+    const draft = estimateDrafts[estimate.id] || { ownerName: "", notes: "" };
+
+    if (!draft.ownerName.trim()) {
+      setEstimateMessage("Please enter your printed name before responding.");
+      return;
+    }
+
+    setRespondingEstimateId(estimate.id);
+    setEstimateMessage("");
+
+    try {
+      const apiResponse = await fetch("/api/mypawlink", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "respondEstimate",
+          token,
+          estimateId: estimate.id,
+          response,
+          ownerName: draft.ownerName.trim(),
+          responseNotes: draft.notes.trim(),
+        }),
+      });
+
+      const result = (await apiResponse.json().catch(() => null)) as
+        | (EstimateWorkflowResponse & { error?: string })
+        | null;
+
+      if (!apiResponse.ok || !result?.estimateWorkflow) {
+        throw new Error(result?.error || "Unable to respond to estimate.");
+      }
+
+      setEstimates(result.estimateWorkflow.estimates);
+      setEstimateMessage(
+        response === "approved"
+          ? "Estimate approved. The clinic has been notified."
+          : response === "declined"
+            ? "Estimate declined. The clinic has been notified."
+            : "Discussion requested. The clinic has been notified."
+      );
+      setEstimateDrafts((current) => ({
+        ...current,
+        [estimate.id]: { ownerName: "", notes: "" },
+      }));
+    } catch (error) {
+      console.error(error);
+      setEstimateMessage(
+        error instanceof Error ? error.message : "Unable to respond to estimate."
+      );
+    } finally {
+      setRespondingEstimateId("");
+    }
+  };
+
   const openCareHubForm = (formId: string) => {
     setSelectedCareHubFormId(formId);
     setPrintedName("");
@@ -282,6 +436,7 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
       .on("broadcast", { event: "visit-updated" }, () => {
         if (!active) return;
         void refreshVisit("live");
+        void loadEstimates("background");
       })
       .subscribe((status) => {
         if (!active) return;
@@ -309,15 +464,16 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       void supabase.removeChannel(channel);
     };
-  }, [refreshVisit, token]);
+  }, [loadEstimates, refreshVisit, token]);
 
   useEffect(() => {
     const loadTimer = window.setTimeout(() => {
       void loadCareHub();
+      void loadEstimates("background");
     }, 0);
 
     return () => window.clearTimeout(loadTimer);
-  }, [loadCareHub]);
+  }, [loadCareHub, loadEstimates]);
 
   return (
     <main style={styles.page}>
@@ -610,8 +766,122 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
           </section>
 
           <section style={styles.card}>
-            <h2 style={styles.sectionTitle}>Treatment Estimates</h2>
-            <p style={styles.text}>Estimates will appear here when the clinic sends them.</p>
+            <div style={styles.sectionHeader}>
+              <div>
+                <h2 style={styles.sectionTitle}>Treatment Estimates</h2>
+                <p style={styles.text}>Review estimates and tell the clinic how to proceed.</p>
+              </div>
+              <span style={styles.timelineCount}>
+                {pendingEstimateCount} pending
+              </span>
+            </div>
+
+            {estimateMessage && <div style={styles.careHubNotice}>{estimateMessage}</div>}
+            {estimateLoading && <div style={styles.emptyBox}>Loading estimates...</div>}
+
+            {!estimateLoading && estimates.length === 0 && (
+              <div style={styles.emptyBox}>No treatment estimates are ready right now.</div>
+            )}
+
+            <div style={styles.estimateList}>
+              {estimates.map((estimate) => {
+                const draft = estimateDrafts[estimate.id] || { ownerName: "", notes: "" };
+                const isPending = estimate.status === "Pending Owner Review";
+                const isResponding = respondingEstimateId === estimate.id;
+
+                return (
+                  <div key={estimate.id} style={styles.estimateCard}>
+                    <div style={styles.estimateHeader}>
+                      <div>
+                        <h3 style={styles.estimateTitle}>{estimate.title}</h3>
+                        <p style={styles.formText}>{estimate.description}</p>
+                      </div>
+                      <span
+                        style={{
+                          ...styles.formStatus,
+                          ...(estimate.status === "Approved" ? styles.formStatusSigned : {}),
+                        }}
+                      >
+                        {estimate.status}
+                      </span>
+                    </div>
+
+                    <div style={styles.estimateAmount}>
+                      {new Intl.NumberFormat("en-US", {
+                        style: "currency",
+                        currency: "USD",
+                        maximumFractionDigits: estimate.amount % 1 === 0 ? 0 : 2,
+                      }).format(estimate.amount)}
+                    </div>
+
+                    {isPending ? (
+                      <div style={styles.estimateResponseBox}>
+                        <input
+                          style={styles.input}
+                          value={draft.ownerName}
+                          onChange={(event) =>
+                            updateEstimateDraft(estimate.id, "ownerName", event.target.value)
+                          }
+                          placeholder="Printed name"
+                        />
+                        <textarea
+                          style={styles.estimateNotes}
+                          value={draft.notes}
+                          onChange={(event) =>
+                            updateEstimateDraft(estimate.id, "notes", event.target.value)
+                          }
+                          placeholder="Optional note or question"
+                        />
+                        <div style={styles.estimateButtonGrid}>
+                          <button
+                            type="button"
+                            style={styles.approveButton}
+                            disabled={isResponding}
+                            onClick={() => void respondToEstimate(estimate, "approved")}
+                          >
+                            Approve
+                          </button>
+                          <button
+                            type="button"
+                            style={styles.discussButton}
+                            disabled={isResponding}
+                            onClick={() => void respondToEstimate(estimate, "discussion")}
+                          >
+                            Request Discussion
+                          </button>
+                          <button
+                            type="button"
+                            style={styles.declineButton}
+                            disabled={isResponding}
+                            onClick={() => void respondToEstimate(estimate, "declined")}
+                          >
+                            Decline
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={styles.estimateResponseSummary}>
+                        <strong>
+                          {estimate.ownerName || "Owner"} responded: {estimate.status}
+                        </strong>
+                        {estimate.responseNotes && <span>{estimate.responseNotes}</span>}
+                        {(estimate.approvedAt ||
+                          estimate.declinedAt ||
+                          estimate.discussionRequestedAt) && (
+                          <span>
+                            {new Date(
+                              estimate.approvedAt ||
+                                estimate.declinedAt ||
+                                estimate.discussionRequestedAt
+                            ).toLocaleString()}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </section>
 
           <section style={styles.card}>
@@ -1070,6 +1340,104 @@ const styles: Record<string, CSSProperties> = {
     display: "grid",
     fontSize: 14,
     gap: 5,
+    padding: 12,
+  },
+  estimateList: {
+    display: "grid",
+    gap: 12,
+    marginTop: 12,
+  },
+  estimateCard: {
+    background: "#fbffff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    display: "grid",
+    gap: 12,
+    padding: 12,
+  },
+  estimateHeader: {
+    alignItems: "flex-start",
+    display: "flex",
+    gap: 10,
+    justifyContent: "space-between",
+  },
+  estimateTitle: {
+    color: "#102a3a",
+    fontSize: 16,
+    fontWeight: 900,
+    margin: "0 0 5px",
+  },
+  estimateAmount: {
+    background: "#ffffff",
+    border: "1px solid #e1ecec",
+    borderRadius: 8,
+    color: "#0f766e",
+    fontSize: 24,
+    fontWeight: 950,
+    padding: "12px 14px",
+  },
+  estimateResponseBox: {
+    display: "grid",
+    gap: 10,
+  },
+  estimateNotes: {
+    border: "1px solid #cfe0df",
+    borderRadius: 8,
+    color: "#102a3a",
+    fontFamily: "inherit",
+    fontSize: 14,
+    minHeight: 74,
+    padding: "11px 12px",
+    resize: "vertical",
+    width: "100%",
+  },
+  estimateButtonGrid: {
+    display: "grid",
+    gap: 8,
+    gridTemplateColumns: "1fr",
+  },
+  approveButton: {
+    background: "linear-gradient(135deg, #13a89e, #0f766e)",
+    border: "none",
+    borderRadius: 8,
+    color: "#ffffff",
+    cursor: "pointer",
+    fontSize: 13,
+    fontWeight: 900,
+    minHeight: 44,
+    padding: "10px 12px",
+  },
+  discussButton: {
+    background: "#f8fbff",
+    border: "1px solid #9cc5f8",
+    borderRadius: 8,
+    color: "#2457a6",
+    cursor: "pointer",
+    fontSize: 13,
+    fontWeight: 900,
+    minHeight: 44,
+    padding: "10px 12px",
+  },
+  declineButton: {
+    background: "#fff1f2",
+    border: "1px solid #fecdd3",
+    borderRadius: 8,
+    color: "#be123c",
+    cursor: "pointer",
+    fontSize: 13,
+    fontWeight: 900,
+    minHeight: 44,
+    padding: "10px 12px",
+  },
+  estimateResponseSummary: {
+    background: "#ffffff",
+    border: "1px solid #e1ecec",
+    borderRadius: 8,
+    color: "#52606d",
+    display: "grid",
+    fontSize: 13,
+    gap: 5,
+    lineHeight: 1.35,
     padding: 12,
   },
   emptyBox: {

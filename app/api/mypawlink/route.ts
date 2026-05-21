@@ -509,6 +509,22 @@ const isMissingCareHubTableError = (error: unknown) => {
   );
 };
 
+const isMissingEstimateTableError = (error: unknown) => {
+  const dbError = error as { code?: string; message?: string } | null;
+  return (
+    dbError?.code === "42P01" ||
+    dbError?.code === "42703" ||
+    Boolean(dbError?.message?.toLowerCase().includes("estimate"))
+  );
+};
+
+const formatMoney = (amount: number) =>
+  new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: amount % 1 === 0 ? 0 : 2,
+  }).format(amount);
+
 const getVisitIdForToken = async (token: string) => {
   const supabase = getSupabaseAdmin();
   const { data: tokenRow, error: tokenError } = await supabase
@@ -703,6 +719,178 @@ const signCareHubFormForVisit = async ({
     status: stringValue(signedForm.status, "Signed"),
     checkboxAgreed: signedForm.checkbox_agreed === true,
   };
+};
+
+const mapEstimate = (estimate: DbRecord) => ({
+  id: stringValue(estimate.id),
+  visitId: stringValue(estimate.visit_id),
+  title: stringValue(estimate.title, "Treatment Estimate"),
+  amount:
+    typeof estimate.amount === "number"
+      ? estimate.amount
+      : Number(stringValue(estimate.amount, "0")) || 0,
+  description: stringValue(estimate.description),
+  status: stringValue(estimate.status, "Pending Owner Review"),
+  approvedAt: stringValue(estimate.approved_at),
+  declinedAt: stringValue(estimate.declined_at),
+  discussionRequestedAt: stringValue(estimate.discussion_requested_at),
+  notes: stringValue(estimate.notes),
+  responseNotes: stringValue(estimate.response_notes),
+  ownerName: stringValue(estimate.owner_name),
+  createdAt: stringValue(estimate.created_at),
+});
+
+const estimateSelect = `
+  id,
+  visit_id,
+  title,
+  amount,
+  description,
+  status,
+  approved_at,
+  declined_at,
+  discussion_requested_at,
+  notes,
+  response_notes,
+  owner_name,
+  created_at
+`;
+
+const loadEstimatesForVisit = async (visitId: string) => {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("estimates")
+    .select(estimateSelect)
+    .eq("visit_id", visitId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    if (isMissingEstimateTableError(error)) {
+      return { setupRequired: true, estimates: [] };
+    }
+    throw error;
+  }
+
+  return {
+    setupRequired: false,
+    estimates: ((data || []) as DbRecord[]).map(mapEstimate),
+  };
+};
+
+const createEstimateForVisit = async ({
+  visitId,
+  title,
+  amount,
+  description,
+}: {
+  visitId: string;
+  title: string;
+  amount: number;
+  description: string;
+}) => {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("estimates")
+    .insert([
+      {
+        visit_id: visitId,
+        title: title || "Treatment Estimate",
+        amount,
+        description,
+        status: "Pending Owner Review",
+      },
+    ])
+    .select(estimateSelect)
+    .single();
+
+  if (error) throw error;
+
+  const visit = await addVisitUpdate({
+    visitId,
+    status: "Awaiting Estimate Approval",
+    message: `A treatment estimate for ${formatMoney(amount)} is ready for review in MyPawLink.`,
+  });
+
+  return {
+    estimate: mapEstimate((data || {}) as DbRecord),
+    visit,
+  };
+};
+
+const respondToEstimateForVisit = async ({
+  visitId,
+  estimateId,
+  response,
+  ownerName,
+  responseNotes,
+}: {
+  visitId: string;
+  estimateId: string;
+  response: string;
+  ownerName: string;
+  responseNotes: string;
+}) => {
+  const normalizedResponse = response.toLowerCase();
+  const now = new Date().toISOString();
+  const status =
+    normalizedResponse === "approved"
+      ? "Approved"
+      : normalizedResponse === "declined"
+        ? "Declined"
+        : "Discussion Requested";
+
+  const update =
+    status === "Approved"
+      ? {
+          status,
+          approved_at: now,
+          declined_at: null,
+          discussion_requested_at: null,
+          owner_name: ownerName,
+          response_notes: responseNotes,
+        }
+      : status === "Declined"
+        ? {
+            status,
+            approved_at: null,
+            declined_at: now,
+            discussion_requested_at: null,
+            owner_name: ownerName,
+            response_notes: responseNotes,
+          }
+        : {
+            status,
+            approved_at: null,
+            declined_at: null,
+            discussion_requested_at: now,
+            owner_name: ownerName,
+            response_notes: responseNotes,
+          };
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("estimates")
+    .update(update)
+    .eq("id", estimateId)
+    .eq("visit_id", visitId)
+    .select(estimateSelect)
+    .single();
+
+  if (error) throw error;
+
+  await addVisitUpdate({
+    visitId,
+    status: `Estimate ${status.toLowerCase()}`,
+    message:
+      status === "Approved"
+        ? `${ownerName} approved the treatment estimate.`
+        : status === "Declined"
+          ? `${ownerName} declined the treatment estimate.`
+          : `${ownerName} requested a discussion about the treatment estimate.`,
+    sendText: false,
+  });
+
+  return mapEstimate((data || {}) as DbRecord);
 };
 
 const staffRoles: StaffRole[] = ["Front Desk", "Technician", "Veterinarian", "Admin"];
@@ -1062,6 +1250,73 @@ export async function POST(request: Request) {
       }
     }
 
+    if (action === "loadEstimatesByToken") {
+      const token = stringValue(body.token).trim();
+
+      if (!token) {
+        return NextResponse.json(
+          { error: "Visit access code is required." },
+          { status: 400 }
+        );
+      }
+
+      const tokenAccess = await getVisitIdForToken(token);
+      if (tokenAccess.error) return tokenAccess.error;
+
+      return NextResponse.json({
+        estimateWorkflow: await loadEstimatesForVisit(tokenAccess.visitId),
+      });
+    }
+
+    if (action === "respondEstimate") {
+      const token = stringValue(body.token).trim();
+      const estimateId = stringValue(body.estimateId).trim();
+      const response = stringValue(body.response).trim();
+      const ownerName = stringValue(body.ownerName).trim();
+      const responseNotes = stringValue(body.responseNotes).trim();
+
+      if (!token || !estimateId || !response || !ownerName) {
+        return NextResponse.json(
+          { error: "Estimate response and owner name are required." },
+          { status: 400 }
+        );
+      }
+
+      if (!["approved", "declined", "discussion"].includes(response.toLowerCase())) {
+        return NextResponse.json(
+          { error: "Estimate response must be approved, declined, or discussion." },
+          { status: 400 }
+        );
+      }
+
+      const tokenAccess = await getVisitIdForToken(token);
+      if (tokenAccess.error) return tokenAccess.error;
+
+      try {
+        const estimate = await respondToEstimateForVisit({
+          visitId: tokenAccess.visitId,
+          estimateId,
+          response,
+          ownerName,
+          responseNotes,
+        });
+
+        return NextResponse.json({
+          estimate,
+          estimateWorkflow: await loadEstimatesForVisit(tokenAccess.visitId),
+        });
+      } catch (error) {
+        if (isMissingEstimateTableError(error)) {
+          return NextResponse.json(
+            { error: "Estimate database columns are not set up yet. Run the Phase 7 SQL first." },
+            { status: 500 }
+          );
+        }
+
+        throw error;
+      }
+    }
+
     if (action === "sendUpdate") {
       const accessError = await requireClinicAccess(body);
       if (accessError) return accessError;
@@ -1073,6 +1328,43 @@ export async function POST(request: Request) {
       });
 
       return NextResponse.json({ visit });
+    }
+
+    if (action === "createEstimate") {
+      const accessError = await requireClinicAccess(body);
+      if (accessError) return accessError;
+
+      const visitId = stringValue(body.visitId);
+      const title = stringValue(body.title, "Treatment Estimate").trim();
+      const description = stringValue(body.description).trim();
+      const amount = Number(body.amount);
+
+      if (!visitId || !title || !description || !Number.isFinite(amount) || amount <= 0) {
+        return NextResponse.json(
+          { error: "Visit, title, amount, and description are required." },
+          { status: 400 }
+        );
+      }
+
+      try {
+        const result = await createEstimateForVisit({
+          visitId,
+          title,
+          amount,
+          description,
+        });
+
+        return NextResponse.json(result);
+      } catch (error) {
+        if (isMissingEstimateTableError(error)) {
+          return NextResponse.json(
+            { error: "Estimate database columns are not set up yet. Run the Phase 7 SQL first." },
+            { status: 500 }
+          );
+        }
+
+        throw error;
+      }
     }
 
     if (action === "saveClinicNotes") {
