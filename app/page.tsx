@@ -78,6 +78,10 @@ type ClinicActionResult = {
   notification?: NotificationSummary | null;
 };
 
+type ClinicDashboardView = "active" | "critical" | "approvals" | "pickup" | "discharged";
+
+type ClinicSort = "newest" | "oldest" | "pet" | "status";
+
 type ClinicSettings = {
   id: string;
   slug: string;
@@ -511,6 +515,12 @@ export default function Home() {
   const [clinicSettingsOpen, setClinicSettingsOpen] = useState(false);
   const [clinicSettingsMessage, setClinicSettingsMessage] = useState("");
   const [savingClinicSettings, setSavingClinicSettings] = useState(false);
+  const [clinicDashboardView, setClinicDashboardView] =
+    useState<ClinicDashboardView>("active");
+  const [clinicSearch, setClinicSearch] = useState("");
+  const [clinicStatusFilter, setClinicStatusFilter] = useState("All statuses");
+  const [clinicDoctorFilter, setClinicDoctorFilter] = useState("All doctors");
+  const [clinicSort, setClinicSort] = useState<ClinicSort>("newest");
   const [authUserEmail, setAuthUserEmail] = useState("");
   const [staffProfile, setStaffProfile] = useState<StaffProfile | null>(null);
   const [authMessage, setAuthMessage] = useState("");
@@ -608,14 +618,97 @@ export default function Home() {
   const canEditClinicNotes = Boolean(
     staffProfile && ["Technician", "Veterinarian", "Admin"].includes(staffProfile.role)
   );
-  const activeVisits = visits.filter((visit) => visit.status !== "Closed");
-  const closedVisits = visits.filter((visit) => visit.status === "Closed");
+  const getAssignedDoctorName = (visit: Visit) =>
+    getAssignedDoctorFromNotes(visit.clinicNotes)?.name || "Unassigned";
+  const isDischargedVisit = (visit: Visit) =>
+    ["closed", "discharged"].includes(visit.status.toLowerCase());
+  const isReadyForPickupVisit = (visit: Visit) =>
+    visit.status.toLowerCase() === "ready for pickup";
+  const isCriticalVisit = (visit: Visit) => {
+    const status = visit.status.toLowerCase();
+    return (
+      status.includes("red") ||
+      status.includes("critical") ||
+      status.includes("stabiliz") ||
+      status.includes("surgery") ||
+      status.includes("urgent")
+    );
+  };
+  const needsApprovalVisit = (visit: Visit) =>
+    visit.status.toLowerCase().includes("awaiting estimate") ||
+    visit.estimateStatus.toLowerCase().includes("pending") ||
+    visit.forms.some((form) => form.form_status === "Sent");
+  const activeVisits = visits.filter((visit) => !isDischargedVisit(visit));
+  const closedVisits = visits.filter(isDischargedVisit);
+  const criticalVisits = visits.filter((visit) => !isDischargedVisit(visit) && isCriticalVisit(visit));
+  const approvalVisits = visits.filter((visit) => !isDischargedVisit(visit) && needsApprovalVisit(visit));
+  const pickupVisits = visits.filter(isReadyForPickupVisit);
+  const dischargedVisits = visits.filter(isDischargedVisit);
   const queueVisits = activeVisits
     .filter((visit) => visit.status !== "Ready for pickup")
     .sort(
       (a, b) =>
         new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
     );
+  const clinicStatuses = Array.from(
+    new Set(visits.map((visit) => visit.status).filter(Boolean))
+  ).sort((a, b) => a.localeCompare(b));
+  const clinicDoctors = Array.from(new Set(visits.map(getAssignedDoctorName))).sort((a, b) =>
+    a.localeCompare(b)
+  );
+  const dashboardTabs: { id: ClinicDashboardView; label: string; count: number }[] = [
+    { id: "active", label: "Active Visits", count: activeVisits.length },
+    { id: "critical", label: "Critical Cases", count: criticalVisits.length },
+    { id: "approvals", label: "Waiting Approval", count: approvalVisits.length },
+    { id: "pickup", label: "Ready Pickup", count: pickupVisits.length },
+    { id: "discharged", label: "Discharged", count: dischargedVisits.length },
+  ];
+  const visitsForDashboardView =
+    clinicDashboardView === "critical"
+      ? criticalVisits
+      : clinicDashboardView === "approvals"
+        ? approvalVisits
+        : clinicDashboardView === "pickup"
+          ? pickupVisits
+          : clinicDashboardView === "discharged"
+            ? dischargedVisits
+            : activeVisits;
+  const filteredClinicVisits = visitsForDashboardView
+    .filter((visit) => {
+      const query = clinicSearch.trim().toLowerCase();
+      const doctorName = getAssignedDoctorName(visit);
+      const searchable = [
+        visit.petName,
+        getSpecies(visit),
+        getOwnerName(visit),
+        visit.phone,
+        visit.status,
+        visit.visitType,
+        visit.breed,
+        doctorName,
+        visit.reason,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return (
+        (!query || searchable.includes(query)) &&
+        (clinicStatusFilter === "All statuses" || visit.status === clinicStatusFilter) &&
+        (clinicDoctorFilter === "All doctors" || doctorName === clinicDoctorFilter)
+      );
+    })
+    .sort((a, b) => {
+      if (clinicSort === "oldest") {
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      }
+      if (clinicSort === "pet") {
+        return a.petName.localeCompare(b.petName);
+      }
+      if (clinicSort === "status") {
+        return a.status.localeCompare(b.status);
+      }
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
 
   const apiRequest = async <T,>(payload: Record<string, unknown>): Promise<T> => {
     const { data } = await supabase.auth.getSession();
@@ -2310,6 +2403,88 @@ export default function Home() {
 </span>
               </div>
 
+              <div style={styles.clinicCommandCenter}>
+                <div style={styles.clinicInsightGrid}>
+                  <div style={styles.clinicInsightCard}>
+                    <span>Active</span>
+                    <strong>{activeVisits.length}</strong>
+                  </div>
+                  <div style={styles.clinicInsightCard}>
+                    <span>Critical</span>
+                    <strong>{criticalVisits.length}</strong>
+                  </div>
+                  <div style={styles.clinicInsightCard}>
+                    <span>Approvals</span>
+                    <strong>{approvalVisits.length}</strong>
+                  </div>
+                  <div style={styles.clinicInsightCard}>
+                    <span>Pickup</span>
+                    <strong>{pickupVisits.length}</strong>
+                  </div>
+                </div>
+
+                <div style={styles.clinicViewTabs}>
+                  {dashboardTabs.map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      style={{
+                        ...styles.clinicViewTab,
+                        ...(clinicDashboardView === tab.id ? styles.clinicViewTabActive : {}),
+                      }}
+                      onClick={() => setClinicDashboardView(tab.id)}
+                    >
+                      <span>{tab.label}</span>
+                      <strong>{tab.count}</strong>
+                    </button>
+                  ))}
+                </div>
+
+                <div style={styles.clinicFilterBar}>
+                  <input
+                    style={styles.clinicSearchInput}
+                    value={clinicSearch}
+                    onChange={(event) => setClinicSearch(event.target.value)}
+                    placeholder="Search pet, owner, phone, status, doctor"
+                  />
+                  <select
+                    style={styles.clinicCompactSelect}
+                    value={clinicStatusFilter}
+                    onChange={(event) => setClinicStatusFilter(event.target.value)}
+                  >
+                    <option>All statuses</option>
+                    {clinicStatuses.map((status) => (
+                      <option key={status}>{status}</option>
+                    ))}
+                  </select>
+                  <select
+                    style={styles.clinicCompactSelect}
+                    value={clinicDoctorFilter}
+                    onChange={(event) => setClinicDoctorFilter(event.target.value)}
+                  >
+                    <option>All doctors</option>
+                    {clinicDoctors.map((doctor) => (
+                      <option key={doctor}>{doctor}</option>
+                    ))}
+                  </select>
+                  <select
+                    style={styles.clinicCompactSelect}
+                    value={clinicSort}
+                    onChange={(event) => setClinicSort(event.target.value as ClinicSort)}
+                  >
+                    <option value="newest">Newest first</option>
+                    <option value="oldest">Oldest first</option>
+                    <option value="pet">Pet name</option>
+                    <option value="status">Status</option>
+                  </select>
+                </div>
+
+                <p style={styles.clinicResultText}>
+                  Showing {filteredClinicVisits.length} of {visitsForDashboardView.length}{" "}
+                  {dashboardTabs.find((tab) => tab.id === clinicDashboardView)?.label.toLowerCase()}
+                </p>
+              </div>
+
               {clinicSettingsOpen && (
                 <form style={styles.clinicSettingsPanel} onSubmit={saveClinicSettings}>
                   <div style={styles.clinicSettingsHeader}>
@@ -2507,9 +2682,14 @@ export default function Home() {
                   No visit requests yet. Submit one from the Pet Owner page.
                 </div>
               )}
+              {visits.length > 0 && filteredClinicVisits.length === 0 && (
+                <div style={styles.emptyBox}>
+                  No visits match this view or filter. Try Active Visits or clear the search.
+                </div>
+              )}
 
               <div style={styles.visitList}>
-                {visits.map((visit) => (
+                {filteredClinicVisits.map((visit) => (
                   <div key={visit.id} style={styles.visitCard}>
                     <div style={styles.visitHeader}>
                       <div>
@@ -4299,6 +4479,86 @@ const styles: { [key: string]: React.CSSProperties } = {
     padding: "10px 14px",
     borderRadius: 8,
     fontWeight: 700,
+  },
+  clinicCommandCenter: {
+    background: "#ffffff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    padding: 14,
+    marginBottom: 18,
+    display: "grid",
+    gap: 12,
+    boxShadow: "0 8px 20px rgba(41, 64, 83, 0.06)",
+  },
+  clinicInsightGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(105px, 1fr))",
+    gap: 8,
+  },
+  clinicInsightCard: {
+    background: "#f8fbff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    padding: "10px 8px",
+    display: "grid",
+    gap: 3,
+    color: "#64717d",
+    fontSize: 12,
+    fontWeight: 800,
+  },
+  clinicViewTabs: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 145px), 1fr))",
+    gap: 8,
+  },
+  clinicViewTab: {
+    border: "1px solid #dcefeb",
+    background: "#ffffff",
+    color: "#52606d",
+    borderRadius: 8,
+    padding: "10px 11px",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 8,
+    cursor: "pointer",
+    fontSize: 13,
+    fontWeight: 900,
+    textAlign: "left",
+  },
+  clinicViewTabActive: {
+    background: "#087f78",
+    borderColor: "#087f78",
+    color: "#ffffff",
+  },
+  clinicFilterBar: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 160px), 1fr))",
+    gap: 8,
+  },
+  clinicSearchInput: {
+    minHeight: 42,
+    border: "1px solid #cfe0df",
+    borderRadius: 8,
+    padding: "0 12px",
+    fontSize: 14,
+    outline: "none",
+    background: "#ffffff",
+  },
+  clinicCompactSelect: {
+    minHeight: 42,
+    border: "1px solid #cfe0df",
+    borderRadius: 8,
+    padding: "0 10px",
+    fontSize: 13,
+    color: "#243447",
+    background: "#ffffff",
+  },
+  clinicResultText: {
+    margin: 0,
+    color: "#64717d",
+    fontSize: 13,
+    fontWeight: 800,
   },
   emptyBox: {
     background: "#f8fbff",
