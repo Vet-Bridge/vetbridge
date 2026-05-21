@@ -618,6 +618,11 @@ export default function Home() {
   const canEditClinicNotes = Boolean(
     staffProfile && ["Technician", "Veterinarian", "Admin"].includes(staffProfile.role)
   );
+  const getOwnerName = (visit: Visit) => `${visit.ownerFirstName} ${visit.ownerLastName}`;
+
+  const getSpecies = (visit: Visit) =>
+    visit.species === "Other" ? visit.otherSpecies : visit.species;
+
   const getAssignedDoctorName = (visit: Visit) =>
     getAssignedDoctorFromNotes(visit.clinicNotes)?.name || "Unassigned";
   const isDischargedVisit = (visit: Visit) =>
@@ -992,11 +997,6 @@ export default function Home() {
     setOwnerCodeSent(false);
     setAuthMessage("Signed out.");
   };
-
-  const getOwnerName = (visit: Visit) => `${visit.ownerFirstName} ${visit.ownerLastName}`;
-
-  const getSpecies = (visit: Visit) =>
-    visit.species === "Other" ? visit.otherSpecies : visit.species;
 
   const getPetPhoto = (visit: Visit) =>
     visit.petPhotoUrl ||
