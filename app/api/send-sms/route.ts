@@ -51,7 +51,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ sent: false, configured: false });
   }
 
-  const body = `MyPawLink update for ${petName}: ${message} View updates: ${siteUrl}`;
+  const body = `MyPawLink update for ${petName}: ${message} View visit: ${siteUrl}`;
   const twilioResponse = await fetch(
     `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
     {

@@ -9,19 +9,28 @@ const normalizePhone = (phone: string) => {
   return "";
 };
 
+type SmsNotificationResult = {
+  sent: boolean;
+  reason?: string;
+  providerMessageId?: string;
+  error?: string;
+};
+
 export const sendSmsNotification = async ({
   phone,
   petName,
   message,
+  link,
 }: {
   phone: string;
   petName: string;
   message: string;
-}) => {
+  link?: string;
+}): Promise<SmsNotificationResult> => {
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
   const authToken = process.env.TWILIO_AUTH_TOKEN;
   const fromNumber = process.env.TWILIO_PHONE_NUMBER;
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://mypawlink.com";
+  const siteUrl = link || process.env.NEXT_PUBLIC_SITE_URL || "https://mypawlink.com";
   const toNumber = normalizePhone(phone);
 
   if (!toNumber || !petName || !message) {
@@ -33,7 +42,7 @@ export const sendSmsNotification = async ({
     return { sent: false, reason: "not-configured" };
   }
 
-  const body = `MyPawLink update for ${petName}: ${message} View updates: ${siteUrl}`;
+  const body = `MyPawLink update for ${petName}: ${message} View visit: ${siteUrl}`;
   const response = await fetch(
     `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
     {
@@ -53,8 +62,9 @@ export const sendSmsNotification = async ({
   if (!response.ok) {
     const errorText = await response.text();
     console.error("Twilio SMS failed:", errorText);
-    return { sent: false, reason: "twilio-error" };
+    return { sent: false, reason: "twilio-error", error: errorText };
   }
 
-  return { sent: true };
+  const result = (await response.json().catch(() => null)) as { sid?: string } | null;
+  return { sent: true, providerMessageId: result?.sid || "" };
 };

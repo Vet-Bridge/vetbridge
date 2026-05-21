@@ -518,12 +518,159 @@ const isMissingEstimateTableError = (error: unknown) => {
   );
 };
 
+const isMissingNotificationTableError = (error: unknown) => {
+  const dbError = error as { code?: string; message?: string } | null;
+  return (
+    dbError?.code === "42P01" ||
+    Boolean(dbError?.message?.toLowerCase().includes("notification_events"))
+  );
+};
+
 const formatMoney = (amount: number) =>
   new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
     maximumFractionDigits: amount % 1 === 0 ? 0 : 2,
   }).format(amount);
+
+const logNotificationEvent = async ({
+  visitId,
+  channel,
+  triggerType,
+  recipientPhone = "",
+  recipientEmail = "",
+  subject = "",
+  message,
+  link = "",
+  status,
+  provider = "",
+  providerResponse = {},
+  errorMessage = "",
+}: {
+  visitId: string;
+  channel: "sms" | "email" | "portal";
+  triggerType: string;
+  recipientPhone?: string;
+  recipientEmail?: string;
+  subject?: string;
+  message: string;
+  link?: string;
+  status: "pending" | "sent" | "skipped" | "failed";
+  provider?: string;
+  providerResponse?: DbRecord;
+  errorMessage?: string;
+}) => {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { error } = await supabase.from("notification_events").insert([
+      {
+        visit_id: visitId,
+        channel,
+        trigger_type: triggerType,
+        recipient_phone: recipientPhone || null,
+        recipient_email: recipientEmail || null,
+        subject: subject || null,
+        message,
+        link: link || null,
+        status,
+        provider: provider || null,
+        provider_response: providerResponse,
+        error: errorMessage || null,
+      },
+    ]);
+
+    if (error) throw error;
+  } catch (error) {
+    if (isMissingNotificationTableError(error)) {
+      console.info("Notification log skipped. Run the Phase 8 SQL to enable notification history.");
+      return;
+    }
+
+    console.error("Unable to log notification event:", error);
+  }
+};
+
+const logEmailNotificationPlaceholder = async ({
+  visitId,
+  recipientEmail,
+  subject,
+  message,
+  link,
+  triggerType,
+}: {
+  visitId: string;
+  recipientEmail: string;
+  subject: string;
+  message: string;
+  link: string;
+  triggerType: string;
+}) => {
+  await logNotificationEvent({
+    visitId,
+    channel: "email",
+    triggerType,
+    recipientEmail,
+    subject,
+    message,
+    link,
+    status: "skipped",
+    provider: "not-configured",
+    errorMessage: "Email provider is not configured yet.",
+  });
+};
+
+const sendOwnerNotification = async ({
+  visit,
+  message,
+  triggerType,
+}: {
+  visit: DbRecord;
+  message: string;
+  triggerType: string;
+}) => {
+  const mappedVisit = mapVisit(visit);
+  const owner = recordValue(visit.owners);
+  const ownerEmail = stringValue(owner.email);
+  const ownerPhone = mappedVisit.phone;
+  const token = await ensureVisitAccessToken(mappedVisit.id, ownerEmail);
+  const link = buildVisitAccessUrl(token);
+  const subject = `MyPawLink update for ${mappedVisit.petName}`;
+
+  const smsResult = await sendSmsNotification({
+    phone: ownerPhone,
+    petName: mappedVisit.petName,
+    message,
+    link,
+  });
+
+  await logNotificationEvent({
+    visitId: mappedVisit.id,
+    channel: "sms",
+    triggerType,
+    recipientPhone: ownerPhone,
+    subject,
+    message,
+    link,
+    status: smsResult.sent ? "sent" : smsResult.reason === "not-configured" ? "skipped" : "failed",
+    provider: "twilio",
+    providerResponse: {
+      reason: smsResult.reason || "",
+      providerMessageId: smsResult.providerMessageId || "",
+    },
+    errorMessage: smsResult.error || "",
+  });
+
+  if (ownerEmail) {
+    await logEmailNotificationPlaceholder({
+      visitId: mappedVisit.id,
+      recipientEmail: ownerEmail,
+      subject,
+      message,
+      link,
+      triggerType,
+    });
+  }
+};
 
 const getVisitIdForToken = async (token: string) => {
   const supabase = getSupabaseAdmin();
@@ -809,6 +956,7 @@ const createEstimateForVisit = async ({
     visitId,
     status: "Awaiting Estimate Approval",
     message: `A treatment estimate for ${formatMoney(amount)} is ready for review in MyPawLink.`,
+    triggerType: "estimate_sent",
   });
 
   return {
@@ -996,11 +1144,13 @@ const addVisitUpdate = async ({
   status,
   message,
   sendText = true,
+  triggerType = "status_changed",
 }: {
   visitId: string;
   status: string;
   message: string;
   sendText?: boolean;
+  triggerType?: string;
 }) => {
   const supabase = getSupabaseAdmin();
   const { data: visit, error: visitError } = await supabase
@@ -1011,7 +1161,6 @@ const addVisitUpdate = async ({
 
   if (visitError) throw visitError;
 
-  const mappedVisit = mapVisit(visit as DbRecord);
   const currentUpdates = Array.isArray((visit as DbRecord).updates)
     ? ((visit as DbRecord).updates as Update[])
     : [];
@@ -1044,10 +1193,10 @@ const addVisitUpdate = async ({
   if (updateError) throw updateError;
 
   if (sendText) {
-    await sendSmsNotification({
-      phone: mappedVisit.phone,
-      petName: mappedVisit.petName,
+    await sendOwnerNotification({
+      visit: visit as DbRecord,
       message,
+      triggerType,
     });
   }
 
@@ -1428,6 +1577,7 @@ export async function POST(request: Request) {
         visitId,
         status: stringValue(body.status),
         message: stringValue(body.message),
+        triggerType: "form_sent",
       });
 
       return NextResponse.json({ visit });
