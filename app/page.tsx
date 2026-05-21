@@ -560,6 +560,8 @@ export default function Home() {
   const [submittingReferral, setSubmittingReferral] = useState(false);
   const [visitSubmitError, setVisitSubmitError] = useState("");
   const [visitSubmitMessage, setVisitSubmitMessage] = useState("");
+  const [referralSubmitError, setReferralSubmitError] = useState("");
+  const [referralSubmitMessage, setReferralSubmitMessage] = useState("");
   const [clinicLoading, setClinicLoading] = useState(false);
   const [pendingClinicActions, setPendingClinicActions] = useState<Record<string, string>>({});
   const [selectedVisitType, setSelectedVisitType] = useState("");
@@ -1258,19 +1260,91 @@ export default function Home() {
     alert(`Update saved, but the text was not sent. ${reason}`);
   };
 
-  const handleVisitFormInvalid = (event: React.FormEvent<HTMLFormElement>) => {
-    const field = event.target as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
-    const label = "placeholder" in field && field.placeholder
-      ? field.placeholder
-      : field.name || "a required field";
-    setVisitSubmitError(`Please complete ${label} before submitting the visit.`);
-    setVisitSubmitMessage("");
+  const requiredFieldLabels: Record<string, string> = {
+    allergyDetails: "known allergies",
+    allergies: "allergies",
+    beenHereBefore: "whether your pet has been here before",
+    bleeding: "bleeding",
+    breed: "breed",
+    breathingNormally: "breathing normally",
+    canWalk: "can walk",
+    clinicalSummary: "clinical summary",
+    doctorEmail: "doctor email",
+    doctorPhone: "doctor phone number",
+    email: "email",
+    emergencyReason: "emergency reason",
+    isConscious: "is pet conscious",
+    ivFluids: "IV fluids",
+    medications: "medications",
+    ownerFirstName: "owner first name",
+    ownerLastName: "owner last name",
+    petName: "pet name",
+    phone: "phone number",
+    presentingComplaint: "presenting complaint",
+    reason: "reason for referral",
+    referralName: "referring vet or clinic name",
+    referralType: "referral type",
+    referringClinic: "referring clinic name",
+    referringDoctor: "referring doctor name",
+    sex: "sex",
+    spayedNeutered: "spayed/neutered",
+    species: "species",
+    stabilityLevel: "stability / urgency level",
+    symptoms: "main symptom",
+    treatmentGiven: "treatment already given",
+    transferTime: "time of transfer",
+    visitType: "visit type",
+    whenStartedDays: "when symptoms started",
+  };
+
+  const getRequiredFieldLabel = (field: Element | null) => {
+    if (
+      field instanceof HTMLInputElement ||
+      field instanceof HTMLSelectElement ||
+      field instanceof HTMLTextAreaElement
+    ) {
+      return (
+        requiredFieldLabels[field.name] ||
+        (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement
+          ? field.placeholder
+          : "") ||
+        field.getAttribute("aria-label") ||
+        "a required field"
+      );
+    }
+
+    return "a required field";
+  };
+
+  const validateRequiredFields = (
+    form: HTMLFormElement,
+    formName: "visit" | "referral",
+    setError: (message: string) => void,
+    setMessage: (message: string) => void
+  ) => {
+    if (form.checkValidity()) return true;
+
+    const invalidField = form.querySelector(":invalid");
+    const label = getRequiredFieldLabel(invalidField);
+    setError(`Please complete ${label} before submitting the ${formName}.`);
+    setMessage("");
+
+    if (invalidField instanceof HTMLElement) {
+      invalidField.scrollIntoView({ behavior: "smooth", block: "center" });
+      window.setTimeout(() => invalidField.focus(), 160);
+    }
+
+    return false;
   };
 
   const createVisit = async (e: React.FormEvent<HTMLFormElement>) => {
   e.preventDefault();
 
   if (submittingVisitRef.current) return;
+  if (!validateRequiredFields(e.currentTarget, "visit", setVisitSubmitError, setVisitSubmitMessage)) {
+    return;
+  }
+
   setVisitSubmitError("");
   setVisitSubmitMessage("Submitting visit request...");
   submittingVisitRef.current = true;
@@ -1377,6 +1451,19 @@ export default function Home() {
     e.preventDefault();
 
     if (submittingReferralRef.current) return;
+    if (
+      !validateRequiredFields(
+        e.currentTarget,
+        "referral",
+        setReferralSubmitError,
+        setReferralSubmitMessage
+      )
+    ) {
+      return;
+    }
+
+    setReferralSubmitError("");
+    setReferralSubmitMessage("Submitting referral intake...");
     submittingReferralRef.current = true;
     setSubmittingReferral(true);
 
@@ -1449,7 +1536,8 @@ export default function Home() {
       setReferralWorkflowSetupRequired(false);
     } catch (error) {
       console.error(error);
-      alert(error instanceof Error ? error.message : "Error creating referral");
+      setReferralSubmitError(error instanceof Error ? error.message : "Error creating referral");
+      setReferralSubmitMessage("");
       submittingReferralRef.current = false;
       setSubmittingReferral(false);
       return;
@@ -1457,7 +1545,10 @@ export default function Home() {
 
     setSelectedReferralSpecies("");
     setReferralDocumentNames([]);
-    alert("Referral intake sent to the referral dashboard.");
+    setReferralSubmitMessage("Referral intake submitted. Opening the referral dashboard...");
+    if (!clinicUnlocked) {
+      alert("Referral intake submitted. It is ready in the clinic referral dashboard.");
+    }
     setView(clinicUnlocked ? "clinic" : "home");
     submittingReferralRef.current = false;
     setSubmittingReferral(false);
@@ -1923,7 +2014,7 @@ export default function Home() {
 
               <form
                 onSubmit={createVisit}
-                onInvalidCapture={handleVisitFormInvalid}
+                noValidate
                 onChange={() => {
                   if (visitSubmitError) setVisitSubmitError("");
                 }}
@@ -2184,7 +2275,14 @@ export default function Home() {
                 </p>
               </div>
 
-              <form onSubmit={createReferralVisit} style={styles.form}>
+              <form
+                onSubmit={createReferralVisit}
+                noValidate
+                onChange={() => {
+                  if (referralSubmitError) setReferralSubmitError("");
+                }}
+                style={styles.form}
+              >
                 <input style={styles.input} name="referringClinic" placeholder="Referring clinic name" required />
                 <input style={styles.input} name="referringDoctor" placeholder="Referring doctor name" required />
                 <input style={styles.input} name="doctorPhone" placeholder="Doctor phone number" required />
@@ -2386,6 +2484,11 @@ export default function Home() {
                   name="transferTime"
                   required
                 />
+
+                {referralSubmitError && <div style={styles.errorBox}>{referralSubmitError}</div>}
+                {referralSubmitMessage && (
+                  <div style={styles.authMessage}>{referralSubmitMessage}</div>
+                )}
 
                 <button
                   style={{
