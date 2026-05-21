@@ -2020,6 +2020,14 @@ export default function Home() {
       </div>
     )}
 
+    <div style={styles.manualVisitLinkPanel}>
+      <strong>Already have a secure visit link?</strong>
+      <p style={styles.authHelpText}>
+        Use this box only for the private /visit link from a text message or the clinic dashboard.
+        Email security codes go in the 6-digit code box above.
+      </p>
+    </div>
+
     <form
       style={styles.form}
       onSubmit={async (e) => {
@@ -2032,6 +2040,14 @@ export default function Home() {
 
         if (!token) {
           setSearchError("Please enter your secure visit access code or link.");
+          setLoading(false);
+          return;
+        }
+
+        if (/^\d{6}$/.test(token)) {
+          setSearchError(
+            "That looks like your email security code. Enter it in the 6-digit code box above, then tap Verify Code."
+          );
           setLoading(false);
           return;
         }
@@ -2069,7 +2085,7 @@ export default function Home() {
         style={styles.input}
         value={visitAccessInput}
         onChange={(event) => setVisitAccessInput(event.target.value)}
-        placeholder="Visit access code or secure link"
+        placeholder="Secure visit link, for example /visit/abc123"
       />
 
       <button
@@ -4081,6 +4097,15 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: "#087f78",
     fontSize: 13,
     fontWeight: 900,
+  },
+  manualVisitLinkPanel: {
+    background: "#f8fbff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 10,
+    display: "grid",
+    gap: 4,
   },
   staffSignOutButton: {
     background: "#ffffff",
