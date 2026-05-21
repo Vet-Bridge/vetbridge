@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, FormEvent } from "react";
 import Link from "next/link";
 import { supabase } from "../../../lib/supabase";
 
@@ -33,6 +33,37 @@ export type OwnerPortalVisit = {
   petPhotoUrl: string;
 };
 
+type CareHubForm = {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  htmlContent: string;
+  requiresSignature: boolean;
+  requiresCheckbox: boolean;
+  formType: string;
+  displayOrder: number;
+  status: string;
+  signedName: string;
+  signedAt: string;
+};
+
+type CareHubCategory = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  displayOrder: number;
+  forms: CareHubForm[];
+};
+
+type CareHubResponse = {
+  careHub: {
+    setupRequired?: boolean;
+    categories: CareHubCategory[];
+  };
+};
+
 type VisitPortalClientProps = {
   token: string;
   initialVisit: OwnerPortalVisit;
@@ -52,10 +83,40 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>("Connecting");
   const [syncStatus, setSyncStatus] = useState("Live updates are connecting.");
   const [lastSynced, setLastSynced] = useState("");
+  const [careHubCategories, setCareHubCategories] = useState<CareHubCategory[]>([]);
+  const [careHubLoading, setCareHubLoading] = useState(false);
+  const [careHubMessage, setCareHubMessage] = useState("");
+  const [selectedCareHubCategoryId, setSelectedCareHubCategoryId] = useState<string | null>(null);
+  const [selectedCareHubFormId, setSelectedCareHubFormId] = useState<string | null>(null);
+  const [printedName, setPrintedName] = useState("");
+  const [signatureData, setSignatureData] = useState("");
+  const [checkboxAgreed, setCheckboxAgreed] = useState(false);
+  const [signingForm, setSigningForm] = useState(false);
 
   const latestUpdate = useMemo(
     () => visit.updates[visit.updates.length - 1],
     [visit.updates]
+  );
+  const selectedCareHubCategory = useMemo(
+    () =>
+      careHubCategories.find((category) => category.id === selectedCareHubCategoryId) ||
+      null,
+    [careHubCategories, selectedCareHubCategoryId]
+  );
+  const selectedCareHubForm = useMemo(
+    () =>
+      selectedCareHubCategory?.forms.find((form) => form.id === selectedCareHubFormId) ||
+      null,
+    [selectedCareHubCategory, selectedCareHubFormId]
+  );
+  const careHubFormCount = careHubCategories.reduce(
+    (total, category) => total + category.forms.length,
+    0
+  );
+  const signedCareHubCount = careHubCategories.reduce(
+    (total, category) =>
+      total + category.forms.filter((form) => form.status === "Signed").length,
+    0
   );
 
   const refreshVisit = useCallback(
@@ -101,6 +162,98 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
     [token]
   );
 
+  const loadCareHub = useCallback(async () => {
+    setCareHubLoading(true);
+    setCareHubMessage("");
+
+    try {
+      const response = await fetch("/api/mypawlink", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "loadCareHubByToken",
+          token,
+        }),
+      });
+
+      const result = (await response.json().catch(() => null)) as
+        | (CareHubResponse & { error?: string })
+        | null;
+
+      if (!response.ok || !result?.careHub) {
+        throw new Error(result?.error || "Unable to load Care Hub.");
+      }
+
+      setCareHubCategories(result.careHub.categories);
+      setCareHubMessage(
+        result.careHub.setupRequired
+          ? "Care Hub templates are previewing. Run the Phase 5 SQL to save signatures."
+          : ""
+      );
+    } catch (error) {
+      console.error(error);
+      setCareHubMessage(
+        error instanceof Error ? error.message : "Unable to load Care Hub forms."
+      );
+    } finally {
+      setCareHubLoading(false);
+    }
+  }, [token]);
+
+  const openCareHubForm = (formId: string) => {
+    setSelectedCareHubFormId(formId);
+    setPrintedName("");
+    setSignatureData("");
+    setCheckboxAgreed(false);
+    setCareHubMessage("");
+  };
+
+  const signSelectedCareHubForm = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedCareHubForm) return;
+
+    setSigningForm(true);
+    setCareHubMessage("");
+
+    try {
+      const response = await fetch("/api/mypawlink", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "signCareHubForm",
+          token,
+          formId: selectedCareHubForm.id,
+          ownerName: printedName,
+          signatureData,
+          checkboxAgreed,
+        }),
+      });
+
+      const result = (await response.json().catch(() => null)) as
+        | (CareHubResponse & { error?: string })
+        | null;
+
+      if (!response.ok || !result?.careHub) {
+        throw new Error(result?.error || "Unable to sign this form.");
+      }
+
+      setCareHubCategories(result.careHub.categories);
+      setCareHubMessage(`${selectedCareHubForm.title} signed successfully.`);
+      setPrintedName("");
+      setSignatureData("");
+      setCheckboxAgreed(false);
+    } catch (error) {
+      console.error(error);
+      setCareHubMessage(error instanceof Error ? error.message : "Unable to sign this form.");
+    } finally {
+      setSigningForm(false);
+    }
+  };
+
   useEffect(() => {
     let active = true;
 
@@ -137,6 +290,14 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
       void supabase.removeChannel(channel);
     };
   }, [refreshVisit, token]);
+
+  useEffect(() => {
+    const loadTimer = window.setTimeout(() => {
+      void loadCareHub();
+    }, 0);
+
+    return () => window.clearTimeout(loadTimer);
+  }, [loadCareHub]);
 
   return (
     <main style={styles.page}>
@@ -220,8 +381,173 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
           </section>
 
           <section style={styles.card}>
-            <h2 style={styles.sectionTitle}>Care Hub</h2>
-            <p style={styles.text}>Forms, approvals, and care documents for this visit.</p>
+            <div style={styles.sectionHeader}>
+              <div>
+                <h2 style={styles.sectionTitle}>MyPawLink Care Hub</h2>
+                <p style={styles.text}>Forms, approvals, decisions, and discharge documents.</p>
+              </div>
+              <span style={styles.timelineCount}>
+                {signedCareHubCount}/{careHubFormCount || "-"} signed
+              </span>
+            </div>
+
+            {careHubMessage && <div style={styles.careHubNotice}>{careHubMessage}</div>}
+            {careHubLoading && <div style={styles.emptyBox}>Loading Care Hub forms...</div>}
+
+            {!careHubLoading && !selectedCareHubCategory && (
+              <div style={styles.categoryGrid}>
+                {careHubCategories.map((category) => {
+                  const signedCount = category.forms.filter(
+                    (form) => form.status === "Signed"
+                  ).length;
+
+                  return (
+                    <button
+                      key={category.id}
+                      type="button"
+                      style={styles.categoryCard}
+                      onClick={() => {
+                        setSelectedCareHubCategoryId(category.id);
+                        setSelectedCareHubFormId(null);
+                      }}
+                    >
+                      <span style={styles.categoryTitle}>{category.name}</span>
+                      <span style={styles.categoryText}>{category.description}</span>
+                      <span style={styles.categoryMeta}>
+                        {signedCount}/{category.forms.length} signed
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {selectedCareHubCategory && !selectedCareHubForm && (
+              <div style={styles.careHubStack}>
+                <button
+                  type="button"
+                  style={styles.backButton}
+                  onClick={() => setSelectedCareHubCategoryId(null)}
+                >
+                  Back to categories
+                </button>
+                <div style={styles.careHubHeaderBox}>
+                  <h3 style={styles.careHubTitle}>{selectedCareHubCategory.name}</h3>
+                  <p style={styles.text}>{selectedCareHubCategory.description}</p>
+                </div>
+                {selectedCareHubCategory.forms.map((form) => (
+                  <div key={form.id} style={styles.careHubFormCard}>
+                    <div>
+                      <div style={styles.formTitleRow}>
+                        <strong>{form.title}</strong>
+                        <span
+                          style={{
+                            ...styles.formStatus,
+                            ...(form.status === "Signed" ? styles.formStatusSigned : {}),
+                          }}
+                        >
+                          {form.status}
+                        </span>
+                      </div>
+                      <p style={styles.formText}>{form.description}</p>
+                    </div>
+                    <button
+                      type="button"
+                      style={styles.viewFormButton}
+                      onClick={() => openCareHubForm(form.id)}
+                    >
+                      View Form
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {selectedCareHubForm && (
+              <div style={styles.careHubStack}>
+                <button
+                  type="button"
+                  style={styles.backButton}
+                  onClick={() => setSelectedCareHubFormId(null)}
+                >
+                  Back to {selectedCareHubCategory?.name}
+                </button>
+                <div style={styles.consentShell}>
+                  <span
+                    style={{
+                      ...styles.formStatus,
+                      ...(selectedCareHubForm.status === "Signed"
+                        ? styles.formStatusSigned
+                        : {}),
+                    }}
+                  >
+                    {selectedCareHubForm.status}
+                  </span>
+                  <h3 style={styles.careHubTitle}>{selectedCareHubForm.title}</h3>
+                  <p style={styles.text}>{selectedCareHubForm.description}</p>
+                  <div style={styles.legalBox}>
+                    {selectedCareHubForm.htmlContent.split("\n\n").map((paragraph) => (
+                      <p key={paragraph} style={styles.legalText}>
+                        {paragraph}
+                      </p>
+                    ))}
+                  </div>
+
+                  {selectedCareHubForm.status === "Signed" ? (
+                    <div style={styles.signedBox}>
+                      <strong>Signed by {selectedCareHubForm.signedName || "owner"}</strong>
+                      {selectedCareHubForm.signedAt && (
+                        <span>{new Date(selectedCareHubForm.signedAt).toLocaleString()}</span>
+                      )}
+                    </div>
+                  ) : (
+                    <form style={styles.signatureForm} onSubmit={signSelectedCareHubForm}>
+                      <input
+                        style={styles.input}
+                        value={printedName}
+                        onChange={(event) => setPrintedName(event.target.value)}
+                        placeholder="Printed name"
+                        required
+                      />
+                      <label style={styles.checkRow}>
+                        <input
+                          type="checkbox"
+                          checked={checkboxAgreed}
+                          onChange={(event) => setCheckboxAgreed(event.target.checked)}
+                          required
+                        />
+                        I have reviewed this form and agree to sign electronically.
+                      </label>
+                      <input
+                        style={styles.signatureInput}
+                        value={signatureData}
+                        onChange={(event) => setSignatureData(event.target.value)}
+                        placeholder="Type signature"
+                        required
+                      />
+                      <div style={styles.timestampBox}>
+                        Date/time: {new Date().toLocaleString()}
+                      </div>
+                      <button
+                        type="submit"
+                        style={{
+                          ...styles.signButton,
+                          ...(signingForm ? styles.disabledButton : {}),
+                        }}
+                        disabled={signingForm}
+                      >
+                        {signingForm ? "Submitting..." : "Submit Signature"}
+                      </button>
+                    </form>
+                  )}
+                </div>
+              </div>
+            )}
+          </section>
+
+          <section style={styles.card}>
+            <h2 style={styles.sectionTitle}>Clinic-Sent Forms</h2>
+            <p style={styles.text}>Forms sent directly by the clinic for this visit.</p>
             <div style={styles.formList}>
               {visit.forms.length > 0 ? (
                 visit.forms.map((form) => (
@@ -234,7 +560,7 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
                   </div>
                 ))
               ) : (
-                <div style={styles.emptyBox}>No forms are pending right now.</div>
+                <div style={styles.emptyBox}>No clinic-sent forms are pending right now.</div>
               )}
             </div>
           </section>
@@ -482,6 +808,195 @@ const styles: Record<string, CSSProperties> = {
     padding: "5px 8px",
     fontSize: 11,
     fontWeight: 900,
+  },
+  formStatusSigned: {
+    background: "#ecfdf3",
+    color: "#027a48",
+    border: "1px solid #bbf7d0",
+  },
+  careHubNotice: {
+    background: "#f0fbf8",
+    border: "1px solid #bfe9e0",
+    borderRadius: 8,
+    color: "#087f78",
+    fontSize: 13,
+    fontWeight: 800,
+    lineHeight: 1.35,
+    margin: "12px 0",
+    padding: 10,
+  },
+  categoryGrid: {
+    display: "grid",
+    gap: 10,
+    marginTop: 12,
+  },
+  categoryCard: {
+    background: "linear-gradient(135deg, #fbffff, #f2fbfa)",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    cursor: "pointer",
+    display: "grid",
+    gap: 5,
+    padding: 14,
+    textAlign: "left",
+  },
+  categoryTitle: {
+    color: "#102a3a",
+    fontSize: 15,
+    fontWeight: 900,
+  },
+  categoryText: {
+    color: "#52606d",
+    fontSize: 13,
+    lineHeight: 1.35,
+  },
+  categoryMeta: {
+    color: "#087f78",
+    fontSize: 12,
+    fontWeight: 900,
+  },
+  careHubStack: {
+    display: "grid",
+    gap: 10,
+    marginTop: 12,
+  },
+  backButton: {
+    justifySelf: "start",
+    background: "#f8fbff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    color: "#087f78",
+    cursor: "pointer",
+    fontSize: 12,
+    fontWeight: 900,
+    padding: "8px 10px",
+  },
+  careHubHeaderBox: {
+    background: "#f8fbff",
+    border: "1px solid #e1ecec",
+    borderRadius: 8,
+    padding: 12,
+  },
+  careHubTitle: {
+    color: "#102a3a",
+    fontSize: 17,
+    fontWeight: 900,
+    margin: "0 0 6px",
+  },
+  careHubFormCard: {
+    background: "#ffffff",
+    border: "1px solid #e1ecec",
+    borderRadius: 8,
+    display: "grid",
+    gap: 12,
+    padding: 12,
+  },
+  formTitleRow: {
+    alignItems: "flex-start",
+    display: "flex",
+    gap: 10,
+    justifyContent: "space-between",
+  },
+  viewFormButton: {
+    background: "#f0fbf8",
+    border: "1px solid #bfe9e0",
+    borderRadius: 8,
+    color: "#087f78",
+    cursor: "pointer",
+    fontSize: 13,
+    fontWeight: 900,
+    padding: "10px 12px",
+    width: "100%",
+  },
+  consentShell: {
+    background: "#fbffff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    display: "grid",
+    gap: 12,
+    padding: 12,
+  },
+  legalBox: {
+    background: "#ffffff",
+    border: "1px solid #e1ecec",
+    borderRadius: 8,
+    padding: 12,
+  },
+  legalText: {
+    color: "#243447",
+    fontSize: 14,
+    lineHeight: 1.5,
+    margin: "0 0 10px",
+  },
+  signatureForm: {
+    display: "grid",
+    gap: 10,
+  },
+  input: {
+    border: "1px solid #cfe0df",
+    borderRadius: 8,
+    color: "#102a3a",
+    fontSize: 15,
+    minHeight: 46,
+    padding: "11px 12px",
+    width: "100%",
+  },
+  checkRow: {
+    alignItems: "flex-start",
+    background: "#f8fbff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    color: "#243447",
+    display: "flex",
+    fontSize: 13,
+    fontWeight: 800,
+    gap: 10,
+    lineHeight: 1.35,
+    padding: 12,
+  },
+  signatureInput: {
+    border: "1px solid #bfe9e0",
+    borderRadius: 8,
+    color: "#102a3a",
+    fontFamily: "cursive",
+    fontSize: 20,
+    minHeight: 52,
+    padding: "11px 12px",
+    width: "100%",
+  },
+  timestampBox: {
+    background: "#f8fbff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    color: "#52606d",
+    fontSize: 12,
+    fontWeight: 800,
+    padding: 10,
+  },
+  signButton: {
+    background: "linear-gradient(135deg, #13a89e, #0f766e)",
+    border: "none",
+    borderRadius: 8,
+    color: "#ffffff",
+    cursor: "pointer",
+    fontSize: 14,
+    fontWeight: 900,
+    minHeight: 48,
+    padding: "12px 14px",
+  },
+  disabledButton: {
+    cursor: "not-allowed",
+    opacity: 0.62,
+  },
+  signedBox: {
+    background: "#ecfdf3",
+    border: "1px solid #bbf7d0",
+    borderRadius: 8,
+    color: "#027a48",
+    display: "grid",
+    fontSize: 14,
+    gap: 5,
+    padding: 12,
   },
   emptyBox: {
     background: "#f8fbff",

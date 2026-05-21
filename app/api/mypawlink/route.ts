@@ -21,6 +21,23 @@ type StaffProfile = {
 type RequestBody = Record<string, unknown>;
 type DbRecord = Record<string, unknown>;
 
+type CareHubSeedForm = {
+  slug: string;
+  title: string;
+  description: string;
+  htmlContent: string;
+  formType: string;
+  displayOrder: number;
+};
+
+type CareHubSeedCategory = {
+  slug: string;
+  name: string;
+  description: string;
+  displayOrder: number;
+  forms: CareHubSeedForm[];
+};
+
 const visitSelect = `
   *,
   owners!visits_owner_id_fkey (
@@ -77,6 +94,254 @@ const buildVisitAccessUrl = (token: string) => {
 };
 
 const createVisitToken = () => randomBytes(18).toString("base64url");
+
+const careHubSeedCategories: CareHubSeedCategory[] = [
+  {
+    slug: "admission-forms",
+    name: "Admission Forms",
+    description: "Start-of-visit paperwork and hospital admission permissions.",
+    displayOrder: 1,
+    forms: [
+      {
+        slug: "patient-admission-form",
+        title: "Patient Admission Form",
+        description: "Confirms owner and patient details for this emergency visit.",
+        htmlContent:
+          "I confirm that the information provided for this emergency visit is accurate to the best of my knowledge.\n\nI authorize the hospital team to receive my pet, review the presenting concern, and document information needed to support care during this visit.\n\nI understand that this admission form does not replace direct medical advice from the attending veterinarian.",
+        formType: "admission",
+        displayOrder: 1,
+      },
+      {
+        slug: "treatment-authorization-form",
+        title: "Treatment Authorization Form",
+        description: "Allows the emergency team to examine and stabilize your pet.",
+        htmlContent:
+          "I authorize the emergency veterinary team to examine my pet and provide reasonable stabilization care when medically necessary.\n\nStabilization may include oxygen support, IV catheter placement, fluids, medications, monitoring, or other time-sensitive interventions discussed with me by the care team.\n\nI understand that additional diagnostics or treatments may require separate approval.",
+        formType: "admission",
+        displayOrder: 2,
+      },
+      {
+        slug: "medical-history-intake-form",
+        title: "Medical History Intake Form",
+        description: "Captures important history, medications, and current symptoms.",
+        htmlContent:
+          "I confirm that I have shared all known medications, allergies, prior diagnoses, and relevant medical history for my pet.\n\nI understand that incomplete medical history may affect treatment decisions and agree to update the team if new information becomes available.\n\nThe care team may use this information to prioritize diagnostics, treatments, and communication during this visit.",
+        formType: "admission",
+        displayOrder: 3,
+      },
+    ],
+  },
+  {
+    slug: "financial-forms",
+    name: "Financial Forms",
+    description: "Financial responsibility, deposits, and estimate approvals.",
+    displayOrder: 2,
+    forms: [
+      {
+        slug: "financial-responsibility-agreement",
+        title: "Financial Responsibility Agreement",
+        description: "Acknowledges responsibility for charges from emergency care.",
+        htmlContent:
+          "I understand that I am financially responsible for services authorized and provided during this emergency visit.\n\nI understand that emergency care costs may change as my pet's condition changes, and the hospital team will communicate major changes whenever possible.\n\nI agree to ask questions before authorizing care if I need clarification about fees or payment expectations.",
+        formType: "financial",
+        displayOrder: 1,
+      },
+      {
+        slug: "deposit-authorization-form",
+        title: "Deposit Authorization Form",
+        description: "Approves an initial deposit toward recommended care.",
+        htmlContent:
+          "I authorize the hospital to collect or apply the discussed deposit toward my pet's emergency care.\n\nI understand that the deposit is not a final invoice and that additional charges may apply depending on diagnostics, treatment, hospitalization, or procedures.\n\nAny remaining balance or credit will be reviewed at checkout or discharge.",
+        formType: "financial",
+        displayOrder: 2,
+      },
+      {
+        slug: "treatment-estimate-approval",
+        title: "Treatment Estimate Approval",
+        description: "Approves a treatment estimate or requests discussion.",
+        htmlContent:
+          "I have reviewed the treatment estimate provided for my pet.\n\nI understand the estimate is a good-faith range and may change if my pet's condition changes or if additional care becomes necessary.\n\nBy signing, I authorize the care team to proceed with the selected plan or understand that I may request further discussion before proceeding.",
+        formType: "financial",
+        displayOrder: 3,
+      },
+    ],
+  },
+  {
+    slug: "emergency-decisions",
+    name: "Emergency Decisions",
+    description: "Critical care, CPR, and resuscitation preferences.",
+    displayOrder: 3,
+    forms: [
+      {
+        slug: "cpr-authorization",
+        title: "CPR Authorization",
+        description: "Authorizes full cardiopulmonary resuscitation if needed.",
+        htmlContent:
+          "I authorize the emergency team to perform CPR if my pet experiences cardiac or respiratory arrest.\n\nCPR may include chest compressions, intubation, emergency drugs, defibrillation, and advanced life support.\n\nI understand that CPR outcomes vary and that costs may be significant.",
+        formType: "emergency_decision",
+        displayOrder: 1,
+      },
+      {
+        slug: "dnr-authorization",
+        title: "DNR Authorization",
+        description: "Documents a do-not-resuscitate preference.",
+        htmlContent:
+          "I request that the hospital team does not perform CPR if my pet experiences cardiac or respiratory arrest.\n\nI understand that comfort care and other agreed medical support may still be provided unless I choose otherwise.\n\nI understand I can update this preference by contacting the care team.",
+        formType: "emergency_decision",
+        displayOrder: 2,
+      },
+      {
+        slug: "critical-care-consent",
+        title: "Critical Care Consent",
+        description: "Allows urgent stabilization for critical patients.",
+        htmlContent:
+          "I understand that my pet may require urgent interventions because of a serious or potentially life-threatening condition.\n\nI authorize the care team to begin medically necessary stabilization while continuing to communicate treatment options and costs.\n\nI understand that critical care carries risks, including complications or death despite appropriate treatment.",
+        formType: "emergency_decision",
+        displayOrder: 3,
+      },
+    ],
+  },
+  {
+    slug: "treatment-consents",
+    name: "Treatment Consents",
+    description: "Medication, diagnostics, and hospitalization permissions.",
+    displayOrder: 4,
+    forms: [
+      {
+        slug: "medication-consent",
+        title: "Medication Consent",
+        description: "Allows medications recommended by the care team.",
+        htmlContent:
+          "I authorize the veterinary team to administer medications discussed with me or medically indicated for my pet's emergency care.\n\nMedications may include pain control, anti-nausea medication, antibiotics, sedatives, emergency drugs, or other prescribed treatments.\n\nI understand all medications can carry risks or side effects.",
+        formType: "treatment",
+        displayOrder: 1,
+      },
+      {
+        slug: "diagnostic-testing-consent",
+        title: "Diagnostic Testing Consent",
+        description: "Approves recommended testing such as labs or imaging.",
+        htmlContent:
+          "I authorize the diagnostic testing discussed for my pet, which may include bloodwork, urinalysis, radiographs, ultrasound, ECG, or other tests.\n\nI understand that diagnostics help guide medical decisions but may not always provide a complete diagnosis.\n\nThe care team will discuss significant findings and next steps.",
+        formType: "treatment",
+        displayOrder: 2,
+      },
+      {
+        slug: "hospitalization-consent",
+        title: "Hospitalization Consent",
+        description: "Approves inpatient monitoring and treatment.",
+        htmlContent:
+          "I authorize hospitalization for monitoring, nursing care, and treatments recommended by the veterinary team.\n\nHospitalization may include cage-side monitoring, medications, fluids, feeding support, pain scoring, and repeated vital sign checks.\n\nI understand that care plans may change based on my pet's response.",
+        formType: "treatment",
+        displayOrder: 3,
+      },
+    ],
+  },
+  {
+    slug: "procedure-authorizations",
+    name: "Procedure Authorizations",
+    description: "Procedure-specific permissions for anesthesia, surgery, and transfusion.",
+    displayOrder: 5,
+    forms: [
+      {
+        slug: "anesthesia-consent",
+        title: "Anesthesia Consent",
+        description: "Reviews risks of sedation or anesthesia.",
+        htmlContent:
+          "I authorize sedation or anesthesia if recommended for my pet's diagnostics, treatment, or procedure.\n\nI understand anesthesia carries risks including reaction, complications, or death, especially in unstable emergency patients.\n\nThe care team will monitor my pet and take reasonable precautions based on the situation.",
+        formType: "procedure",
+        displayOrder: 1,
+      },
+      {
+        slug: "surgery-consent",
+        title: "Surgery Consent",
+        description: "Authorizes an emergency or urgent procedure.",
+        htmlContent:
+          "I authorize the surgical or procedural care discussed with the veterinary team.\n\nI understand risks may include bleeding, infection, anesthesia complications, unexpected findings, need for additional procedures, or death.\n\nI authorize the veterinarian to make reasonable medical decisions if unexpected complications occur.",
+        formType: "procedure",
+        displayOrder: 2,
+      },
+      {
+        slug: "blood-transfusion-consent",
+        title: "Blood Transfusion Consent",
+        description: "Authorizes blood products when medically needed.",
+        htmlContent:
+          "I authorize blood or blood product transfusion if recommended for my pet.\n\nI understand transfusions can be life-saving but may carry risks including allergic reaction, fever, infection risk, or other complications.\n\nThe team will monitor my pet for transfusion reactions whenever possible.",
+        formType: "procedure",
+        displayOrder: 3,
+      },
+    ],
+  },
+  {
+    slug: "communication-preferences",
+    name: "Communication Preferences",
+    description: "SMS, media, and authorized contact preferences.",
+    displayOrder: 6,
+    forms: [
+      {
+        slug: "sms-consent",
+        title: "SMS Consent",
+        description: "Approves text updates related to this visit.",
+        htmlContent:
+          "I consent to receive SMS/text messages related to my pet's emergency visit.\n\nMessages may include status updates, forms, estimate notifications, discharge information, or requests to contact the clinic.\n\nMessage and data rates may apply, and I can ask the clinic to stop text updates.",
+        formType: "communication",
+        displayOrder: 1,
+      },
+      {
+        slug: "photo-video-consent",
+        title: "Photo/Video Consent",
+        description: "Allows care-related photos or short videos to be shared.",
+        htmlContent:
+          "I authorize the hospital team to capture and share care-related photos or short videos of my pet through MyPawLink when appropriate.\n\nThese images are intended for owner communication during the visit and are not a substitute for medical records.\n\nI understand the clinic may limit media sharing during urgent care.",
+        formType: "communication",
+        displayOrder: 2,
+      },
+      {
+        slug: "authorized-contact-form",
+        title: "Authorized Contact Form",
+        description: "Identifies who may receive updates or make decisions.",
+        htmlContent:
+          "I confirm the people authorized to receive updates or discuss my pet's care with the clinic.\n\nI understand that medical and financial decisions should be made by the owner or authorized decision-maker.\n\nI will notify the clinic if contact permissions change during this visit.",
+        formType: "communication",
+        displayOrder: 3,
+      },
+    ],
+  },
+  {
+    slug: "discharge-documents",
+    name: "Discharge Documents",
+    description: "Discharge instructions, medication review, and follow-up care.",
+    displayOrder: 7,
+    forms: [
+      {
+        slug: "discharge-instructions",
+        title: "Discharge Instructions",
+        description: "Acknowledges discharge care instructions.",
+        htmlContent:
+          "I acknowledge that I received discharge instructions for my pet.\n\nI understand the diagnosis or assessment, home care instructions, warning signs, and recommended follow-up plan as explained by the care team.\n\nI agree to contact a veterinarian if my pet worsens or if I have questions after discharge.",
+        formType: "discharge",
+        displayOrder: 1,
+      },
+      {
+        slug: "medication-acknowledgment",
+        title: "Medication Acknowledgment",
+        description: "Confirms medication dosing and instructions were reviewed.",
+        htmlContent:
+          "I acknowledge that my pet's medication instructions were reviewed with me.\n\nI understand the medication name, dose, route, frequency, duration, and any important side effects or precautions provided by the care team.\n\nI will contact the clinic or my veterinarian if I have medication questions.",
+        formType: "discharge",
+        displayOrder: 2,
+      },
+      {
+        slug: "follow-up-care-plan",
+        title: "Follow-Up Care Plan",
+        description: "Reviews recheck and aftercare recommendations.",
+        htmlContent:
+          "I acknowledge the recommended follow-up care plan for my pet.\n\nThis may include recheck exams, primary veterinarian follow-up, specialist referral, lab rechecks, activity restrictions, or return precautions.\n\nI understand that failure to follow up may affect recovery.",
+        formType: "discharge",
+        displayOrder: 3,
+      },
+    ],
+  },
+];
 
 const getPetPhotoFromNotes = (notes: string) => {
   const match = notes.match(/\n?\[\[MPL_PET_PHOTO\]\]([\s\S]*?)\[\[\/MPL_PET_PHOTO\]\]/);
@@ -234,6 +499,210 @@ const notifyVisitAccessChannels = async (visitId: string) => {
   } catch (error) {
     console.error("Unable to notify realtime visit channel:", error);
   }
+};
+
+const isMissingCareHubTableError = (error: unknown) => {
+  const dbError = error as { code?: string; message?: string } | null;
+  return (
+    dbError?.code === "42P01" ||
+    Boolean(dbError?.message?.toLowerCase().includes("care_hub"))
+  );
+};
+
+const getVisitIdForToken = async (token: string) => {
+  const supabase = getSupabaseAdmin();
+  const { data: tokenRow, error: tokenError } = await supabase
+    .from("visit_access_tokens")
+    .select("visit_id, expires_at")
+    .eq("token", token)
+    .maybeSingle();
+
+  if (tokenError) throw tokenError;
+
+  const visitId = stringValue((tokenRow as DbRecord | null)?.visit_id);
+
+  if (!visitId) {
+    return {
+      visitId: "",
+      error: NextResponse.json({ error: "Invalid visit access link." }, { status: 404 }),
+    };
+  }
+
+  const expiresAt = stringValue((tokenRow as DbRecord).expires_at);
+  if (expiresAt && new Date(expiresAt).getTime() < Date.now()) {
+    return {
+      visitId: "",
+      error: NextResponse.json(
+        { error: "This visit access link has expired." },
+        { status: 410 }
+      ),
+    };
+  }
+
+  await supabase
+    .from("visit_access_tokens")
+    .update({ last_used_at: new Date().toISOString() })
+    .eq("token", token);
+
+  return { visitId, error: null };
+};
+
+const mapSeedCareHub = () => ({
+  setupRequired: true,
+  categories: careHubSeedCategories.map((category) => ({
+    id: category.slug,
+    slug: category.slug,
+    name: category.name,
+    description: category.description,
+    displayOrder: category.displayOrder,
+    forms: category.forms.map((form) => ({
+      id: form.slug,
+      slug: form.slug,
+      title: form.title,
+      description: form.description,
+      htmlContent: form.htmlContent,
+      requiresSignature: true,
+      requiresCheckbox: true,
+      formType: form.formType,
+      displayOrder: form.displayOrder,
+      status: "Needs Signature",
+      signedName: "",
+      signedAt: "",
+    })),
+  })),
+});
+
+const loadCareHubForVisit = async (visitId: string) => {
+  const supabase = getSupabaseAdmin();
+
+  const { data: categoriesData, error: categoriesError } = await supabase
+    .from("care_hub_form_categories")
+    .select("id, slug, name, description, display_order")
+    .order("display_order", { ascending: true });
+
+  if (categoriesError) {
+    if (isMissingCareHubTableError(categoriesError)) return mapSeedCareHub();
+    throw categoriesError;
+  }
+
+  const { data: formsData, error: formsError } = await supabase
+    .from("care_hub_forms")
+    .select(
+      "id, category_id, slug, title, description, html_content, requires_signature, requires_checkbox, form_type, display_order, is_active"
+    )
+    .eq("is_active", true)
+    .order("display_order", { ascending: true });
+
+  if (formsError) {
+    if (isMissingCareHubTableError(formsError)) return mapSeedCareHub();
+    throw formsError;
+  }
+
+  const { data: signedFormsData, error: signedFormsError } = await supabase
+    .from("signed_care_hub_forms")
+    .select("id, form_id, owner_name, signed_at, status, checkbox_agreed")
+    .eq("visit_id", visitId);
+
+  if (signedFormsError) {
+    if (isMissingCareHubTableError(signedFormsError)) return mapSeedCareHub();
+    throw signedFormsError;
+  }
+
+  const signedByFormId = new Map(
+    ((signedFormsData || []) as DbRecord[]).map((signedForm) => [
+      stringValue(signedForm.form_id),
+      signedForm,
+    ])
+  );
+  const forms = (formsData || []) as DbRecord[];
+
+  return {
+    setupRequired: false,
+    categories: ((categoriesData || []) as DbRecord[]).map((category) => ({
+      id: stringValue(category.id),
+      slug: stringValue(category.slug),
+      name: stringValue(category.name),
+      description: stringValue(category.description),
+      displayOrder:
+        typeof category.display_order === "number" ? category.display_order : 0,
+      forms: forms
+        .filter((form) => stringValue(form.category_id) === stringValue(category.id))
+        .map((form) => {
+          const signedForm = signedByFormId.get(stringValue(form.id));
+
+          return {
+            id: stringValue(form.id),
+            slug: stringValue(form.slug),
+            title: stringValue(form.title),
+            description: stringValue(form.description),
+            htmlContent: stringValue(form.html_content),
+            requiresSignature: form.requires_signature !== false,
+            requiresCheckbox: form.requires_checkbox !== false,
+            formType: stringValue(form.form_type),
+            displayOrder:
+              typeof form.display_order === "number" ? form.display_order : 0,
+            status: signedForm ? stringValue(signedForm.status, "Signed") : "Needs Signature",
+            signedName: signedForm ? stringValue(signedForm.owner_name) : "",
+            signedAt: signedForm ? stringValue(signedForm.signed_at) : "",
+          };
+        }),
+    })),
+  };
+};
+
+const signCareHubFormForVisit = async ({
+  visitId,
+  formId,
+  ownerName,
+  signatureData,
+  checkboxAgreed,
+  ipAddress,
+  deviceInfo,
+}: {
+  visitId: string;
+  formId: string;
+  ownerName: string;
+  signatureData: string;
+  checkboxAgreed: boolean;
+  ipAddress: string;
+  deviceInfo: string;
+}) => {
+  const supabase = getSupabaseAdmin();
+  const signedAt = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("signed_care_hub_forms")
+    .upsert(
+      [
+        {
+          visit_id: visitId,
+          form_id: formId,
+          owner_name: ownerName,
+          signature_data: signatureData,
+          signed_at: signedAt,
+          status: "Signed",
+          checkbox_agreed: checkboxAgreed,
+          ip_address: ipAddress,
+          device_info: deviceInfo,
+        },
+      ],
+      { onConflict: "visit_id,form_id" }
+    )
+    .select("id, form_id, owner_name, signed_at, status, checkbox_agreed")
+    .single();
+
+  if (error) throw error;
+
+  await notifyVisitAccessChannels(visitId);
+
+  const signedForm = (data || {}) as DbRecord;
+  return {
+    id: stringValue(signedForm.id),
+    formId: stringValue(signedForm.form_id, formId),
+    ownerName: stringValue(signedForm.owner_name, ownerName),
+    signedAt: stringValue(signedForm.signed_at, signedAt),
+    status: stringValue(signedForm.status, "Signed"),
+    checkboxAgreed: signedForm.checkbox_agreed === true,
+  };
 };
 
 const staffRoles: StaffRole[] = ["Front Desk", "Technician", "Veterinarian", "Admin"];
@@ -525,34 +994,72 @@ export async function POST(request: Request) {
         );
       }
 
-      const { data: tokenRow, error: tokenError } = await supabase
-        .from("visit_access_tokens")
-        .select("visit_id, expires_at")
-        .eq("token", token)
-        .maybeSingle();
+      const tokenAccess = await getVisitIdForToken(token);
+      if (tokenAccess.error) return tokenAccess.error;
 
-      if (tokenError) throw tokenError;
+      return NextResponse.json({ visit: await fetchVisitById(tokenAccess.visitId) });
+    }
 
-      const visitId = stringValue((tokenRow as DbRecord | null)?.visit_id);
+    if (action === "loadCareHubByToken") {
+      const token = stringValue(body.token).trim();
 
-      if (!visitId) {
-        return NextResponse.json({ error: "Invalid visit access link." }, { status: 404 });
-      }
-
-      const expiresAt = stringValue((tokenRow as DbRecord).expires_at);
-      if (expiresAt && new Date(expiresAt).getTime() < Date.now()) {
+      if (!token) {
         return NextResponse.json(
-          { error: "This visit access link has expired." },
-          { status: 410 }
+          { error: "Visit access code is required." },
+          { status: 400 }
         );
       }
 
-      await supabase
-        .from("visit_access_tokens")
-        .update({ last_used_at: new Date().toISOString() })
-        .eq("token", token);
+      const tokenAccess = await getVisitIdForToken(token);
+      if (tokenAccess.error) return tokenAccess.error;
 
-      return NextResponse.json({ visit: await fetchVisitById(visitId) });
+      return NextResponse.json({
+        careHub: await loadCareHubForVisit(tokenAccess.visitId),
+      });
+    }
+
+    if (action === "signCareHubForm") {
+      const token = stringValue(body.token).trim();
+      const formId = stringValue(body.formId).trim();
+      const ownerName = stringValue(body.ownerName).trim();
+      const signatureData = stringValue(body.signatureData).trim();
+      const checkboxAgreed = body.checkboxAgreed === true;
+
+      if (!token || !formId || !ownerName || !signatureData || !checkboxAgreed) {
+        return NextResponse.json(
+          { error: "Printed name, agreement checkbox, and signature are required." },
+          { status: 400 }
+        );
+      }
+
+      const tokenAccess = await getVisitIdForToken(token);
+      if (tokenAccess.error) return tokenAccess.error;
+
+      try {
+        const signedForm = await signCareHubFormForVisit({
+          visitId: tokenAccess.visitId,
+          formId,
+          ownerName,
+          signatureData,
+          checkboxAgreed,
+          ipAddress: stringValue(request.headers.get("x-forwarded-for")).split(",")[0]?.trim(),
+          deviceInfo: stringValue(request.headers.get("user-agent")),
+        });
+
+        return NextResponse.json({
+          signedForm,
+          careHub: await loadCareHubForVisit(tokenAccess.visitId),
+        });
+      } catch (error) {
+        if (isMissingCareHubTableError(error)) {
+          return NextResponse.json(
+            { error: "Care Hub database tables are not set up yet. Run the Phase 5 SQL first." },
+            { status: 500 }
+          );
+        }
+
+        throw error;
+      }
     }
 
     if (action === "sendUpdate") {
