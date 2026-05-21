@@ -21,6 +21,14 @@ type StaffProfile = {
 type RequestBody = Record<string, unknown>;
 type DbRecord = Record<string, unknown>;
 
+type OwnerNotificationSummary = {
+  channel: "sms";
+  status: "sent" | "skipped" | "failed";
+  reason: string;
+  error: string;
+  link: string;
+};
+
 type CareHubSeedForm = {
   slug: string;
   title: string;
@@ -642,6 +650,11 @@ const sendOwnerNotification = async ({
     message,
     link,
   });
+  const smsStatus = smsResult.sent
+    ? "sent"
+    : smsResult.reason === "not-configured"
+      ? "skipped"
+      : "failed";
 
   await logNotificationEvent({
     visitId: mappedVisit.id,
@@ -651,7 +664,7 @@ const sendOwnerNotification = async ({
     subject,
     message,
     link,
-    status: smsResult.sent ? "sent" : smsResult.reason === "not-configured" ? "skipped" : "failed",
+    status: smsStatus,
     provider: "twilio",
     providerResponse: {
       reason: smsResult.reason || "",
@@ -670,6 +683,14 @@ const sendOwnerNotification = async ({
       triggerType,
     });
   }
+
+  return {
+    channel: "sms",
+    status: smsStatus,
+    reason: smsResult.reason || "",
+    error: smsResult.error || "",
+    link,
+  } satisfies OwnerNotificationSummary;
 };
 
 const getVisitIdForToken = async (token: string) => {
@@ -952,7 +973,7 @@ const createEstimateForVisit = async ({
 
   if (error) throw error;
 
-  const visit = await addVisitUpdate({
+  const updateResult = await addVisitUpdate({
     visitId,
     status: "Awaiting Estimate Approval",
     message: `A treatment estimate for ${formatMoney(amount)} is ready for review in MyPawLink.`,
@@ -961,7 +982,8 @@ const createEstimateForVisit = async ({
 
   return {
     estimate: mapEstimate((data || {}) as DbRecord),
-    visit,
+    visit: updateResult.visit,
+    notification: updateResult.notification,
   };
 };
 
@@ -1192,8 +1214,10 @@ const addVisitUpdate = async ({
 
   if (updateError) throw updateError;
 
+  let notification: OwnerNotificationSummary | null = null;
+
   if (sendText) {
-    await sendOwnerNotification({
+    notification = await sendOwnerNotification({
       visit: visit as DbRecord,
       message,
       triggerType,
@@ -1202,7 +1226,10 @@ const addVisitUpdate = async ({
 
   await notifyVisitAccessChannels(visitId);
 
-  return fetchVisitById(visitId);
+  return {
+    visit: await fetchVisitById(visitId),
+    notification,
+  };
 };
 
 const createOwnerPetVisit = async ({
@@ -1470,13 +1497,13 @@ export async function POST(request: Request) {
       const accessError = await requireClinicAccess(body);
       if (accessError) return accessError;
 
-      const visit = await addVisitUpdate({
+      const result = await addVisitUpdate({
         visitId: stringValue(body.visitId),
         status: stringValue(body.status),
         message: stringValue(body.message),
       });
 
-      return NextResponse.json({ visit });
+      return NextResponse.json(result);
     }
 
     if (action === "createEstimate") {
@@ -1548,13 +1575,13 @@ export async function POST(request: Request) {
 
       if (error) throw error;
 
-      const visit = await addVisitUpdate({
+      const result = await addVisitUpdate({
         visitId,
         status: "Doctor assigned",
         message,
       });
 
-      return NextResponse.json({ visit });
+      return NextResponse.json(result);
     }
 
     if (action === "sendForm") {
@@ -1573,14 +1600,14 @@ export async function POST(request: Request) {
 
       if (error) throw error;
 
-      const visit = await addVisitUpdate({
+      const result = await addVisitUpdate({
         visitId,
         status: stringValue(body.status),
         message: stringValue(body.message),
         triggerType: "form_sent",
       });
 
-      return NextResponse.json({ visit });
+      return NextResponse.json(result);
     }
 
     if (action === "respondForm") {

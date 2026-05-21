@@ -65,6 +65,19 @@ type StaffProfile = {
   role: StaffRole;
 };
 
+type NotificationSummary = {
+  channel: "sms";
+  status: "sent" | "skipped" | "failed";
+  reason: string;
+  error: string;
+  link: string;
+};
+
+type ClinicActionResult = {
+  visit: Visit;
+  notification?: NotificationSummary | null;
+};
+
 type CareHubForm = {
   id: string;
   title: string;
@@ -431,6 +444,8 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [submittingVisit, setSubmittingVisit] = useState(false);
   const [submittingReferral, setSubmittingReferral] = useState(false);
+  const [visitSubmitError, setVisitSubmitError] = useState("");
+  const [visitSubmitMessage, setVisitSubmitMessage] = useState("");
   const [clinicLoading, setClinicLoading] = useState(false);
   const [pendingClinicActions, setPendingClinicActions] = useState<Record<string, string>>({});
   const [selectedVisitType, setSelectedVisitType] = useState("");
@@ -677,7 +692,7 @@ export default function Home() {
     const { error } = await supabase.auth.signInWithOtp({
       email: ownerMagicEmail.trim(),
       options: {
-        emailRedirectTo: window.location.origin,
+        emailRedirectTo: getOwnerMagicRedirectUrl(),
       },
     });
 
@@ -715,6 +730,17 @@ export default function Home() {
     const trimmed = value.trim();
     const match = trimmed.match(/\/visit\/([^/?#]+)/);
     return decodeURIComponent(match?.[1] || trimmed);
+  };
+
+  const getOwnerMagicRedirectUrl = () => {
+    const configuredSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "");
+    if (configuredSiteUrl) return configuredSiteUrl;
+
+    if (window.location.hostname === "localhost") {
+      return "https://mypawlink.com";
+    }
+
+    return window.location.origin;
   };
 
   const copyVisitLink = async (visit: Visit) => {
@@ -798,10 +824,34 @@ export default function Home() {
     setPendingClinicActions(next);
   };
 
+  const showNotificationIssue = (notification?: NotificationSummary | null) => {
+    if (!notification || notification.status === "sent") return;
+
+    const reason =
+      notification.reason === "not-configured"
+        ? "Twilio is not configured in Vercel yet."
+        : notification.reason === "missing-fields"
+          ? "The owner phone number is missing or not a valid US phone number."
+          : notification.error || "Twilio rejected the text message.";
+
+    alert(`Update saved, but the text was not sent. ${reason}`);
+  };
+
+  const handleVisitFormInvalid = (event: React.FormEvent<HTMLFormElement>) => {
+    const field = event.target as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+    const label = "placeholder" in field && field.placeholder
+      ? field.placeholder
+      : field.name || "a required field";
+    setVisitSubmitError(`Please complete ${label} before submitting the visit.`);
+    setVisitSubmitMessage("");
+  };
+
   const createVisit = async (e: React.FormEvent<HTMLFormElement>) => {
   e.preventDefault();
 
   if (submittingVisitRef.current) return;
+  setVisitSubmitError("");
+  setVisitSubmitMessage("Submitting visit request...");
   submittingVisitRef.current = true;
   setSubmittingVisit(true);
 
@@ -874,7 +924,8 @@ export default function Home() {
     visit = result.visit;
   } catch (error) {
     console.error(error);
-    alert(error instanceof Error ? error.message : "Error creating visit");
+    setVisitSubmitError(error instanceof Error ? error.message : "Error creating visit");
+    setVisitSubmitMessage("");
     submittingVisitRef.current = false;
     setSubmittingVisit(false);
     return;
@@ -895,6 +946,7 @@ export default function Home() {
   setPetMediaName("");
   setPetMediaType("");
   setPetPhotoPreview("");
+  setVisitSubmitMessage("Visit request submitted. Opening your pet's status page...");
   setView("status");
   submittingVisitRef.current = false;
   setSubmittingVisit(false);
@@ -996,7 +1048,7 @@ export default function Home() {
     if (!beginClinicAction(visitId, actionLabel)) return;
 
     try {
-      const result = await apiRequest<{ visit: Visit }>({
+      const result = await apiRequest<ClinicActionResult>({
         action: "sendUpdate",
         visitId,
         status,
@@ -1005,6 +1057,7 @@ export default function Home() {
       setVisits((current) =>
         current.map((visit) => (visit.id === visitId ? result.visit : visit))
       );
+      showNotificationIssue(result.notification);
     } catch (error) {
       alert("There was an error updating the visit.");
       console.error(error);
@@ -1053,7 +1106,7 @@ export default function Home() {
     const updatedNotes = withDoctorMetadata(visit.clinicNotes, doctor);
 
     try {
-      const result = await apiRequest<{ visit: Visit }>({
+      const result = await apiRequest<ClinicActionResult>({
         action: "assignDoctor",
         visitId,
         clinicNotes: updatedNotes,
@@ -1062,6 +1115,7 @@ export default function Home() {
       setVisits((current) =>
         current.map((item) => (item.id === visitId ? result.visit : item))
       );
+      showNotificationIssue(result.notification);
     } catch (error) {
       alert("There was an error assigning the doctor.");
       console.error("Error assigning doctor:", error);
@@ -1079,7 +1133,7 @@ export default function Home() {
     if (!beginClinicAction(visit.id, "Sending form...")) return;
 
     try {
-      const result = await apiRequest<{ visit: Visit }>({
+      const result = await apiRequest<ClinicActionResult>({
         action: "sendForm",
         visitId: visit.id,
         formType,
@@ -1090,6 +1144,7 @@ export default function Home() {
       setVisits((current) =>
         current.map((item) => (item.id === visit.id ? result.visit : item))
       );
+      showNotificationIssue(result.notification);
       alert(`${formType} sent to customer`);
     } catch (error) {
       console.error(error);
@@ -1128,7 +1183,7 @@ export default function Home() {
     if (!beginClinicAction(visit.id, "Sending estimate...")) return;
 
     try {
-      const result = await apiRequest<{ visit: Visit }>({
+      const result = await apiRequest<ClinicActionResult>({
         action: "createEstimate",
         visitId: visit.id,
         title: estimateTitle,
@@ -1138,6 +1193,7 @@ export default function Home() {
       setVisits((current) =>
         current.map((item) => (item.id === visit.id ? result.visit : item))
       );
+      showNotificationIssue(result.notification);
       alert("Estimate sent to owner.");
     } catch (error) {
       console.error(error);
@@ -1354,7 +1410,14 @@ export default function Home() {
                 </p>
               </div>
 
-              <form onSubmit={createVisit} style={styles.form}>
+              <form
+                onSubmit={createVisit}
+                onInvalidCapture={handleVisitFormInvalid}
+                onChange={() => {
+                  if (visitSubmitError) setVisitSubmitError("");
+                }}
+                style={styles.form}
+              >
                 <input style={styles.input} name="petName" placeholder="Pet name" required />
 
                 <select
@@ -1581,6 +1644,9 @@ export default function Home() {
                   </div>
                 </div>
 
+                {visitSubmitError && <div style={styles.errorBox}>{visitSubmitError}</div>}
+                {visitSubmitMessage && <div style={styles.authMessage}>{visitSubmitMessage}</div>}
+
                 <button
                   style={{
                     ...styles.primaryButton,
@@ -1760,7 +1826,7 @@ export default function Home() {
     <div style={styles.authPanel}>
       <strong>Secure owner access</strong>
       <p style={styles.authHelpText}>
-        Magic links can secure your owner session. Your pet&apos;s live updates now open with a private visit link from the clinic.
+        Magic links sign you in securely. To open a pet&apos;s live updates, use the private visit link sent by text or copied from the clinic dashboard.
       </p>
       <form style={styles.authInlineForm} onSubmit={sendOwnerMagicLink}>
         <input
