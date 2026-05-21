@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
 import Link from "next/link";
+import SignatureCanvas from "react-signature-canvas";
 import { supabase } from "../../../lib/supabase";
 
 export type OwnerPortalUpdate = {
@@ -90,8 +91,10 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
   const [selectedCareHubFormId, setSelectedCareHubFormId] = useState<string | null>(null);
   const [printedName, setPrintedName] = useState("");
   const [signatureData, setSignatureData] = useState("");
+  const [signatureHasInk, setSignatureHasInk] = useState(false);
   const [checkboxAgreed, setCheckboxAgreed] = useState(false);
   const [signingForm, setSigningForm] = useState(false);
+  const signaturePadRef = useRef<SignatureCanvas | null>(null);
 
   const latestUpdate = useMemo(
     () => visit.updates[visit.updates.length - 1],
@@ -206,13 +209,29 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
     setSelectedCareHubFormId(formId);
     setPrintedName("");
     setSignatureData("");
+    setSignatureHasInk(false);
     setCheckboxAgreed(false);
     setCareHubMessage("");
+  };
+
+  const clearSignature = () => {
+    signaturePadRef.current?.clear();
+    setSignatureData("");
+    setSignatureHasInk(false);
   };
 
   const signSelectedCareHubForm = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!selectedCareHubForm) return;
+
+    const drawnSignature = signaturePadRef.current?.isEmpty()
+      ? ""
+      : signaturePadRef.current?.toDataURL("image/png") || signatureData;
+
+    if (!drawnSignature) {
+      setCareHubMessage("Please draw your signature before submitting.");
+      return;
+    }
 
     setSigningForm(true);
     setCareHubMessage("");
@@ -228,7 +247,7 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
           token,
           formId: selectedCareHubForm.id,
           ownerName: printedName,
-          signatureData,
+          signatureData: drawnSignature,
           checkboxAgreed,
         }),
       });
@@ -245,6 +264,7 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
       setCareHubMessage(`${selectedCareHubForm.title} signed successfully.`);
       setPrintedName("");
       setSignatureData("");
+      clearSignature();
       setCheckboxAgreed(false);
     } catch (error) {
       console.error(error);
@@ -518,13 +538,37 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
                         />
                         I have reviewed this form and agree to sign electronically.
                       </label>
-                      <input
-                        style={styles.signatureInput}
-                        value={signatureData}
-                        onChange={(event) => setSignatureData(event.target.value)}
-                        placeholder="Type signature"
-                        required
-                      />
+                      <div style={styles.signaturePadShell}>
+                        <div style={styles.signatureHintRow}>
+                          <span>Draw signature</span>
+                          <button
+                            type="button"
+                            style={styles.clearSignatureButton}
+                            onClick={clearSignature}
+                          >
+                            Clear
+                          </button>
+                        </div>
+                        <SignatureCanvas
+                          ref={signaturePadRef}
+                          penColor="#102a3a"
+                          minWidth={1.2}
+                          maxWidth={2.6}
+                          onEnd={() => {
+                            const nextSignature = signaturePadRef.current?.toDataURL("image/png") || "";
+                            setSignatureData(nextSignature);
+                            setSignatureHasInk(Boolean(nextSignature));
+                          }}
+                          canvasProps={{
+                            style: styles.signatureCanvas,
+                          }}
+                        />
+                        <span style={styles.signatureHelper}>
+                          {signatureHasInk
+                            ? "Signature captured."
+                            : "Use your finger, mouse, or stylus inside this box."}
+                        </span>
+                      </div>
                       <div style={styles.timestampBox}>
                         Date/time: {new Date().toLocaleString()}
                       </div>
@@ -954,15 +998,45 @@ const styles: Record<string, CSSProperties> = {
     lineHeight: 1.35,
     padding: 12,
   },
-  signatureInput: {
+  signaturePadShell: {
+    background: "#ffffff",
     border: "1px solid #bfe9e0",
     borderRadius: 8,
-    color: "#102a3a",
-    fontFamily: "cursive",
-    fontSize: 20,
-    minHeight: 52,
-    padding: "11px 12px",
+    display: "grid",
+    gap: 8,
+    padding: 10,
+  },
+  signatureHintRow: {
+    alignItems: "center",
+    color: "#52606d",
+    display: "flex",
+    fontSize: 12,
+    fontWeight: 900,
+    justifyContent: "space-between",
+  },
+  clearSignatureButton: {
+    background: "#fff7ed",
+    border: "1px solid #fed7aa",
+    borderRadius: 8,
+    color: "#c2410c",
+    cursor: "pointer",
+    fontSize: 12,
+    fontWeight: 900,
+    padding: "6px 9px",
+  },
+  signatureCanvas: {
+    background: "#fbffff",
+    border: "1px dashed #9ccbc6",
+    borderRadius: 8,
+    display: "block",
+    height: 170,
+    touchAction: "none",
     width: "100%",
+  },
+  signatureHelper: {
+    color: "#64717d",
+    fontSize: 12,
+    fontWeight: 800,
   },
   timestampBox: {
     background: "#f8fbff",
