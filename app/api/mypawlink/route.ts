@@ -87,9 +87,14 @@ const mapVisit = (visit: DbRecord) => {
   const owner = recordValue(visit.owners);
   const pet = recordValue(visit.pets);
   const updateRows = arrayValue(visit.visit_updates);
+  const sortedUpdateRows = [...updateRows].sort(
+    (a, b) =>
+      new Date(stringValue(a.created_at)).getTime() -
+      new Date(stringValue(b.created_at)).getTime()
+  );
   const updates =
-    updateRows.length > 0
-      ? updateRows.map((update) => ({
+    sortedUpdateRows.length > 0
+      ? sortedUpdateRows.map((update) => ({
           message: stringValue(update.message),
           time: update.created_at
             ? new Date(String(update.created_at)).toLocaleTimeString()
@@ -185,6 +190,50 @@ const withVisitAccess = async (visit: DbRecord) => {
     accessToken: token,
     accessUrl: buildVisitAccessUrl(token),
   };
+};
+
+const notifyVisitAccessChannels = async (visitId: string) => {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("visit_access_tokens")
+      .select("token")
+      .eq("visit_id", visitId);
+
+    if (error) throw error;
+
+    await Promise.all(
+      ((data || []) as DbRecord[]).map(async (tokenRow) => {
+        const token = stringValue(tokenRow.token);
+        if (!token) return;
+
+        const channel = supabase.channel(`visit-access:${token}`);
+
+        await new Promise<void>((resolve) => {
+          const timeout = setTimeout(resolve, 1200);
+          channel.subscribe((status) => {
+            if (status === "SUBSCRIBED" || status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+              clearTimeout(timeout);
+              resolve();
+            }
+          });
+        });
+
+        await channel.send({
+          type: "broadcast",
+          event: "visit-updated",
+          payload: {
+            visitId,
+            updatedAt: new Date().toISOString(),
+          },
+        });
+
+        await supabase.removeChannel(channel);
+      })
+    );
+  } catch (error) {
+    console.error("Unable to notify realtime visit channel:", error);
+  }
 };
 
 const staffRoles: StaffRole[] = ["Front Desk", "Technician", "Veterinarian", "Admin"];
@@ -344,6 +393,8 @@ const addVisitUpdate = async ({
       message,
     });
   }
+
+  await notifyVisitAccessChannels(visitId);
 
   return fetchVisitById(visitId);
 };

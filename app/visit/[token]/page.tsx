@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import Link from "next/link";
 import { getSupabaseAdmin } from "../../../lib/supabase-admin";
+import VisitPortalClient, { type OwnerPortalVisit } from "./VisitPortalClient";
 
 type DbRecord = Record<string, unknown>;
 
@@ -83,6 +84,43 @@ const renderUnavailable = (title: string, message: string) => (
   </main>
 );
 
+const mapOwnerPortalVisit = (visit: DbRecord): OwnerPortalVisit => {
+  const owner = recordValue(visit.owners);
+  const pet = recordValue(visit.pets);
+  const updates = arrayValue(visit.visit_updates)
+    .sort(
+      (a, b) =>
+        new Date(stringValue(a.created_at)).getTime() -
+        new Date(stringValue(b.created_at)).getTime()
+    )
+    .map((update) => ({
+      message: stringValue(update.message),
+      time: formatDateTime(update.created_at),
+    }));
+  const forms = arrayValue(visit.forms).map((form) => ({
+    id: stringValue(form.id),
+    form_type: stringValue(form.form_type),
+    form_body: stringValue(form.form_body) || null,
+    form_status: stringValue(form.form_status),
+    signed_name: stringValue(form.signed_name) || null,
+    signed_at: stringValue(form.signed_at) || null,
+    decline_reason: stringValue(form.decline_reason) || null,
+    declined_at: stringValue(form.declined_at) || null,
+  }));
+
+  return {
+    id: stringValue(visit.id),
+    createdAt: stringValue(visit.created_at),
+    petName: stringValue(pet.pet_name, "your pet"),
+    species: stringValue(pet.species),
+    ownerFirstName: stringValue(owner.first_name, "there"),
+    status: stringValue(visit.status, "Request submitted"),
+    updates,
+    forms,
+    petPhotoUrl: getPetPhotoFromNotes(stringValue(visit.clinic_notes)),
+  };
+};
+
 export default async function VisitAccessPage({
   params,
 }: {
@@ -123,107 +161,7 @@ export default async function VisitAccessPage({
     );
   }
 
-  const visit = visitData as DbRecord;
-  const owner = recordValue(visit.owners);
-  const pet = recordValue(visit.pets);
-  const updates = arrayValue(visit.visit_updates).sort(
-    (a, b) =>
-      new Date(stringValue(b.created_at)).getTime() -
-      new Date(stringValue(a.created_at)).getTime()
-  );
-  const forms = arrayValue(visit.forms);
-  const petName = stringValue(pet.pet_name, "your pet");
-  const ownerName = stringValue(owner.first_name, "there");
-  const status = stringValue(visit.status, "Request submitted");
-  const latestUpdate = updates[0];
-  const photoUrl = getPetPhotoFromNotes(stringValue(visit.clinic_notes));
-
-  return (
-    <main style={styles.page}>
-      <section style={styles.shell}>
-        <div style={styles.logoRow}>
-          <img src="/mypawlink-logo.png" alt="MyPawLink" style={styles.logo} />
-        </div>
-
-        <div style={styles.greeting}>
-          <div>
-            <p style={styles.eyebrow}>Secure visit portal</p>
-            <h1 style={styles.title}>Hi, {ownerName}.</h1>
-            <p style={styles.text}>Here is the latest on {petName}.</p>
-          </div>
-          <span style={styles.statusBadge}>{status}</span>
-        </div>
-
-        <div style={styles.liveCard}>
-          <div style={styles.liveCardTop}>
-            <span style={styles.liveBadge}>Live Update</span>
-          </div>
-          <div style={styles.liveBody}>
-            <h2 style={styles.updateTitle}>
-              {stringValue(latestUpdate?.message) ||
-                `${petName}'s visit request has been received.`}
-            </h2>
-            <img src={photoUrl} alt={petName} style={styles.petAvatar} />
-          </div>
-        </div>
-
-        <div style={styles.grid}>
-          <section style={styles.card}>
-            <h2 style={styles.sectionTitle}>Visit Timeline</h2>
-            {updates.length > 0 ? (
-              <div style={styles.timeline}>
-                {updates.map((update, index) => (
-                  <div key={`${stringValue(update.message)}-${index}`} style={styles.timelineItem}>
-                    <span style={styles.timelineDot} />
-                    <div>
-                      <strong style={styles.timelineMessage}>{stringValue(update.message)}</strong>
-                      <p style={styles.timelineTime}>{formatDateTime(update.created_at)}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p style={styles.text}>Updates will appear here as the clinic sends them.</p>
-            )}
-          </section>
-
-          <section style={styles.card}>
-            <h2 style={styles.sectionTitle}>Care Hub</h2>
-            <p style={styles.text}>Forms, approvals, and care documents for this visit.</p>
-            <div style={styles.formList}>
-              {forms.length > 0 ? (
-                forms.map((form) => (
-                  <div key={stringValue(form.id)} style={styles.formCard}>
-                    <div>
-                      <strong>{stringValue(form.form_type, "Form")}</strong>
-                      <p style={styles.formText}>{stringValue(form.form_body, "Ready for review.")}</p>
-                    </div>
-                    <span style={styles.formStatus}>
-                      {stringValue(form.form_status, "Pending")}
-                    </span>
-                  </div>
-                ))
-              ) : (
-                <div style={styles.emptyBox}>No forms are pending right now.</div>
-              )}
-            </div>
-          </section>
-
-          <section style={styles.card}>
-            <h2 style={styles.sectionTitle}>Treatment Estimates</h2>
-            <p style={styles.text}>Estimates will appear here when the clinic sends them.</p>
-          </section>
-
-          <section style={styles.card}>
-            <h2 style={styles.sectionTitle}>Discharge Documents</h2>
-            <p style={styles.text}>
-              Discharge instructions and follow-up care will appear here when ready.
-            </p>
-          </section>
-        </div>
-      </section>
-    </main>
-  );
+  return <VisitPortalClient token={token} initialVisit={mapOwnerPortalVisit(visitData as DbRecord)} />;
 }
 
 const styles: Record<string, CSSProperties> = {

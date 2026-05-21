@@ -1,0 +1,14 @@
+-- MyPawLink Phase 4 realtime notes.
+--
+-- The current implementation uses Supabase Realtime Broadcast channels named:
+-- visit-access:<secure_visit_token>
+--
+-- Owner pages listen on the secure token channel and then refresh visit data
+-- through /api/mypawlink with action loadVisitByToken.
+--
+-- No public SELECT policy is required for owners to receive live updates.
+-- Do not add broad public SELECT policies on visits, owners, pets, or visit_updates
+-- just to make realtime work. The secure token remains the owner access boundary.
+--
+-- Later, if we move to Postgres Changes instead of Broadcast, add narrow policies
+-- and publication settings in a separate migration.
