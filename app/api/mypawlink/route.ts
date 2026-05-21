@@ -29,6 +29,30 @@ type OwnerNotificationSummary = {
   link: string;
 };
 
+type ClinicSettings = {
+  id: string;
+  slug: string;
+  name: string;
+  logoUrl: string;
+  primaryColor: string;
+  secondaryColor: string;
+  phone: string;
+  email: string;
+  address: string;
+  city: string;
+  state: string;
+  zip: string;
+  timezone: string;
+  formsEnabled: boolean;
+  smsEnabled: boolean;
+  emailEnabled: boolean;
+  estimatedWaitMinutes: number;
+  defaultUpdateCadence: string;
+  cprDefault: string;
+  aftercareFollowupHours: number;
+  setupRequired: boolean;
+};
+
 type CareHubSeedForm = {
   slug: string;
   title: string;
@@ -92,6 +116,40 @@ const arrayValue = (value: unknown): DbRecord[] => {
 };
 
 const normalizeEmail = (email: string) => email.trim().toLowerCase();
+
+const booleanValue = (value: unknown, fallback = false) =>
+  typeof value === "boolean" ? value : fallback;
+
+const numberValue = (value: unknown, fallback: number) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+};
+
+const demoClinicSlug = "demo-emergency-hospital";
+
+const defaultClinicSettings: ClinicSettings = {
+  id: "",
+  slug: demoClinicSlug,
+  name: "MyPawLink Emergency Hospital",
+  logoUrl: "",
+  primaryColor: "#087f78",
+  secondaryColor: "#0b5f99",
+  phone: "",
+  email: "",
+  address: "",
+  city: "",
+  state: "",
+  zip: "",
+  timezone: "America/New_York",
+  formsEnabled: true,
+  smsEnabled: true,
+  emailEnabled: true,
+  estimatedWaitMinutes: 30,
+  defaultUpdateCadence: "milestone",
+  cprDefault: "ask-owner",
+  aftercareFollowupHours: 48,
+  setupRequired: true,
+};
 
 const buildVisitAccessUrl = (token: string) => {
   const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://mypawlink.com").replace(
@@ -534,6 +592,14 @@ const isMissingNotificationTableError = (error: unknown) => {
   );
 };
 
+const isMissingClinicTableError = (error: unknown) => {
+  const dbError = error as { code?: string; message?: string } | null;
+  return (
+    dbError?.code === "42P01" ||
+    Boolean(dbError?.message?.toLowerCase().includes("clinics"))
+  );
+};
+
 const formatMoney = (amount: number) =>
   new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -625,6 +691,126 @@ const logEmailNotificationPlaceholder = async ({
     provider: "not-configured",
     errorMessage: "Email provider is not configured yet.",
   });
+};
+
+const mapClinicSettings = (clinic: DbRecord | null, setupRequired = false): ClinicSettings => {
+  if (!clinic) return { ...defaultClinicSettings, setupRequired: true };
+
+  const config = recordValue(clinic.config);
+
+  return {
+    id: stringValue(clinic.id),
+    slug: stringValue(clinic.slug, demoClinicSlug),
+    name: stringValue(clinic.name, defaultClinicSettings.name),
+    logoUrl: stringValue(clinic.logo_url),
+    primaryColor: stringValue(clinic.primary_color, defaultClinicSettings.primaryColor),
+    secondaryColor: stringValue(clinic.secondary_color, defaultClinicSettings.secondaryColor),
+    phone: stringValue(clinic.phone),
+    email: stringValue(clinic.email),
+    address: stringValue(clinic.address),
+    city: stringValue(clinic.city),
+    state: stringValue(clinic.state),
+    zip: stringValue(clinic.zip),
+    timezone: stringValue(clinic.timezone, defaultClinicSettings.timezone),
+    formsEnabled: booleanValue(clinic.forms_enabled, true),
+    smsEnabled: booleanValue(clinic.sms_enabled, true),
+    emailEnabled: booleanValue(clinic.email_enabled, true),
+    estimatedWaitMinutes: numberValue(
+      config.estimatedWaitMinutes,
+      defaultClinicSettings.estimatedWaitMinutes
+    ),
+    defaultUpdateCadence: stringValue(
+      config.defaultUpdateCadence,
+      defaultClinicSettings.defaultUpdateCadence
+    ),
+    cprDefault: stringValue(config.cprDefault, defaultClinicSettings.cprDefault),
+    aftercareFollowupHours: numberValue(
+      config.aftercareFollowupHours,
+      defaultClinicSettings.aftercareFollowupHours
+    ),
+    setupRequired,
+  };
+};
+
+const loadClinicSettings = async () => {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("clinics")
+      .select("*")
+      .eq("slug", demoClinicSlug)
+      .maybeSingle();
+
+    if (error) throw error;
+    return mapClinicSettings((data || null) as DbRecord | null, !data);
+  } catch (error) {
+    if (isMissingClinicTableError(error)) {
+      return { ...defaultClinicSettings, setupRequired: true };
+    }
+
+    throw error;
+  }
+};
+
+const updateClinicSettings = async (body: RequestBody) => {
+  const settings = recordValue(body.settings);
+  const config = {
+    estimatedWaitMinutes: numberValue(
+      settings.estimatedWaitMinutes,
+      defaultClinicSettings.estimatedWaitMinutes
+    ),
+    defaultUpdateCadence: stringValue(
+      settings.defaultUpdateCadence,
+      defaultClinicSettings.defaultUpdateCadence
+    ),
+    cprDefault: stringValue(settings.cprDefault, defaultClinicSettings.cprDefault),
+    aftercareFollowupHours: numberValue(
+      settings.aftercareFollowupHours,
+      defaultClinicSettings.aftercareFollowupHours
+    ),
+  };
+
+  const payload = {
+    slug: demoClinicSlug,
+    name: stringValue(settings.name, defaultClinicSettings.name).trim(),
+    logo_url: stringValue(settings.logoUrl).trim(),
+    primary_color: stringValue(settings.primaryColor, defaultClinicSettings.primaryColor).trim(),
+    secondary_color: stringValue(settings.secondaryColor, defaultClinicSettings.secondaryColor).trim(),
+    phone: stringValue(settings.phone).trim(),
+    email: normalizeEmail(stringValue(settings.email)),
+    address: stringValue(settings.address).trim(),
+    city: stringValue(settings.city).trim(),
+    state: stringValue(settings.state).trim(),
+    zip: stringValue(settings.zip).trim(),
+    timezone: stringValue(settings.timezone, defaultClinicSettings.timezone).trim(),
+    forms_enabled: booleanValue(settings.formsEnabled, true),
+    sms_enabled: booleanValue(settings.smsEnabled, true),
+    email_enabled: booleanValue(settings.emailEnabled, true),
+    config,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (!payload.name) {
+    throw new Error("Clinic name is required.");
+  }
+
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("clinics")
+      .upsert(payload, { onConflict: "slug" })
+      .select("*")
+      .single();
+
+    if (error) throw error;
+    return mapClinicSettings((data || {}) as DbRecord);
+  } catch (error) {
+    if (isMissingClinicTableError(error)) {
+      throw new Error("Clinic settings are not set up yet. Run the Phase 9 SQL first.");
+    }
+
+    throw error;
+  }
 };
 
 const sendOwnerNotification = async ({
@@ -1371,6 +1557,22 @@ export async function POST(request: Request) {
       if (error) throw error;
       const visits = await Promise.all(((data || []) as DbRecord[]).map(withVisitAccess));
       return NextResponse.json({ visits });
+    }
+
+    if (action === "loadClinicSettings") {
+      const accessError = await requireClinicAccess(body);
+      if (accessError) return accessError;
+
+      return NextResponse.json({ clinicSettings: await loadClinicSettings() });
+    }
+
+    if (action === "updateClinicSettings") {
+      const accessError = await requireClinicAccess(body);
+      if (accessError) return accessError;
+
+      return NextResponse.json({
+        clinicSettings: await updateClinicSettings(body),
+      });
     }
 
     if (action === "createVisit") {

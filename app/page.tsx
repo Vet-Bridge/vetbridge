@@ -78,6 +78,54 @@ type ClinicActionResult = {
   notification?: NotificationSummary | null;
 };
 
+type ClinicSettings = {
+  id: string;
+  slug: string;
+  name: string;
+  logoUrl: string;
+  primaryColor: string;
+  secondaryColor: string;
+  phone: string;
+  email: string;
+  address: string;
+  city: string;
+  state: string;
+  zip: string;
+  timezone: string;
+  formsEnabled: boolean;
+  smsEnabled: boolean;
+  emailEnabled: boolean;
+  estimatedWaitMinutes: number;
+  defaultUpdateCadence: string;
+  cprDefault: string;
+  aftercareFollowupHours: number;
+  setupRequired: boolean;
+};
+
+const defaultClinicSettings: ClinicSettings = {
+  id: "",
+  slug: "demo-emergency-hospital",
+  name: "MyPawLink Emergency Hospital",
+  logoUrl: "",
+  primaryColor: "#087f78",
+  secondaryColor: "#0b5f99",
+  phone: "",
+  email: "",
+  address: "",
+  city: "",
+  state: "",
+  zip: "",
+  timezone: "America/New_York",
+  formsEnabled: true,
+  smsEnabled: true,
+  emailEnabled: true,
+  estimatedWaitMinutes: 30,
+  defaultUpdateCadence: "milestone",
+  cprDefault: "ask-owner",
+  aftercareFollowupHours: 48,
+  setupRequired: true,
+};
+
 type CareHubForm = {
   id: string;
   title: string;
@@ -457,6 +505,12 @@ export default function Home() {
   const [referralDocumentNames, setReferralDocumentNames] = useState<string[]>([]);
   const [clinicUnlocked, setClinicUnlocked] = useState(false);
   const [clinicError, setClinicError] = useState("");
+  const [clinicSettings, setClinicSettings] = useState<ClinicSettings>(defaultClinicSettings);
+  const [clinicSettingsDraft, setClinicSettingsDraft] =
+    useState<ClinicSettings>(defaultClinicSettings);
+  const [clinicSettingsOpen, setClinicSettingsOpen] = useState(false);
+  const [clinicSettingsMessage, setClinicSettingsMessage] = useState("");
+  const [savingClinicSettings, setSavingClinicSettings] = useState(false);
   const [authUserEmail, setAuthUserEmail] = useState("");
   const [staffProfile, setStaffProfile] = useState<StaffProfile | null>(null);
   const [authMessage, setAuthMessage] = useState("");
@@ -665,6 +719,7 @@ export default function Home() {
         action: "loadVisits",
       });
       setVisits(result.visits);
+      await loadClinicSettings();
       setClinicError("");
       setClinicUnlocked(true);
     } catch (error) {
@@ -675,6 +730,59 @@ export default function Home() {
       setClinicLoading(false);
     }
   }
+
+  async function loadClinicSettings() {
+    try {
+      const result = await apiRequest<{ clinicSettings: ClinicSettings }>({
+        action: "loadClinicSettings",
+      });
+      setClinicSettings(result.clinicSettings);
+      setClinicSettingsDraft(result.clinicSettings);
+      setClinicSettingsMessage(
+        result.clinicSettings.setupRequired
+          ? "Run the Phase 9 SQL to save clinic settings in Supabase."
+          : ""
+      );
+    } catch (error) {
+      setClinicSettings(defaultClinicSettings);
+      setClinicSettingsDraft(defaultClinicSettings);
+      setClinicSettingsMessage(
+        error instanceof Error ? error.message : "Unable to load clinic settings."
+      );
+    }
+  }
+
+  const updateClinicSettingsDraft = (
+    key: keyof ClinicSettings,
+    value: string | number | boolean
+  ) => {
+    setClinicSettingsDraft((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  };
+
+  const saveClinicSettings = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSavingClinicSettings(true);
+    setClinicSettingsMessage("");
+
+    try {
+      const result = await apiRequest<{ clinicSettings: ClinicSettings }>({
+        action: "updateClinicSettings",
+        settings: clinicSettingsDraft,
+      });
+      setClinicSettings(result.clinicSettings);
+      setClinicSettingsDraft(result.clinicSettings);
+      setClinicSettingsMessage("Clinic settings saved.");
+    } catch (error) {
+      setClinicSettingsMessage(
+        error instanceof Error ? error.message : "Unable to save clinic settings."
+      );
+    } finally {
+      setSavingClinicSettings(false);
+    }
+  };
 
   async function loadOwnerVisits() {
     setOwnerVisitsLoading(true);
@@ -2176,7 +2284,7 @@ export default function Home() {
                 <>
               <div style={styles.dashboardHeader}>
                 <div>
-                  <h2 style={styles.title}>Clinic Dashboard</h2>
+                  <h2 style={styles.title}>{clinicSettings.name || "Clinic Dashboard"}</h2>
                   <p style={styles.text}>
                     {staffProfile
                       ? `${staffProfile.fullName || staffProfile.email} - ${staffProfile.role}`
@@ -2190,10 +2298,209 @@ export default function Home() {
                     Sign Out
                   </button>
                 )}
+                <button
+                  type="button"
+                  style={styles.staffSignOutButton}
+                  onClick={() => setClinicSettingsOpen((open) => !open)}
+                >
+                  {clinicSettingsOpen ? "Close Settings" : "Clinic Settings"}
+                </button>
                 <span style={styles.counter}>
   {activeVisits.length} Active / {closedVisits.length} Closed
 </span>
               </div>
+
+              {clinicSettingsOpen && (
+                <form style={styles.clinicSettingsPanel} onSubmit={saveClinicSettings}>
+                  <div style={styles.clinicSettingsHeader}>
+                    <div>
+                      <h3 style={styles.ownerVisitTitle}>Clinic Settings</h3>
+                      <p style={styles.authHelpText}>
+                        Demo clinic profile, branding, communication defaults, and future
+                        multi-hospital configuration.
+                      </p>
+                    </div>
+                    <span style={styles.speciesPill}>Phase 9</span>
+                  </div>
+
+                  {clinicSettingsDraft.setupRequired && (
+                    <div style={styles.queueMiniCard}>
+                      Run the Phase 9 SQL file in Supabase to make these settings permanent.
+                    </div>
+                  )}
+
+                  <div style={styles.settingsGrid}>
+                    <input
+                      style={styles.input}
+                      value={clinicSettingsDraft.name}
+                      onChange={(event) => updateClinicSettingsDraft("name", event.target.value)}
+                      placeholder="Hospital name"
+                      required
+                    />
+                    <input
+                      style={styles.input}
+                      value={clinicSettingsDraft.phone}
+                      onChange={(event) => updateClinicSettingsDraft("phone", event.target.value)}
+                      placeholder="Clinic phone"
+                    />
+                    <input
+                      style={styles.input}
+                      type="email"
+                      value={clinicSettingsDraft.email}
+                      onChange={(event) => updateClinicSettingsDraft("email", event.target.value)}
+                      placeholder="Clinic email"
+                    />
+                    <input
+                      style={styles.input}
+                      value={clinicSettingsDraft.logoUrl}
+                      onChange={(event) => updateClinicSettingsDraft("logoUrl", event.target.value)}
+                      placeholder="Logo URL"
+                    />
+                    <input
+                      style={styles.input}
+                      value={clinicSettingsDraft.address}
+                      onChange={(event) => updateClinicSettingsDraft("address", event.target.value)}
+                      placeholder="Address"
+                    />
+                    <input
+                      style={styles.input}
+                      value={clinicSettingsDraft.city}
+                      onChange={(event) => updateClinicSettingsDraft("city", event.target.value)}
+                      placeholder="City"
+                    />
+                    <input
+                      style={styles.input}
+                      value={clinicSettingsDraft.state}
+                      onChange={(event) => updateClinicSettingsDraft("state", event.target.value)}
+                      placeholder="State"
+                    />
+                    <input
+                      style={styles.input}
+                      value={clinicSettingsDraft.zip}
+                      onChange={(event) => updateClinicSettingsDraft("zip", event.target.value)}
+                      placeholder="ZIP"
+                    />
+                    <label style={styles.settingsFieldLabel}>
+                      Primary color
+                      <input
+                        style={styles.colorInput}
+                        type="color"
+                        value={clinicSettingsDraft.primaryColor}
+                        onChange={(event) =>
+                          updateClinicSettingsDraft("primaryColor", event.target.value)
+                        }
+                      />
+                    </label>
+                    <label style={styles.settingsFieldLabel}>
+                      Accent color
+                      <input
+                        style={styles.colorInput}
+                        type="color"
+                        value={clinicSettingsDraft.secondaryColor}
+                        onChange={(event) =>
+                          updateClinicSettingsDraft("secondaryColor", event.target.value)
+                        }
+                      />
+                    </label>
+                    <input
+                      style={styles.input}
+                      type="number"
+                      min="0"
+                      value={clinicSettingsDraft.estimatedWaitMinutes}
+                      onChange={(event) =>
+                        updateClinicSettingsDraft("estimatedWaitMinutes", Number(event.target.value))
+                      }
+                      placeholder="Default wait minutes"
+                    />
+                    <input
+                      style={styles.input}
+                      type="number"
+                      min="0"
+                      value={clinicSettingsDraft.aftercareFollowupHours}
+                      onChange={(event) =>
+                        updateClinicSettingsDraft("aftercareFollowupHours", Number(event.target.value))
+                      }
+                      placeholder="Aftercare follow-up hours"
+                    />
+                    <select
+                      style={styles.input}
+                      value={clinicSettingsDraft.defaultUpdateCadence}
+                      onChange={(event) =>
+                        updateClinicSettingsDraft("defaultUpdateCadence", event.target.value)
+                      }
+                    >
+                      <option value="milestone">Milestone updates</option>
+                      <option value="hourly">Hourly while hospitalized</option>
+                      <option value="shift">Each shift handoff</option>
+                    </select>
+                    <select
+                      style={styles.input}
+                      value={clinicSettingsDraft.cprDefault}
+                      onChange={(event) => updateClinicSettingsDraft("cprDefault", event.target.value)}
+                    >
+                      <option value="ask-owner">Ask owner every visit</option>
+                      <option value="full-cpr">Default to Full CPR form</option>
+                      <option value="dnr">Default to DNR form</option>
+                    </select>
+                  </div>
+
+                  <div style={styles.settingsToggleRow}>
+                    <label style={styles.settingsToggle}>
+                      <input
+                        type="checkbox"
+                        checked={clinicSettingsDraft.formsEnabled}
+                        onChange={(event) =>
+                          updateClinicSettingsDraft("formsEnabled", event.target.checked)
+                        }
+                      />
+                      Forms enabled
+                    </label>
+                    <label style={styles.settingsToggle}>
+                      <input
+                        type="checkbox"
+                        checked={clinicSettingsDraft.smsEnabled}
+                        onChange={(event) =>
+                          updateClinicSettingsDraft("smsEnabled", event.target.checked)
+                        }
+                      />
+                      SMS updates
+                    </label>
+                    <label style={styles.settingsToggle}>
+                      <input
+                        type="checkbox"
+                        checked={clinicSettingsDraft.emailEnabled}
+                        onChange={(event) =>
+                          updateClinicSettingsDraft("emailEnabled", event.target.checked)
+                        }
+                      />
+                      Email updates
+                    </label>
+                  </div>
+
+                  {clinicSettingsMessage && (
+                    <div
+                      style={
+                        clinicSettingsMessage.includes("saved")
+                          ? styles.authMessage
+                          : styles.errorBox
+                      }
+                    >
+                      {clinicSettingsMessage}
+                    </div>
+                  )}
+
+                  <button
+                    style={{
+                      ...styles.primaryButton,
+                      ...(savingClinicSettings ? styles.disabledButton : {}),
+                    }}
+                    type="submit"
+                    disabled={savingClinicSettings}
+                  >
+                    {savingClinicSettings ? "Saving Settings..." : "Save Clinic Settings"}
+                  </button>
+                </form>
+              )}
 
               {visits.length === 0 && (
                 <div style={styles.emptyBox}>
@@ -4106,6 +4413,67 @@ const styles: { [key: string]: React.CSSProperties } = {
     marginBottom: 10,
     display: "grid",
     gap: 4,
+  },
+  clinicSettingsPanel: {
+    background: "#ffffff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 18,
+    display: "grid",
+    gap: 14,
+    boxShadow: "0 8px 20px rgba(41, 64, 83, 0.06)",
+  },
+  clinicSettingsHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "start",
+    gap: 12,
+    flexWrap: "wrap",
+  },
+  settingsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))",
+    gap: 10,
+  },
+  settingsFieldLabel: {
+    display: "grid",
+    gridTemplateColumns: "1fr 52px",
+    alignItems: "center",
+    gap: 10,
+    minHeight: 48,
+    border: "1px solid #cfe0df",
+    borderRadius: 8,
+    padding: "0 12px",
+    color: "#52606d",
+    fontSize: 13,
+    fontWeight: 800,
+  },
+  colorInput: {
+    width: 42,
+    height: 34,
+    padding: 0,
+    border: "none",
+    borderRadius: 8,
+    background: "transparent",
+    cursor: "pointer",
+  },
+  settingsToggleRow: {
+    display: "flex",
+    gap: 10,
+    flexWrap: "wrap",
+  },
+  settingsToggle: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
+    background: "#f0fbf8",
+    border: "1px solid #bfe9e0",
+    borderRadius: 8,
+    padding: "10px 12px",
+    color: "#087f78",
+    fontSize: 13,
+    fontWeight: 900,
   },
   staffSignOutButton: {
     background: "#ffffff",
