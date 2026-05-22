@@ -85,6 +85,8 @@ type VisitDraft = {
   beenHereBefore: string;
 };
 
+type OwnerPortalTab = "home" | "updates" | "actions" | "pet" | "profile";
+
 const initialVisitDraft: VisitDraft = {
   petName: "",
   species: "",
@@ -665,9 +667,9 @@ export default function Home() {
   const [ownerVisits, setOwnerVisits] = useState<Visit[]>([]);
   const [ownerVisitsLoading, setOwnerVisitsLoading] = useState(false);
   const [ownerVisitsError, setOwnerVisitsError] = useState("");
+  const [ownerPortalTab, setOwnerPortalTab] = useState<OwnerPortalTab>("home");
   const [visitAccessInput, setVisitAccessInput] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
-  const [expandedUpdatesVisitId, setExpandedUpdatesVisitId] = useState<string | null>(null);
   const [careHubOpen, setCareHubOpen] = useState(false);
   const [selectedCareHubCategoryId, setSelectedCareHubCategoryId] = useState<string | null>(null);
   const [selectedCareHubFormId, setSelectedCareHubFormId] = useState<string | null>(null);
@@ -739,23 +741,10 @@ export default function Home() {
   const selectedVisit = visits.find((v) => v.id === selectedVisitId) || null;
   const selectedUpdates = selectedVisit?.updates || [];
   const latestOwnerUpdate = selectedUpdates[selectedUpdates.length - 1];
-  const previousOwnerUpdates = selectedUpdates.slice(0, -1).reverse();
-  const showPreviousUpdates = Boolean(
-    selectedVisitId && expandedUpdatesVisitId === selectedVisitId
-  );
   const selectedCareHubCategory =
     careHubCategories.find((category) => category.id === selectedCareHubCategoryId) || null;
   const selectedCareHubForm =
     selectedCareHubCategory?.forms.find((form) => form.id === selectedCareHubFormId) || null;
-  const signedCareHubCount = careHubCategories.reduce(
-    (total, category) =>
-      total + category.forms.filter((form) => signedCareHubForms[form.id]).length,
-    0
-  );
-  const careHubFormCount = careHubCategories.reduce(
-    (total, category) => total + category.forms.length,
-    0
-  );
   const canEditClinicNotes = Boolean(
     staffProfile && ["Technician", "Veterinarian", "Admin"].includes(staffProfile.role)
   );
@@ -766,6 +755,61 @@ export default function Home() {
 
   const getAssignedDoctorName = (visit: Visit) =>
     getAssignedDoctorFromNotes(visit.clinicNotes)?.name || "Unassigned";
+  const ownerPortalTabs: { id: OwnerPortalTab; label: string }[] = [
+    { id: "home", label: "Home" },
+    { id: "updates", label: "Updates" },
+    { id: "actions", label: "Actions" },
+    { id: "pet", label: "My Pet" },
+    { id: "profile", label: "Profile" },
+  ];
+  const pendingOwnerForms = selectedVisit?.forms.filter((form) => form.form_status === "Sent") || [];
+  const ownerActionCount =
+    pendingOwnerForms.length +
+    (selectedVisit?.estimateStatus?.toLowerCase().includes("pending") ? 1 : 0);
+  const getOwnerStatusLabel = (visit: Visit) =>
+    visit.status.toLowerCase() === "request submitted"
+      ? "Waiting for team review"
+      : visit.status;
+  const getOwnerReviewMessage = (visit: Visit) =>
+    visit.status.toLowerCase() === "request submitted"
+      ? "The veterinary team has received your request and will update you here."
+      : "The veterinary team will keep this page updated as care progresses.";
+  const getVisitStageIndex = (visit: Visit) => {
+    const status = visit.status.toLowerCase();
+
+    if (status.includes("ready") || status.includes("discharge") || status.includes("closed")) {
+      return 4;
+    }
+
+    if (
+      status.includes("treatment") ||
+      status.includes("diagnostic") ||
+      status.includes("surgery") ||
+      status.includes("icu") ||
+      status.includes("observation") ||
+      status.includes("stable") ||
+      status.includes("critical") ||
+      status.includes("recover")
+    ) {
+      return 3;
+    }
+
+    if (status.includes("exam") || status.includes("doctor")) {
+      return 2;
+    }
+
+    if (
+      status.includes("accepted") ||
+      status.includes("checked") ||
+      status.includes("triage") ||
+      status.includes("review") ||
+      status.includes("stabil")
+    ) {
+      return 1;
+    }
+
+    return 0;
+  };
   const isDischargedVisit = (visit: Visit) =>
     ["closed", "discharged"].includes(visit.status.toLowerCase());
   const isReadyForPickupVisit = (visit: Visit) =>
@@ -1678,6 +1722,7 @@ export default function Home() {
   setPetMediaType("");
   setPetPhotoPreview("");
   setVisitSubmitMessage("Visit request submitted. Opening your pet's status page...");
+  setOwnerPortalTab("home");
   setView("status");
   submittingVisitRef.current = false;
   setSubmittingVisit(false);
@@ -2929,6 +2974,7 @@ export default function Home() {
                 );
                 setSelectedVisitId(visit.id);
                 setVisitAccessInput(visit.accessUrl || visit.accessToken || "");
+                setOwnerPortalTab("home");
                 setView("status");
               }}
             >
@@ -2994,6 +3040,7 @@ export default function Home() {
               : [result.visit, ...current]
           );
           setSelectedVisitId(result.visit.id);
+          setOwnerPortalTab("home");
           setView("status");
         } catch (error) {
           setLoading(false);
@@ -4254,6 +4301,7 @@ export default function Home() {
                       style={styles.secondaryButton}
                       onClick={() => {
                         setSelectedVisitId(visit.id);
+                        setOwnerPortalTab("home");
                         setView("status");
                       }}
                     >
@@ -4268,104 +4316,213 @@ export default function Home() {
           )}
 
           {view === "status" && selectedVisit && (
-                        <section>
-              <button style={styles.customerHomeButton} onClick={() => setView("home")}>
-                Home
-              </button>
-
-              <div style={styles.ownerGreeting}>
-                <div>
-                  <h2 style={styles.title}>Hi, {selectedVisit.ownerFirstName || "there"}!</h2>
-                  <p style={styles.text}>Here&apos;s the latest on {selectedVisit.petName}.</p>
-                </div>
-                <div style={styles.notificationBell}>2</div>
+            <section style={styles.ownerPortalShell}>
+              <div style={styles.ownerPortalHeader}>
+                <button style={styles.customerHomeButton} onClick={() => setView("home")}>
+                  Exit
+                </button>
+                {ownerActionCount > 0 && (
+                  <button
+                    type="button"
+                    style={styles.ownerActionAlert}
+                    onClick={() => setOwnerPortalTab("actions")}
+                  >
+                    {ownerActionCount} action{ownerActionCount === 1 ? "" : "s"} needed
+                  </button>
+                )}
               </div>
 
-              <div style={styles.liveUpdateCard}>
-                <div style={styles.liveCardTop}>
-                  <div style={styles.liveBadge}>Live Update</div>
-                  {getQueueDetails(selectedVisit) && (
-                    <div style={styles.liveWaitPill}>
-                      <span style={styles.liveWaitLabel}>Wait time</span>
-                      <strong style={styles.liveWaitValue}>
-                        {getQueueDetails(selectedVisit)?.estimatedWaitMinutes} min
+              {ownerPortalTab === "home" && (
+                <div style={styles.ownerTabPanel}>
+                  <div style={styles.ownerHeroStatusCard}>
+                    <div>
+                      <span style={styles.ownerHeroEyebrow}>Check-in received</span>
+                      <h2 style={styles.ownerHeroTitle}>
+                        {selectedVisit.petName} is now checked in <span aria-hidden="true">&hearts;</span>
+                      </h2>
+                      <p style={styles.ownerHeroText}>{getOwnerReviewMessage(selectedVisit)}</p>
+                    </div>
+                    <img src={getPetPhoto(selectedVisit)} alt={selectedVisit.petName} style={styles.ownerHeroPetImage} />
+                  </div>
+
+                  <div style={styles.ownerStatusCard}>
+                    <div>
+                      <span style={styles.ownerStatusLabel}>Current status</span>
+                      <strong style={styles.ownerStatusValue}>
+                        {getOwnerStatusLabel(selectedVisit)}
                       </strong>
                     </div>
+                    <div style={styles.ownerReviewPill}>
+                      {selectedVisit.status.toLowerCase() === "request submitted"
+                        ? "Review: 15-30 min"
+                        : "Prioritized by medical urgency"}
+                    </div>
+                  </div>
+
+                  <div style={styles.ownerStageTracker}>
+                    {["Request received", "Under review", "In exam", "Treatment", "Ready"].map(
+                      (stage, index) => {
+                        const currentStage = getVisitStageIndex(selectedVisit);
+                        const complete = index < currentStage;
+                        const active = index === currentStage;
+
+                        return (
+                          <div key={stage} style={styles.ownerStageItem}>
+                            <span
+                              style={{
+                                ...styles.ownerStageDot,
+                                ...(complete ? styles.ownerStageDotComplete : {}),
+                                ...(active ? styles.ownerStageDotActive : {}),
+                              }}
+                            >
+                              {complete ? "OK" : ""}
+                            </span>
+                            <strong>{stage}</strong>
+                          </div>
+                        );
+                      }
+                    )}
+                  </div>
+
+                  {getAssignedDoctorFromNotes(selectedVisit.clinicNotes) && (
+                    <a
+                      href={getAssignedDoctorFromNotes(selectedVisit.clinicNotes)?.profileUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={styles.doctorProfileCard}
+                    >
+                      <span style={styles.doctorProfileLabel}>Assigned doctor</span>
+                      <strong style={styles.doctorProfileName}>
+                        Dr. {getAssignedDoctorFromNotes(selectedVisit.clinicNotes)?.name}
+                      </strong>
+                      <span style={styles.doctorProfileAction}>View profile</span>
+                    </a>
                   )}
-                </div>
-                <div style={styles.liveUpdateBody}>
-                  <div>
+
+                  <div style={styles.latestUpdatePanel}>
+                    <div style={styles.liveCardTop}>
+                      <div style={styles.liveBadge}>Latest update</div>
+                    </div>
                     <h3 style={styles.liveUpdateTitle}>
                       {latestOwnerUpdate?.message ||
                         `${selectedVisit.petName}'s visit request has been received.`}
                     </h3>
-                  </div>
-                  <img src={getPetPhoto(selectedVisit)} alt={selectedVisit.petName} style={styles.petAvatar} />
-                </div>
-                {previousOwnerUpdates.length > 0 && (
-                  <div style={styles.previousUpdatesPanel}>
                     <button
                       type="button"
                       style={styles.previousUpdatesButton}
-                      onClick={() =>
-                        setExpandedUpdatesVisitId((current) =>
-                          current === selectedVisit.id ? null : selectedVisit.id
-                        )
-                      }
+                      onClick={() => setOwnerPortalTab("updates")}
                     >
-                      {showPreviousUpdates
-                        ? "Hide previous updates"
-                        : `Show previous updates (${previousOwnerUpdates.length})`}
+                      View updates
                     </button>
-
-                    {showPreviousUpdates && (
-                      <div style={styles.previousUpdatesList}>
-                        {previousOwnerUpdates.map((update, index) => (
-                          <div key={`${update.message}-${index}`} style={styles.previousUpdateItem}>
-                            {update.message}
-                          </div>
-                        ))}
-                      </div>
-                    )}
                   </div>
-                )}
-              </div>
-
-              <div style={styles.statusHeader}>
-  <h2 style={styles.petTitle}>{selectedVisit.petName}</h2>
-  <p style={styles.statusBadge}>{selectedVisit.status}</p>
-</div>
-
-              {getAssignedDoctorFromNotes(selectedVisit.clinicNotes) && (
-                <a
-                  href={getAssignedDoctorFromNotes(selectedVisit.clinicNotes)?.profileUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={styles.doctorProfileCard}
-                >
-                  <span style={styles.doctorProfileLabel}>Assigned doctor</span>
-                  <strong style={styles.doctorProfileName}>
-                    Dr. {getAssignedDoctorFromNotes(selectedVisit.clinicNotes)?.name}
-                  </strong>
-                  <span style={styles.doctorProfileAction}>View profile</span>
-                </a>
+                </div>
               )}
 
-              <div style={styles.progressRail}>
-                {["Received", "In Exam", "In Treatment", "Discharge"].map((step, index) => (
-                  <div key={step} style={styles.progressStep}>
-                    <div
-                      style={{
-                        ...styles.progressDot,
-                        ...(index === 0 ? styles.progressDotActive : {}),
-                      }}
-                    >
-                      {index === 0 ? "OK" : ""}
-                    </div>
-                    <span>{step}</span>
+              {ownerPortalTab === "updates" && (
+                <div style={styles.ownerTabPanel}>
+                  <div style={styles.ownerSectionHeader}>
+                    <h2 style={styles.sectionTitle}>Updates</h2>
+                    <p style={styles.careHubIntro}>
+                      Messages from the veterinary team will appear here as care progresses.
+                    </p>
                   </div>
-                ))}
-              </div>
+
+                  <div style={styles.ownerTimeline}>
+                    {[...selectedUpdates].reverse().map((update, index) => (
+                      <div key={`${update.message}-${index}`} style={styles.ownerTimelineItem}>
+                        <span
+                          style={{
+                            ...styles.ownerTimelineDot,
+                            ...(index === 0 ? styles.ownerTimelineDotActive : {}),
+                          }}
+                        />
+                        <div style={styles.timelineContent}>
+                          <p style={styles.timelineMessage}>{update.message}</p>
+                          <small>{update.time}</small>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {ownerPortalTab === "pet" && (
+                <div style={styles.ownerTabPanel}>
+                  <div style={styles.ownerPetProfileCard}>
+                    <img src={getPetPhoto(selectedVisit)} alt={selectedVisit.petName} style={styles.ownerPetProfileImage} />
+                    <div>
+                      <h2 style={styles.petTitle}>{selectedVisit.petName}</h2>
+                      <p style={styles.statusBadge}>{selectedVisit.status}</p>
+                    </div>
+                  </div>
+
+                  <div style={styles.ownerInfoGrid}>
+                    <div style={styles.ownerInfoCard}>
+                      <span>Species</span>
+                      <strong>{getSpecies(selectedVisit) || "Not provided"}</strong>
+                    </div>
+                    <div style={styles.ownerInfoCard}>
+                      <span>Breed</span>
+                      <strong>{selectedVisit.breed || "Not provided"}</strong>
+                    </div>
+                    <div style={styles.ownerInfoCard}>
+                      <span>Visit type</span>
+                      <strong>{selectedVisit.visitType || "Emergency visit"}</strong>
+                    </div>
+                    <div style={styles.ownerInfoCard}>
+                      <span>Been here before</span>
+                      <strong>{selectedVisit.beenHereBefore || "Not provided"}</strong>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {ownerPortalTab === "profile" && (
+                <div style={styles.ownerTabPanel}>
+                  <div style={styles.ownerSectionHeader}>
+                    <h2 style={styles.sectionTitle}>Profile</h2>
+                    <p style={styles.careHubIntro}>
+                      This is the contact information connected to this visit.
+                    </p>
+                  </div>
+
+                  <div style={styles.ownerInfoGrid}>
+                    <div style={styles.ownerInfoCard}>
+                      <span>Owner</span>
+                      <strong>{getOwnerName(selectedVisit)}</strong>
+                    </div>
+                    <div style={styles.ownerInfoCard}>
+                      <span>Phone</span>
+                      <strong>{selectedVisit.phone || "Not provided"}</strong>
+                    </div>
+                    <div style={styles.ownerInfoCard}>
+                      <span>Email</span>
+                      <strong>{authUserEmail || "Connected to this visit"}</strong>
+                    </div>
+                    <div style={styles.ownerInfoCard}>
+                      <span>Notifications</span>
+                      <strong>Updates appear here in MyPawLink</strong>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {ownerPortalTab === "actions" && (
+                <div style={styles.ownerTabPanel}>
+                  <div style={styles.ownerSectionHeader}>
+                    <h2 style={styles.sectionTitle}>Actions</h2>
+                    <p style={styles.careHubIntro}>
+                      Forms, approvals, and discharge documents will appear here only when the care
+                      team needs a response.
+                    </p>
+                  </div>
+
+                  {pendingOwnerForms.length === 0 && !careHubOpen && (
+                    <div style={styles.ownerNoActionCard}>
+                      <strong>No action needed right now.</strong>
+                      <span>We will let you know here when something needs your review.</span>
+                    </div>
+                  )}
               {selectedVisit.forms && selectedVisit.forms.length > 0 && (
   <div style={{ marginBottom: 20 }}>
     <h3>Forms</h3>
@@ -4536,7 +4693,7 @@ export default function Home() {
                       <p style={styles.careHubEyebrow}>Client Portal</p>
                       <h3 style={styles.sectionTitle}>MyPawLink Care Hub</h3>
                       <p style={styles.careHubIntro}>
-                        {signedCareHubCount} of {careHubFormCount} forms signed for {selectedVisit.petName}.
+                        Documents are organized by category for the care team to send as needed.
                       </p>
                     </div>
                     <button
@@ -4704,14 +4861,26 @@ export default function Home() {
                 </div>
               )}
 
-              <div style={styles.noticeBox}>
-                We will keep you updated every step of the way.
-              </div>
+                </div>
+              )}
+
               <div style={styles.bottomNav}>
-                <span style={styles.bottomNavActive}>Home</span>
-                <span>My Pets</span>
-                <span>Updates</span>
-                <span>Profile</span>
+                {ownerPortalTabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    style={{
+                      ...styles.bottomNavButton,
+                      ...(ownerPortalTab === tab.id ? styles.bottomNavActive : {}),
+                    }}
+                    onClick={() => setOwnerPortalTab(tab.id)}
+                  >
+                    {tab.label}
+                    {tab.id === "actions" && ownerActionCount > 0 && (
+                      <span style={styles.bottomNavBadge}>{ownerActionCount}</span>
+                    )}
+                  </button>
+                ))}
               </div>
             </section>
           )}
@@ -6418,6 +6587,290 @@ doctorProfileAction: {
   fontWeight: 800,
 },
 
+ownerPortalShell: {
+  display: "grid",
+  gap: 14,
+},
+
+ownerPortalHeader: {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 10,
+  marginBottom: 4,
+},
+
+ownerActionAlert: {
+  background: "#fff7ed",
+  border: "1px solid #fed7aa",
+  borderRadius: 8,
+  color: "#c2410c",
+  cursor: "pointer",
+  fontSize: 12,
+  fontWeight: 900,
+  padding: "8px 10px",
+},
+
+ownerTabPanel: {
+  display: "grid",
+  gap: 14,
+},
+
+ownerHeroStatusCard: {
+  background: "linear-gradient(135deg, #f0fffb, #ffffff)",
+  border: "1px solid #bfe9e0",
+  borderRadius: 8,
+  boxShadow: "0 12px 30px rgba(41, 64, 83, 0.08)",
+  display: "grid",
+  gridTemplateColumns: "minmax(0, 1fr) 78px",
+  gap: 12,
+  alignItems: "center",
+  padding: 16,
+},
+
+ownerHeroEyebrow: {
+  color: "#087f78",
+  display: "block",
+  fontSize: 11,
+  fontWeight: 900,
+  marginBottom: 6,
+  textTransform: "uppercase",
+},
+
+ownerHeroTitle: {
+  color: "#102a3a",
+  fontSize: 25,
+  lineHeight: 1.08,
+  margin: "0 0 8px",
+},
+
+ownerHeroText: {
+  color: "#52606d",
+  fontSize: 14,
+  lineHeight: 1.4,
+  margin: 0,
+},
+
+ownerHeroPetImage: {
+  width: 78,
+  height: 78,
+  borderRadius: "50%",
+  objectFit: "cover",
+  border: "4px solid #d7f7f2",
+},
+
+ownerStatusCard: {
+  background: "#ffffff",
+  border: "1px solid #dcefeb",
+  borderRadius: 8,
+  display: "grid",
+  gap: 10,
+  gridTemplateColumns: "minmax(0, 1fr) auto",
+  alignItems: "center",
+  padding: 14,
+},
+
+ownerStatusLabel: {
+  color: "#64717d",
+  display: "block",
+  fontSize: 12,
+  fontWeight: 800,
+  marginBottom: 4,
+},
+
+ownerStatusValue: {
+  color: "#102a3a",
+  fontSize: 18,
+  lineHeight: 1.2,
+},
+
+ownerReviewPill: {
+  background: "#f0fbf8",
+  border: "1px solid #bfe9e0",
+  borderRadius: 8,
+  color: "#087f78",
+  fontSize: 11,
+  fontWeight: 900,
+  padding: "8px 9px",
+  textAlign: "center",
+},
+
+ownerStageTracker: {
+  background: "#ffffff",
+  border: "1px solid #dcefeb",
+  borderRadius: 8,
+  display: "grid",
+  gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+  gap: 4,
+  padding: 12,
+},
+
+ownerStageItem: {
+  color: "#64717d",
+  display: "grid",
+  fontSize: 10,
+  fontWeight: 800,
+  gap: 6,
+  justifyItems: "center",
+  lineHeight: 1.1,
+  textAlign: "center",
+},
+
+ownerStageDot: {
+  width: 27,
+  height: 27,
+  borderRadius: "50%",
+  background: "#f8fafc",
+  border: "1px solid #dbe5e8",
+  display: "grid",
+  placeItems: "center",
+  color: "#ffffff",
+  fontSize: 9,
+  fontWeight: 900,
+},
+
+ownerStageDotActive: {
+  background: "#14b8a6",
+  borderColor: "#14b8a6",
+},
+
+ownerStageDotComplete: {
+  background: "#087f78",
+  borderColor: "#087f78",
+},
+
+latestUpdatePanel: {
+  background: "#ffffff",
+  border: "1px solid #dcefeb",
+  borderRadius: 8,
+  boxShadow: "0 8px 20px rgba(41, 64, 83, 0.06)",
+  display: "grid",
+  gap: 10,
+  padding: 14,
+},
+
+ownerSectionHeader: {
+  background: "#f8fbff",
+  border: "1px solid #dcefeb",
+  borderRadius: 8,
+  padding: 14,
+},
+
+ownerTimeline: {
+  display: "grid",
+  gap: 10,
+},
+
+ownerTimelineItem: {
+  display: "grid",
+  gridTemplateColumns: "28px minmax(0, 1fr)",
+  gap: 10,
+  alignItems: "start",
+},
+
+ownerTimelineDot: {
+  width: 16,
+  height: 16,
+  borderRadius: "50%",
+  border: "2px solid #dbe5e8",
+  background: "#ffffff",
+  marginTop: 16,
+  justifySelf: "center",
+},
+
+ownerTimelineDotActive: {
+  background: "#14b8a6",
+  borderColor: "#14b8a6",
+},
+
+ownerNoActionCard: {
+  background: "#f0fbf8",
+  border: "1px solid #bfe9e0",
+  borderRadius: 8,
+  color: "#087f78",
+  display: "grid",
+  gap: 5,
+  padding: 14,
+},
+
+ownerPetProfileCard: {
+  background: "#ffffff",
+  border: "1px solid #dcefeb",
+  borderRadius: 8,
+  display: "grid",
+  gridTemplateColumns: "72px minmax(0, 1fr)",
+  gap: 12,
+  alignItems: "center",
+  padding: 14,
+},
+
+ownerPetProfileImage: {
+  width: 72,
+  height: 72,
+  borderRadius: 8,
+  objectFit: "cover",
+  border: "3px solid #e7fbf7",
+},
+
+ownerInfoGrid: {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 145px), 1fr))",
+  gap: 10,
+},
+
+ownerInfoCard: {
+  background: "#ffffff",
+  border: "1px solid #dcefeb",
+  borderRadius: 8,
+  display: "grid",
+  gap: 4,
+  padding: 12,
+},
+
+ownerFormCard: {
+  background: "#ffffff",
+  border: "1px solid #dcefeb",
+  borderRadius: 8,
+  display: "grid",
+  gap: 12,
+  marginBottom: 12,
+  padding: 14,
+},
+
+ownerFormHeader: {
+  alignItems: "flex-start",
+  display: "flex",
+  gap: 10,
+  justifyContent: "space-between",
+},
+
+ownerFormBody: {
+  background: "#f8fbff",
+  border: "1px solid #e1ecec",
+  borderRadius: 8,
+  color: "#52606d",
+  fontSize: 13,
+  lineHeight: 1.4,
+  padding: 12,
+},
+
+ownerFormActions: {
+  display: "grid",
+  gap: 10,
+},
+
+ownerCompletedText: {
+  color: "#027a48",
+  fontWeight: 800,
+  margin: 0,
+},
+
+ownerDeclinedText: {
+  color: "#b91c1c",
+  fontWeight: 800,
+  margin: 0,
+},
+
 ownerGreeting: {
   display: "flex",
   justifyContent: "space-between",
@@ -6891,22 +7344,48 @@ bottomNav: {
   position: "sticky",
   bottom: 0,
   display: "grid",
-  gridTemplateColumns: "repeat(4, 1fr)",
-  gap: 8,
+  gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+  gap: 4,
   background: "rgba(255, 255, 255, 0.96)",
   border: "1px solid #e1ecec",
   borderRadius: 8,
-  padding: "12px 8px",
+  padding: "8px 6px",
   marginTop: 18,
   boxShadow: "0 -8px 24px rgba(41, 64, 83, 0.08)",
   textAlign: "center",
   color: "#64717d",
-  fontSize: 13,
-  fontWeight: 700,
+},
+
+bottomNavButton: {
+  background: "transparent",
+  border: "none",
+  borderRadius: 8,
+  color: "#64717d",
+  cursor: "pointer",
+  display: "grid",
+  fontSize: 11,
+  fontWeight: 900,
+  gap: 2,
+  minHeight: 42,
+  padding: "7px 2px",
+  placeItems: "center",
+  position: "relative",
 },
 
 bottomNavActive: {
+  background: "#f0fbf8",
   color: "#087f78",
+},
+
+bottomNavBadge: {
+  background: "#fff1f2",
+  border: "1px solid #fecdd3",
+  borderRadius: 999,
+  color: "#e11d48",
+  fontSize: 10,
+  fontWeight: 900,
+  minWidth: 18,
+  padding: "1px 5px",
 },
 
 petTitle: {
