@@ -125,6 +125,12 @@ type ReferralDocument = {
   uploadedAt: string;
 };
 
+type ReferralDocumentPreview = {
+  name: string;
+  type: string;
+  url: string;
+};
+
 type ReferralMessage = {
   id: string;
   senderType: string;
@@ -626,6 +632,12 @@ export default function Home() {
   const [referralSubmitError, setReferralSubmitError] = useState("");
   const [referralSubmitMessage, setReferralSubmitMessage] = useState("");
   const [referralMissingFields, setReferralMissingFields] = useState<string[]>([]);
+  const [referralWizardStep, setReferralWizardStep] = useState(1);
+  const [referralOwnerExpanded, setReferralOwnerExpanded] = useState(false);
+  const [selectedReferralUrgency, setSelectedReferralUrgency] = useState("");
+  const [selectedReferralIvFluids, setSelectedReferralIvFluids] = useState("");
+  const [referralLocationLabel, setReferralLocationLabel] = useState("");
+  const [referralReviewSnapshot, setReferralReviewSnapshot] = useState<Record<string, string>>({});
   const [clinicLoading, setClinicLoading] = useState(false);
   const [pendingClinicActions, setPendingClinicActions] = useState<Record<string, string>>({});
   const [petPhotoPreview, setPetPhotoPreview] = useState("");
@@ -633,6 +645,7 @@ export default function Home() {
   const [petMediaName, setPetMediaName] = useState("");
   const [petMediaType, setPetMediaType] = useState("");
   const [referralDocumentNames, setReferralDocumentNames] = useState<string[]>([]);
+  const [referralDocumentPreviews, setReferralDocumentPreviews] = useState<ReferralDocumentPreview[]>([]);
   const [referrals, setReferrals] = useState<Referral[]>([]);
   const [referralsLoading, setReferralsLoading] = useState(false);
   const [referralWorkflowSetupRequired, setReferralWorkflowSetupRequired] = useState(false);
@@ -680,6 +693,7 @@ export default function Home() {
   >({});
   const submittingVisitRef = useRef(false);
   const submittingReferralRef = useRef(false);
+  const referralFormRef = useRef<HTMLFormElement | null>(null);
   const clinicLoadingRef = useRef(false);
   const pendingClinicActionsRef = useRef<Record<string, string>>({});
   const dogBreeds = [
@@ -722,12 +736,32 @@ export default function Home() {
   const referralTypes = [
     "Emergency transfer",
     "Specialty consult",
-    "After-hours emergency",
-    "Follow-up referral",
-    "Imaging/lab review",
-    "Surgical referral",
+    "Imaging review",
+    "Second opinion",
   ];
-  const stabilityLevels = ["Stable", "Urgent", "Critical", "Actively declining"];
+  const stabilityLevels = ["Stable", "Urgent", "Critical"];
+  const referralEtaOptions = ["15 min", "30 min", "1 hour", "2+ hours"];
+  const referralProcedureOptions = [
+    "Bloodwork",
+    "X-rays",
+    "Ultrasound",
+    "ECG",
+    "Oxygen",
+    "Catheter placed",
+    "Pain meds",
+    "Antibiotics",
+    "Other",
+  ];
+  const referralDocumentTypes = [
+    "Referral notes",
+    "Labs",
+    "Imaging",
+    "Ultrasound",
+    "Photos",
+    "Video",
+    "Other",
+  ];
+  const referralStepLabels = ["Clinic", "Patient", "Triage", "Treatment", "Documents", "Review"];
   const referralStatuses = [
     "Referral Submitted",
     "Records Received",
@@ -1330,9 +1364,31 @@ export default function Home() {
     }
   };
 
-  const handleReferralDocumentsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleReferralDocumentsChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     setReferralDocumentNames(files.map((file) => file.name));
+    const previews = await Promise.all(
+      files.slice(0, 8).map(
+        (file) =>
+          new Promise<ReferralDocumentPreview>((resolve) => {
+            if (!file.type.startsWith("image/")) {
+              resolve({ name: file.name, type: file.type || "document", url: "" });
+              return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = () =>
+              resolve({
+                name: file.name,
+                type: file.type || "image",
+                url: String(reader.result || ""),
+              });
+            reader.onerror = () => resolve({ name: file.name, type: file.type || "image", url: "" });
+            reader.readAsDataURL(file);
+          })
+      )
+    );
+    setReferralDocumentPreviews(previews);
   };
 
   const getQueueDetails = (visit: Visit) => {
@@ -1399,6 +1455,7 @@ export default function Home() {
     isConscious: "is pet conscious",
     ivFluids: "IV fluids",
     medications: "medications",
+    otherSpecies: "pet type",
     ownerFirstName: "owner first name",
     ownerLastName: "owner last name",
     petName: "pet name",
@@ -1623,6 +1680,170 @@ export default function Home() {
     </div>
   );
 
+  const clearReferralFeedback = () => {
+    if (referralSubmitError) setReferralSubmitError("");
+    if (referralSubmitMessage) setReferralSubmitMessage("");
+    if (referralMissingFields.length) setReferralMissingFields([]);
+  };
+
+  const getReferralFormValue = (name: string) => {
+    if (name === "stabilityLevel") return selectedReferralUrgency;
+    if (name === "ivFluids") return selectedReferralIvFluids;
+
+    const form = referralFormRef.current;
+    if (!form) return "";
+
+    const value = new FormData(form).get(name);
+    return String(value || "").trim();
+  };
+
+  const getReferralSnapshot = (): Record<string, string> => {
+    const form = referralFormRef.current;
+    if (!form) return {};
+
+    const data = new FormData(form);
+    return {
+      referringClinic: String(data.get("referringClinic") || ""),
+      referringDoctor: String(data.get("referringDoctor") || ""),
+      doctorPhone: String(data.get("doctorPhone") || ""),
+      doctorEmail: String(data.get("doctorEmail") || ""),
+      petName: String(data.get("petName") || ""),
+      species:
+        String(data.get("species") || "") === "Other"
+          ? String(data.get("otherSpecies") || "Other")
+          : String(data.get("species") || ""),
+      age: String(data.get("age") || ""),
+      sex: String(data.get("sex") || ""),
+      weight: String(data.get("weight") || ""),
+      ownerFirstName: String(data.get("ownerFirstName") || ""),
+      ownerLastName: String(data.get("ownerLastName") || ""),
+      ownerPhone: String(data.get("ownerPhone") || ""),
+      ownerEmail: String(data.get("ownerEmail") || ""),
+      referralType: String(data.get("referralType") || ""),
+      stabilityLevel: selectedReferralUrgency,
+      reason: String(data.get("reason") || ""),
+      suspectedDiagnosis: String(data.get("suspectedDiagnosis") || ""),
+      clinicalSummary: String(data.get("clinicalSummary") || ""),
+      transferTime: String(data.get("transferTime") || ""),
+      ivFluids: selectedReferralIvFluids,
+      medications: String(data.get("medications") || ""),
+      treatmentGiven: String(data.get("treatmentGiven") || ""),
+    };
+  };
+
+  const getReferralStepMissingFields = (step: number | "all" = referralWizardStep) => {
+    const requiredByStep: Record<number, string[]> = {
+      1: ["referringClinic", "referringDoctor", "doctorPhone", "doctorEmail"],
+      2: ["petName", "species"],
+      3: ["referralType", "stabilityLevel", "reason", "clinicalSummary", "transferTime"],
+      4: ["ivFluids"],
+      5: [],
+      6: [],
+    };
+
+    if (selectedReferralSpecies === "Other") {
+      requiredByStep[2] = [...requiredByStep[2], "otherSpecies"];
+    }
+
+    const fields =
+      step === "all"
+        ? Object.values(requiredByStep).flat()
+        : requiredByStep[step] || [];
+
+    return fields
+      .filter((field) => !getReferralFormValue(field))
+      .map((field) => requiredFieldLabels[field] || "required information");
+  };
+
+  const goToReferralWizardStep = (step: number) => {
+    clearReferralFeedback();
+    setReferralWizardStep(step);
+    window.setTimeout(() => {
+      document.getElementById("referral-transfer-form")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 0);
+  };
+
+  const continueReferralWizard = () => {
+    const missingFields = getReferralStepMissingFields();
+
+    if (missingFields.length) {
+      setReferralMissingFields(missingFields);
+      setReferralSubmitError("Please complete these quick details before continuing.");
+      setReferralSubmitMessage("");
+      return;
+    }
+
+    if (referralWizardStep === 5) {
+      setReferralReviewSnapshot(getReferralSnapshot());
+    }
+
+    goToReferralWizardStep(Math.min(6, referralWizardStep + 1));
+  };
+
+  const backReferralWizard = () => {
+    goToReferralWizardStep(Math.max(1, referralWizardStep - 1));
+  };
+
+  const useReferralCurrentLocation = () => {
+    clearReferralFeedback();
+
+    if (!navigator.geolocation) {
+      setReferralSubmitMessage("Location sharing is not available on this device.");
+      return;
+    }
+
+    setReferralSubmitMessage("Getting your current location...");
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const label = `${position.coords.latitude.toFixed(4)}, ${position.coords.longitude.toFixed(4)}`;
+        setReferralLocationLabel(label);
+        setReferralSubmitMessage("Location added to this referral.");
+      },
+      () => {
+        setReferralSubmitMessage("Location was not added. You can continue without it.");
+      },
+      { enableHighAccuracy: false, timeout: 8000 }
+    );
+  };
+
+  const renderReferralButtonGroup = (
+    label: string,
+    value: string,
+    onSelect: (value: string) => void,
+    options: string[]
+  ) => (
+    <div style={styles.visitChoiceBlock}>
+      <p style={styles.visitChoiceLabel}>{label}</p>
+      <div style={styles.referralUrgencyGrid}>
+        {options.map((option) => {
+          const selected = value === option;
+          return (
+            <button
+              key={option}
+              type="button"
+              style={{
+                ...styles.referralChoiceButton,
+                ...(selected ? styles.visitChoiceButtonSelected : {}),
+              }}
+              onClick={() => {
+                clearReferralFeedback();
+                onSelect(option);
+              }}
+            >
+              {option === "Stable" && <span style={styles.referralChoiceDotGreen} />}
+              {option === "Urgent" && <span style={styles.referralChoiceDotYellow} />}
+              {option === "Critical" && <span style={styles.referralChoiceDotRed} />}
+              <span>{option}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
   const createVisit = async (e: React.FormEvent<HTMLFormElement>) => {
   e.preventDefault();
 
@@ -1764,15 +1985,19 @@ export default function Home() {
     e.preventDefault();
 
     if (submittingReferralRef.current) return;
-    if (
-      !validateRequiredFields(
-        e.currentTarget,
-        "referral",
-        setReferralSubmitError,
-        setReferralSubmitMessage,
-        setReferralMissingFields
-      )
-    ) {
+    const missingReferralFields = getReferralStepMissingFields("all");
+    if (missingReferralFields.length) {
+      setReferralMissingFields(missingReferralFields);
+      setReferralSubmitError("Please complete the missing required information before sending.");
+      setReferralSubmitMessage("");
+
+      const firstStepWithMissing = [1, 2, 3, 4].find(
+        (step) => getReferralStepMissingFields(step).length > 0
+      );
+      if (firstStepWithMissing) {
+        goToReferralWizardStep(firstStepWithMissing);
+      }
+
       return;
     }
 
@@ -1792,6 +2017,7 @@ export default function Home() {
     const ownerPhone = String(form.get("ownerPhone") || "").trim();
     const ownerEmail = String(form.get("ownerEmail") || "").trim();
     const documentsIncluded = form.getAll("documentsIncluded").map(String);
+    const proceduresCompleted = form.getAll("proceduresCompleted").map(String);
     const referralDocuments = form
       .getAll("referralDocuments")
       .filter((entry): entry is File => entry instanceof File && Boolean(entry.name));
@@ -1803,7 +2029,12 @@ export default function Home() {
     }));
     const referralReason = String(form.get("reason") || "").trim();
     const clinicalSummary = [
+      `Presenting problem: ${referralReason}`,
+      String(form.get("suspectedDiagnosis") || "").trim()
+        ? `Suspected diagnosis: ${String(form.get("suspectedDiagnosis") || "").trim()}`
+        : "",
       String(form.get("clinicalSummary") || "").trim(),
+      proceduresCompleted.length ? `Procedures completed: ${proceduresCompleted.join(", ")}` : "",
       documentsIncluded.length ? `Documents included: ${documentsIncluded.join(", ")}` : "",
     ]
       .filter(Boolean)
@@ -1817,10 +2048,13 @@ export default function Home() {
           referringDoctorName: doctorName,
           referringPhone: doctorPhone,
           referringEmail: doctorEmail,
-          referringAddress: String(form.get("referringAddress") || "").trim(),
-          preferredCallbackNumber: String(form.get("preferredCallbackNumber") || "").trim(),
+          referringAddress: referralLocationLabel || String(form.get("referringAddress") || "").trim(),
+          preferredCallbackNumber: doctorPhone,
           petName: String(form.get("petName") || "").trim(),
-          species: String(form.get("species") || "").trim(),
+          species:
+            String(form.get("species") || "").trim() === "Other"
+              ? String(form.get("otherSpecies") || "Other").trim()
+              : String(form.get("species") || "").trim(),
           breed: String(form.get("breed") || "").trim(),
           age: String(form.get("age") || "").trim(),
           sex: String(form.get("sex") || "").trim(),
@@ -1831,7 +2065,7 @@ export default function Home() {
           ownerEmail,
           referralType: String(form.get("referralType") || "").trim(),
           reason: referralReason,
-          presentingComplaint: String(form.get("presentingComplaint") || "").trim(),
+          presentingComplaint: referralReason,
           history: String(form.get("history") || "").trim(),
           currentSymptoms: String(form.get("currentSymptoms") || "").trim(),
           suspectedDiagnosis: String(form.get("suspectedDiagnosis") || "").trim(),
@@ -1859,7 +2093,14 @@ export default function Home() {
     }
 
     setSelectedReferralSpecies("");
+    setSelectedReferralUrgency("");
+    setSelectedReferralIvFluids("");
+    setReferralOwnerExpanded(false);
+    setReferralWizardStep(1);
+    setReferralLocationLabel("");
+    setReferralReviewSnapshot({});
     setReferralDocumentNames([]);
+    setReferralDocumentPreviews([]);
     setReferralSubmitMessage("Referral intake submitted. Opening the referral dashboard...");
     if (!clinicUnlocked) {
       alert("Referral intake submitted. It is ready in the clinic referral dashboard.");
@@ -2642,228 +2883,373 @@ export default function Home() {
             </section>
           )}
           {view === "referral" && (
-            <section>
-              <h2 style={styles.title}>Referral Intake Portal</h2>
-              <p style={styles.text}>For regular vets sending an emergency transfer.</p>
+            <section id="referral-transfer-form">
+              <div style={styles.referralWizardHero}>
+                <span style={styles.visitStepEyebrow}>Step {referralWizardStep} of 6</span>
+                <h2 style={styles.title}>Emergency Referral Transfer</h2>
+                <p style={styles.text}>Quickly send patient details before transfer.</p>
+                <div style={styles.referralCompactNotice}>Send patient information before transfer.</div>
+              </div>
 
-              <div style={styles.noticeBox}>
-                <strong>Send the receiving team what they need before arrival.</strong>
-                <p>
-                  Add notes, diagnostics, treatment already given, medications, IV fluid status,
-                  transfer time, and direct doctor contact information.
-                </p>
+              <div style={{ ...styles.visitProgressTrack, gridTemplateColumns: "repeat(6, minmax(0, 1fr))" }}>
+                {referralStepLabels.map((label, index) => {
+                  const step = index + 1;
+                  const active = referralWizardStep === step;
+                  const complete = referralWizardStep > step;
+
+                  return (
+                    <button
+                      key={label}
+                      type="button"
+                      style={{
+                        ...styles.visitProgressStep,
+                        ...(active ? styles.visitProgressStepActive : {}),
+                        ...(complete ? styles.visitProgressStepComplete : {}),
+                      }}
+                      onClick={() => {
+                        if (step <= referralWizardStep) goToReferralWizardStep(step);
+                      }}
+                    >
+                      <span>{step}</span>
+                      <small style={styles.visitProgressLabel}>{label}</small>
+                    </button>
+                  );
+                })}
               </div>
 
               <form
+                ref={referralFormRef}
                 onSubmit={createReferralVisit}
                 noValidate
                 onChange={() => {
                   if (referralSubmitError) setReferralSubmitError("");
                   if (referralMissingFields.length) setReferralMissingFields([]);
                 }}
-                style={styles.form}
+                style={styles.visitWizardForm}
               >
-                <input style={styles.input} name="referringClinic" placeholder="Referring clinic name" required />
-                <input style={styles.input} name="referringDoctor" placeholder="Referring doctor name" required />
-                <input style={styles.input} name="doctorPhone" placeholder="Doctor phone number" required />
-                <input style={styles.input} name="doctorEmail" placeholder="Doctor email" required />
-                <input style={styles.input} name="referringAddress" placeholder="Referring clinic address" />
-                <input
-                  style={styles.input}
-                  name="preferredCallbackNumber"
-                  placeholder="Preferred callback number"
-                />
+                <input type="hidden" name="stabilityLevel" value={selectedReferralUrgency} readOnly />
+                <input type="hidden" name="ivFluids" value={selectedReferralIvFluids} readOnly />
+                <input type="hidden" name="referringAddress" value={referralLocationLabel} readOnly />
+                <input type="hidden" name="preferredCallbackNumber" value="" readOnly />
 
-                <select style={styles.input} name="referralType" required>
-                  <option value="">Referral type</option>
-                  {referralTypes.map((type) => (
-                    <option key={type} value={type}>
-                      {type}
-                    </option>
-                  ))}
-                </select>
-
-                <select style={styles.input} name="stabilityLevel" required>
-                  <option value="">Stability / urgency level</option>
-                  {stabilityLevels.map((level) => (
-                    <option key={level} value={level}>
-                      {level}
-                    </option>
-                  ))}
-                </select>
-
-                <input style={styles.input} name="petName" placeholder="Pet name" required />
-                <select
-                  style={styles.input}
-                  name="species"
-                  required
-                  value={selectedReferralSpecies}
-                  onChange={(e) => setSelectedReferralSpecies(e.target.value)}
+                <section
+                  style={{
+                    ...styles.visitStepCard,
+                    display: referralWizardStep === 1 ? "grid" : "none",
+                  }}
                 >
-                  <option value="">Species</option>
-                  <option value="Dog">Dog</option>
-                  <option value="Cat">Cat</option>
-                  <option value="Other">Other</option>
-                </select>
-
-                {selectedReferralSpecies === "Dog" && (
-                  <select style={styles.input} name="breed" required>
-                    <option value="">Select Dog Breed</option>
-                    {dogBreeds.map((breed) => (
-                      <option key={breed} value={breed}>
-                        {breed}
-                      </option>
-                    ))}
-                  </select>
-                )}
-
-                {selectedReferralSpecies === "Cat" && (
-                  <select style={styles.input} name="breed" required>
-                    <option value="">Select Cat Breed</option>
-                    {catBreeds.map((breed) => (
-                      <option key={breed} value={breed}>
-                        {breed}
-                      </option>
-                    ))}
-                  </select>
-                )}
-
-                {selectedReferralSpecies === "Other" && (
-                  <input
-                    style={styles.input}
-                    name="otherSpecies"
-                    placeholder="Enter pet type, for example Rabbit or Bird"
-                    required
-                  />
-                )}
-                <input style={styles.input} name="age" placeholder="Approx age" />
-                <select style={styles.input} name="sex">
-                  <option value="">Sex</option>
-                  <option value="Female">Female</option>
-                  <option value="Female spayed">Female spayed</option>
-                  <option value="Male">Male</option>
-                  <option value="Male neutered">Male neutered</option>
-                  <option value="Unknown">Unknown</option>
-                </select>
-                <input
-                  style={styles.input}
-                  name="weight"
-                  type="number"
-                  min="0"
-                  step="0.1"
-                  placeholder="Weight in pounds"
-                />
-
-                <div style={styles.referralSubsection}>
-                  <strong>Pet owner contact, if available</strong>
-                  <input style={styles.input} name="ownerFirstName" placeholder="Owner first name" />
-                  <input style={styles.input} name="ownerLastName" placeholder="Owner last name" />
-                  <input style={styles.input} name="ownerPhone" placeholder="Owner phone number" />
-                  <input style={styles.input} name="ownerEmail" placeholder="Owner email" />
-                </div>
-
-                <textarea
-                  style={styles.textarea}
-                  name="reason"
-                  placeholder="Reason for referral"
-                  required
-                />
-
-                <textarea
-                  style={styles.textarea}
-                  name="presentingComplaint"
-                  placeholder="Presenting complaint"
-                  required
-                />
-
-                <textarea
-                  style={styles.textarea}
-                  name="history"
-                  placeholder="Relevant history"
-                />
-
-                <textarea
-                  style={styles.textarea}
-                  name="currentSymptoms"
-                  placeholder="Current symptoms"
-                />
-
-                <textarea
-                  style={styles.textarea}
-                  name="suspectedDiagnosis"
-                  placeholder="Diagnosis or suspected diagnosis"
-                />
-
-                <textarea
-                  style={styles.textarea}
-                  name="clinicalSummary"
-                  placeholder="Clinical summary"
-                  required
-                />
-
-                <div style={styles.referralSubsection}>
-                  <strong>Documents included</strong>
-                  <div style={styles.checkboxGrid}>
-                    {["Referral notes", "Lab results", "X-rays", "Ultrasound"].map((item) => (
-                      <label key={item} style={styles.radioBox}>
-                        <input type="checkbox" name="documentsIncluded" value={item} /> {item}
-                      </label>
-                    ))}
+                  <div>
+                    <h3 style={styles.visitStepTitle}>Referring clinic</h3>
+                    <p style={styles.visitStepText}>
+                      Direct contact details so the receiving team can call back quickly.
+                    </p>
                   </div>
-                </div>
 
-                <label style={styles.photoUploadBox}>
-                  <span style={styles.photoUploadTitle}>Upload documents</span>
-                  <span style={styles.photoUploadText}>
-                    Select notes, lab results, X-rays, ultrasound images/videos, or PDFs.
-                  </span>
-                  <input
-                    style={styles.hiddenFileInput}
-                    type="file"
-                    name="referralDocuments"
-                    accept=".pdf,.doc,.docx,.dcm,image/*,video/*"
-                    multiple
-                    onChange={handleReferralDocumentsChange}
-                  />
-                  <span style={styles.photoUploadButton}>
-                    {referralDocumentNames.length > 0 ? "Change Documents" : "Choose Documents"}
-                  </span>
-                </label>
-
-                {referralDocumentNames.length > 0 && (
-                  <div style={styles.documentList}>
-                    {referralDocumentNames.map((name) => (
-                      <span key={name}>{name}</span>
-                    ))}
+                  <div style={styles.visitFieldGrid}>
+                    <input style={styles.input} name="referringClinic" placeholder="Referring clinic" />
+                    <input style={styles.input} name="referringDoctor" placeholder="Referring doctor" />
+                    <input
+                      style={styles.input}
+                      name="doctorPhone"
+                      placeholder="Callback number"
+                      inputMode="tel"
+                    />
+                    <input
+                      style={styles.input}
+                      name="doctorEmail"
+                      placeholder="Doctor email"
+                      inputMode="email"
+                    />
                   </div>
-                )}
 
-                <textarea
-                  style={styles.textarea}
-                  name="treatmentGiven"
-                  placeholder="Treatment already given"
-                  required
-                />
+                  <button
+                    style={styles.referralLocationButton}
+                    type="button"
+                    onClick={useReferralCurrentLocation}
+                  >
+                    Use my current location
+                  </button>
+                  {referralLocationLabel && (
+                    <div style={styles.referralLocationNote}>Location added: {referralLocationLabel}</div>
+                  )}
+                </section>
 
-                <textarea
-                  style={styles.textarea}
-                  name="medications"
-                  placeholder="Medications given or currently prescribed"
-                  required
-                />
+                <section
+                  style={{
+                    ...styles.visitStepCard,
+                    display: referralWizardStep === 2 ? "grid" : "none",
+                  }}
+                >
+                  <div>
+                    <h3 style={styles.visitStepTitle}>Patient information</h3>
+                    <p style={styles.visitStepText}>Just the details needed before transfer.</p>
+                  </div>
 
-                <select style={styles.input} name="ivFluids" required>
-                  <option value="">IV fluids?</option>
-                  <option value="Yes">Yes</option>
-                  <option value="No">No</option>
-                </select>
+                  <div style={styles.visitFieldGrid}>
+                    <input style={styles.input} name="petName" placeholder="Pet name" />
+                    <select
+                      style={styles.input}
+                      name="species"
+                      value={selectedReferralSpecies}
+                      onChange={(e) => {
+                        clearReferralFeedback();
+                        setSelectedReferralSpecies(e.target.value);
+                      }}
+                    >
+                      <option value="">Species</option>
+                      <option value="Dog">Dog</option>
+                      <option value="Cat">Cat</option>
+                      <option value="Other">Other</option>
+                    </select>
+                    {selectedReferralSpecies === "Other" && (
+                      <input
+                        style={styles.input}
+                        name="otherSpecies"
+                        placeholder="Pet type, for example Rabbit or Bird"
+                      />
+                    )}
+                    <input style={styles.input} name="breed" placeholder="Breed (if known)" />
+                    <input style={styles.input} name="age" placeholder="Approx age" />
+                    <select style={styles.input} name="sex">
+                      <option value="">Sex</option>
+                      <option value="Female">Female</option>
+                      <option value="Female spayed">Female spayed</option>
+                      <option value="Male">Male</option>
+                      <option value="Male neutered">Male neutered</option>
+                      <option value="Unknown">Unknown</option>
+                    </select>
+                    <input
+                      style={styles.input}
+                      name="weight"
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      placeholder="Weight in pounds"
+                      inputMode="decimal"
+                    />
+                  </div>
 
-                <input
-                  style={styles.input}
-                  type="datetime-local"
-                  name="transferTime"
-                  required
-                />
+                  <button
+                    style={styles.referralOwnerToggle}
+                    type="button"
+                    onClick={() => setReferralOwnerExpanded((current) => !current)}
+                  >
+                    {referralOwnerExpanded ? "Hide owner contact" : "Add owner contact (optional)"}
+                  </button>
+
+                  <div
+                    style={{
+                      ...styles.referralOwnerPanel,
+                      display: referralOwnerExpanded ? "grid" : "none",
+                    }}
+                  >
+                    <input style={styles.input} name="ownerFirstName" placeholder="Owner first name" />
+                    <input style={styles.input} name="ownerLastName" placeholder="Owner last name" />
+                    <input style={styles.input} name="ownerPhone" placeholder="Owner phone" inputMode="tel" />
+                    <input style={styles.input} name="ownerEmail" placeholder="Owner email" inputMode="email" />
+                  </div>
+                </section>
+
+                <section
+                  style={{
+                    ...styles.visitStepCard,
+                    display: referralWizardStep === 3 ? "grid" : "none",
+                  }}
+                >
+                  <div>
+                    <h3 style={styles.visitStepTitle}>Clinical summary</h3>
+                    <p style={styles.visitStepText}>Structured details the receiving doctor can scan fast.</p>
+                  </div>
+
+                  <div style={styles.visitFieldGrid}>
+                    <select style={styles.input} name="referralType">
+                      <option value="">Referral type</option>
+                      {referralTypes.map((type) => (
+                        <option key={type} value={type}>
+                          {type}
+                        </option>
+                      ))}
+                    </select>
+                    <select style={styles.input} name="transferTime">
+                      <option value="">ETA</option>
+                      {referralEtaOptions.map((eta) => (
+                        <option key={eta} value={eta}>
+                          {eta}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {renderReferralButtonGroup(
+                    "Urgency",
+                    selectedReferralUrgency,
+                    setSelectedReferralUrgency,
+                    stabilityLevels
+                  )}
+
+                  <div style={styles.visitFieldGrid}>
+                    <input style={styles.input} name="reason" placeholder="Presenting problem" />
+                    <input style={styles.input} name="suspectedDiagnosis" placeholder="Suspected diagnosis" />
+                  </div>
+
+                  <textarea
+                    style={styles.textarea}
+                    name="clinicalSummary"
+                    placeholder="Brief clinical summary"
+                  />
+                </section>
+
+                <section
+                  style={{
+                    ...styles.visitStepCard,
+                    display: referralWizardStep === 4 ? "grid" : "none",
+                  }}
+                >
+                  <div>
+                    <h3 style={styles.visitStepTitle}>Treatment already provided</h3>
+                    <p style={styles.visitStepText}>Capture what has already been done before transfer.</p>
+                  </div>
+
+                  {renderReferralButtonGroup(
+                    "IV fluids?",
+                    selectedReferralIvFluids,
+                    setSelectedReferralIvFluids,
+                    ["Yes", "No"]
+                  )}
+
+                  <textarea
+                    style={styles.textarea}
+                    name="medications"
+                    placeholder="Medications given"
+                  />
+
+                  <textarea
+                    style={styles.textarea}
+                    name="treatmentGiven"
+                    placeholder="Treatment notes (optional)"
+                  />
+
+                  <div style={styles.referralSubsection}>
+                    <strong>Procedures completed</strong>
+                    <div style={styles.checkboxGrid}>
+                      {referralProcedureOptions.map((item) => (
+                        <label key={item} style={styles.radioBox}>
+                          <input type="checkbox" name="proceduresCompleted" value={item} /> {item}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </section>
+
+                <section
+                  style={{
+                    ...styles.visitStepCard,
+                    display: referralWizardStep === 5 ? "grid" : "none",
+                  }}
+                >
+                  <div>
+                    <h3 style={styles.visitStepTitle}>Upload supporting documents</h3>
+                    <p style={styles.visitStepText}>Doctors often photograph records. Make that fast here.</p>
+                  </div>
+
+                  <div style={styles.referralSubsection}>
+                    <strong>What are you sending?</strong>
+                    <div style={styles.checkboxGrid}>
+                      {referralDocumentTypes.map((item) => (
+                        <label key={item} style={styles.radioBox}>
+                          <input type="checkbox" name="documentsIncluded" value={item} /> {item}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div style={styles.referralUploadGrid}>
+                    <label style={styles.referralUploadAction}>
+                      <span style={styles.referralUploadIcon}>📷</span>
+                      <strong>Take Photo</strong>
+                      <small>Paperwork, X-rays, wounds, labels</small>
+                      <input
+                        style={styles.hiddenFileInput}
+                        type="file"
+                        name="referralDocuments"
+                        accept="image/*,video/*"
+                        capture="environment"
+                        multiple
+                        onChange={handleReferralDocumentsChange}
+                      />
+                    </label>
+
+                    <label style={styles.referralUploadAction}>
+                      <span style={styles.referralUploadIcon}>📎</span>
+                      <strong>Upload Files</strong>
+                      <small>PDFs, labs, images, videos</small>
+                      <input
+                        style={styles.hiddenFileInput}
+                        type="file"
+                        name="referralDocuments"
+                        accept=".pdf,.doc,.docx,.dcm,image/*,video/*"
+                        multiple
+                        onChange={handleReferralDocumentsChange}
+                      />
+                    </label>
+                  </div>
+
+                  {referralDocumentNames.length > 0 && (
+                    <div style={styles.referralPreviewGrid}>
+                      {referralDocumentPreviews.map((preview) => (
+                        <div key={preview.name} style={styles.referralPreviewCard}>
+                          {preview.url ? (
+                            <img src={preview.url} alt={preview.name} style={styles.referralPreviewImage} />
+                          ) : (
+                            <span style={styles.referralPreviewIcon}>
+                              {preview.type.startsWith("video/") ? "Video" : "File"}
+                            </span>
+                          )}
+                          <span>{preview.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                <section
+                  style={{
+                    ...styles.visitStepCard,
+                    display: referralWizardStep === 6 ? "grid" : "none",
+                  }}
+                >
+                  <div>
+                    <h3 style={styles.visitStepTitle}>Review referral</h3>
+                    <p style={styles.visitStepText}>Confirm the transfer summary before sending.</p>
+                  </div>
+
+                  <div style={styles.visitReviewGrid}>
+                    <div style={styles.visitReviewCard}>
+                      <span>Clinic</span>
+                      <strong>{referralReviewSnapshot.referringClinic || "Missing clinic"}</strong>
+                      <small>{referralReviewSnapshot.referringDoctor || "Doctor needed"}</small>
+                    </div>
+                    <div style={styles.visitReviewCard}>
+                      <span>Patient</span>
+                      <strong>{referralReviewSnapshot.petName || "Missing pet"}</strong>
+                      <small>
+                        {[referralReviewSnapshot.species, referralReviewSnapshot.age, referralReviewSnapshot.weight]
+                          .filter(Boolean)
+                          .join(" / ") || "Patient basics"}
+                      </small>
+                    </div>
+                    <div style={styles.visitReviewCard}>
+                      <span>Urgency</span>
+                      <strong>{referralReviewSnapshot.stabilityLevel || "Missing urgency"}</strong>
+                      <small>ETA: {referralReviewSnapshot.transferTime || "Not provided"}</small>
+                    </div>
+                    <div style={styles.visitReviewCard}>
+                      <span>Files</span>
+                      <strong>{referralDocumentNames.length}</strong>
+                      <small>{referralDocumentNames.length === 1 ? "file uploaded" : "files uploaded"}</small>
+                    </div>
+                  </div>
+                </section>
 
                 {referralSubmitError && <div style={styles.errorBox}>{referralSubmitError}</div>}
                 {referralMissingFields.length > 0 && (
@@ -2881,16 +3267,42 @@ export default function Home() {
                   <div style={styles.authMessage}>{referralSubmitMessage}</div>
                 )}
 
-                <button
-                  style={{
-                    ...styles.primaryButton,
-                    ...(submittingReferral ? styles.disabledButton : {}),
-                  }}
-                  type="submit"
-                  disabled={submittingReferral}
-                >
-                  {submittingReferral ? "Submitting Referral..." : "Submit Referral"}
-                </button>
+                <div style={styles.referralWizardNav}>
+                  {referralWizardStep > 1 && (
+                    <button
+                      style={styles.visitBackButton}
+                      type="button"
+                      onClick={backReferralWizard}
+                      disabled={submittingReferral}
+                    >
+                      Back
+                    </button>
+                  )}
+
+                  {referralWizardStep < 6 ? (
+                    <button
+                      style={{ ...styles.primaryButton, ...styles.visitForwardButton }}
+                      type="button"
+                      onClick={continueReferralWizard}
+                    >
+                      Continue
+                    </button>
+                  ) : (
+                    <button
+                      style={{
+                        ...styles.primaryButton,
+                        ...styles.visitForwardButton,
+                        ...(submittingReferral ? styles.disabledButton : {}),
+                      }}
+                      type="submit"
+                      disabled={submittingReferral}
+                    >
+                      {submittingReferral
+                        ? "Sending Referral..."
+                        : "Send Referral to Receiving Team"}
+                    </button>
+                  )}
+                </div>
               </form>
             </section>
           )}
@@ -5647,6 +6059,173 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderRadius: 8,
     padding: 14,
     background: "#ffffff",
+  },
+  referralWizardHero: {
+    display: "grid",
+    gap: 6,
+    marginBottom: 14,
+  },
+  referralCompactNotice: {
+    background: "#f0fbf8",
+    border: "1px solid #bfe9e0",
+    borderRadius: 8,
+    color: "#087f78",
+    fontSize: 13,
+    fontWeight: 900,
+    padding: "10px 12px",
+  },
+  referralLocationButton: {
+    background: "#f8fbff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    color: "#12485a",
+    cursor: "pointer",
+    fontSize: 14,
+    fontWeight: 900,
+    minHeight: 48,
+    padding: "0 14px",
+    justifySelf: "start",
+  },
+  referralLocationNote: {
+    background: "#f0fbf8",
+    border: "1px solid #bfe9e0",
+    borderRadius: 8,
+    color: "#087f78",
+    fontSize: 13,
+    fontWeight: 800,
+    padding: 10,
+  },
+  referralOwnerToggle: {
+    background: "#ffffff",
+    border: "1px solid #bfe9e0",
+    borderRadius: 8,
+    color: "#087f78",
+    cursor: "pointer",
+    fontSize: 14,
+    fontWeight: 900,
+    minHeight: 48,
+    padding: "0 14px",
+    textAlign: "left",
+  },
+  referralOwnerPanel: {
+    border: "1px solid #e1ecec",
+    borderRadius: 8,
+    gap: 10,
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 200px), 1fr))",
+    padding: 12,
+  },
+  referralUrgencyGrid: {
+    display: "grid",
+    gap: 8,
+    gridTemplateColumns: "repeat(auto-fit, minmax(92px, 1fr))",
+  },
+  referralChoiceButton: {
+    alignItems: "center",
+    background: "#f8fbff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    color: "#243447",
+    cursor: "pointer",
+    display: "flex",
+    fontSize: 13,
+    fontWeight: 900,
+    gap: 8,
+    justifyContent: "center",
+    minHeight: 46,
+    padding: "10px 9px",
+  },
+  referralChoiceDotGreen: {
+    background: "#22c55e",
+    borderRadius: 999,
+    display: "inline-block",
+    height: 9,
+    width: 9,
+  },
+  referralChoiceDotYellow: {
+    background: "#facc15",
+    borderRadius: 999,
+    display: "inline-block",
+    height: 9,
+    width: 9,
+  },
+  referralChoiceDotRed: {
+    background: "#ef4444",
+    borderRadius: 999,
+    display: "inline-block",
+    height: 9,
+    width: 9,
+  },
+  referralUploadGrid: {
+    display: "grid",
+    gap: 10,
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 150px), 1fr))",
+  },
+  referralUploadAction: {
+    background: "#f8fbff",
+    border: "1px dashed #9cc5f8",
+    borderRadius: 10,
+    color: "#102a3a",
+    cursor: "pointer",
+    display: "grid",
+    gap: 6,
+    minHeight: 132,
+    padding: 14,
+    placeItems: "center",
+    textAlign: "center",
+  },
+  referralUploadIcon: {
+    background: "#e7fbf7",
+    borderRadius: 999,
+    display: "grid",
+    fontSize: 24,
+    height: 46,
+    placeItems: "center",
+    width: 46,
+  },
+  referralPreviewGrid: {
+    display: "grid",
+    gap: 10,
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 110px), 1fr))",
+  },
+  referralPreviewCard: {
+    background: "#ffffff",
+    border: "1px solid #e1ecec",
+    borderRadius: 8,
+    color: "#52606d",
+    display: "grid",
+    fontSize: 12,
+    fontWeight: 800,
+    gap: 7,
+    minWidth: 0,
+    padding: 9,
+  },
+  referralPreviewImage: {
+    aspectRatio: "1 / 1",
+    borderRadius: 8,
+    objectFit: "cover",
+    width: "100%",
+  },
+  referralPreviewIcon: {
+    alignItems: "center",
+    aspectRatio: "1 / 1",
+    background: "#eef6ff",
+    borderRadius: 8,
+    color: "#2457a6",
+    display: "flex",
+    fontSize: 12,
+    fontWeight: 900,
+    justifyContent: "center",
+    width: "100%",
+  },
+  referralWizardNav: {
+    background: "rgba(246, 252, 250, 0.96)",
+    bottom: 0,
+    display: "flex",
+    gap: 10,
+    justifyContent: "space-between",
+    padding: "10px 0 2px",
+    position: "sticky",
+    zIndex: 5,
   },
   checkboxGrid: {
     gridColumn: "1 / -1",
