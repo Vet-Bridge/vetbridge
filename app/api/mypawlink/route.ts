@@ -455,6 +455,7 @@ const mapVisit = (visit: DbRecord) => {
     breed: stringValue(pet.breed) || stringValue(visit.breed),
     ownerFirstName: stringValue(owner.first_name) || stringValue(visit.owner_first_name),
     ownerLastName: stringValue(owner.last_name) || stringValue(visit.owner_last_name),
+    ownerEmail: stringValue(owner.email),
     phone: stringValue(owner.phone) || stringValue(visit.phone),
     reason: stringValue(visit.reason),
     visitType: stringValue(visit.visit_type),
