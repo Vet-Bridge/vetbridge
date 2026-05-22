@@ -1404,7 +1404,7 @@ export default function Home() {
     return false;
   };
 
-  const visitStepLabels = ["Pet + contact", "Emergency", "Extras", "Review"];
+  const visitStepLabels = ["Pet", "Emergency", "Extras", "Review"];
   const whenStartedOptions = [
     "Within 30 minutes",
     "1-3 hours ago",
@@ -2240,7 +2240,7 @@ export default function Home() {
                       }}
                     >
                       <span>{step}</span>
-                      <small>{label}</small>
+                      <small style={styles.visitProgressLabel}>{label}</small>
                     </button>
                   );
                 })}
@@ -5492,7 +5492,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   visitProgressTrack: {
     display: "grid",
     gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-    gap: 6,
+    gap: 4,
     marginBottom: 14,
   },
   visitProgressStep: {
@@ -5502,11 +5502,22 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: "#64717d",
     cursor: "pointer",
     display: "grid",
-    gap: 4,
-    minHeight: 58,
-    padding: "7px 4px",
+    gap: 3,
+    minHeight: 54,
+    minWidth: 0,
+    padding: "7px 2px",
     placeItems: "center",
     textAlign: "center",
+  },
+  visitProgressLabel: {
+    display: "block",
+    fontSize: 10,
+    fontWeight: 900,
+    lineHeight: 1.05,
+    maxWidth: "100%",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
   },
   visitProgressStepActive: {
     background: "#e7fbf7",
