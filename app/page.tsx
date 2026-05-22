@@ -86,6 +86,7 @@ type VisitDraft = {
 };
 
 type OwnerPortalTab = "home" | "updates" | "actions" | "pet" | "profile";
+type OwnerPortalMode = "owner" | "shared";
 
 const initialVisitDraft: VisitDraft = {
   petName: "",
@@ -668,6 +669,7 @@ export default function Home() {
   const [ownerVisitsLoading, setOwnerVisitsLoading] = useState(false);
   const [ownerVisitsError, setOwnerVisitsError] = useState("");
   const [ownerPortalTab, setOwnerPortalTab] = useState<OwnerPortalTab>("home");
+  const [ownerPortalMode, setOwnerPortalMode] = useState<OwnerPortalMode>("owner");
   const [visitAccessInput, setVisitAccessInput] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [careHubOpen, setCareHubOpen] = useState(false);
@@ -762,6 +764,10 @@ export default function Home() {
     { id: "pet", label: "My Pet" },
     { id: "profile", label: "Profile" },
   ];
+  const visibleOwnerPortalTabs =
+    ownerPortalMode === "shared"
+      ? ownerPortalTabs.filter((tab) => ["home", "updates", "pet"].includes(tab.id))
+      : ownerPortalTabs;
   const pendingOwnerForms = selectedVisit?.forms.filter((form) => form.form_status === "Sent") || [];
   const ownerActionCount =
     pendingOwnerForms.length +
@@ -809,6 +815,32 @@ export default function Home() {
     }
 
     return 0;
+  };
+  const getAccessDestinationLabel = () => {
+    const destination = ownerAccessEmail.trim();
+    const digits = destination.replace(/\D/g, "");
+
+    if (digits.length >= 10) {
+      const lastFour = digits.slice(-4);
+      return `+1 (***) ***-${lastFour}`;
+    }
+
+    return destination || "your email";
+  };
+  const getVisitRelativeTime = (visit: Visit) => {
+    const createdTime = new Date(visit.createdAt).getTime();
+    if (!Number.isFinite(createdTime)) return "Recently checked in";
+
+    const diffMinutes = Math.max(0, Math.round((Date.now() - createdTime) / 60000));
+
+    if (diffMinutes < 1) return "Checked in just now";
+    if (diffMinutes < 60) return `Checked in ${diffMinutes} minute${diffMinutes === 1 ? "" : "s"} ago`;
+
+    const diffHours = Math.round(diffMinutes / 60);
+    if (diffHours < 24) return `Checked in ${diffHours} hour${diffHours === 1 ? "" : "s"} ago`;
+
+    const diffDays = Math.round(diffHours / 24);
+    return `Checked in ${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
   };
   const isDischargedVisit = (visit: Visit) =>
     ["closed", "discharged"].includes(visit.status.toLowerCase());
@@ -1192,7 +1224,7 @@ export default function Home() {
     }
 
     setOwnerCodeSent(true);
-    setAuthMessage("Security code sent. Please check your email and enter the code here.");
+    setAuthMessage("Access code sent. Enter the 6-digit code to open your visits.");
   };
 
   const verifyOwnerAccessCode = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -1218,7 +1250,7 @@ export default function Home() {
       await loadOwnerVisits();
     }
 
-    setAuthMessage("Code verified. Your active visits are shown below.");
+    setAuthMessage("Code verified. Choose your pet below.");
     setAuthLoading(false);
   };
 
@@ -2863,224 +2895,278 @@ export default function Home() {
             </section>
           )}
           {view === "existingPet" && (
-  <section>
-    <h2 style={styles.title}>Track Your Pet&apos;s Visit</h2>
-    <p style={styles.text}>
-      Enter the secure access code or full visit link provided by the clinic.
-    </p>
+            <section style={styles.trackPage}>
+              <div style={styles.trackHeader}>
+                <h2 style={styles.trackTitle}>Check on Your Pet <span aria-hidden="true">&hearts;</span></h2>
+                <p style={styles.trackSubtitle}>
+                  Secure access to live updates from your veterinary team.
+                </p>
+              </div>
 
-    <div style={styles.authPanel}>
-      <strong>Secure owner access</strong>
-      <p style={styles.authHelpText}>
-        Enter your email to receive a one-time security code. After the code is verified, you can choose from visits connected to that email.
-      </p>
-      <form style={styles.authInlineForm} onSubmit={sendOwnerAccessCode}>
-        <input
-          style={styles.input}
-          type="email"
-          value={ownerAccessEmail}
-          onChange={(event) => {
-            setOwnerAccessEmail(event.target.value);
-            setOwnerCodeSent(false);
-            setOwnerAccessCode("");
-          }}
-          placeholder="Owner email"
-          required
-        />
-        <button
-          style={{
-            ...styles.secondaryButton,
-            ...(authLoading ? styles.disabledButton : {}),
-          }}
-          type="submit"
-          disabled={authLoading}
-        >
-          {authLoading ? "Sending Code..." : ownerCodeSent ? "Resend Code" : "Send Code"}
-        </button>
-      </form>
-      {ownerCodeSent && (
-        <form style={styles.authInlineForm} onSubmit={verifyOwnerAccessCode}>
-          <input
-            style={styles.input}
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            value={ownerAccessCode}
-            onChange={(event) =>
-              setOwnerAccessCode(event.target.value.replace(/\D/g, "").slice(0, 6))
-            }
-            placeholder="6-digit code"
-            required
-          />
-          <button
-            style={{
-              ...styles.primaryButton,
-              ...(authLoading ? styles.disabledButton : {}),
-            }}
-            type="submit"
-            disabled={authLoading || ownerAccessCode.length < 6}
-          >
-            {authLoading ? "Verifying..." : "Verify Code"}
-          </button>
-        </form>
-      )}
-      {authUserEmail && <p style={styles.authSignedInText}>Signed in as {authUserEmail}</p>}
-      {authMessage && <div style={styles.authMessage}>{authMessage}</div>}
-      {authUserEmail && (
-        <button
-          style={{
-            ...styles.secondaryButton,
-            ...(ownerVisitsLoading ? styles.disabledButton : {}),
-          }}
-          type="button"
-          onClick={loadOwnerVisits}
-          disabled={ownerVisitsLoading}
-        >
-          {ownerVisitsLoading ? "Loading Visits..." : "Refresh My Visits"}
-        </button>
-      )}
-    </div>
+              <div style={styles.ownerAccessCard}>
+                {!ownerCodeSent ? (
+                  <>
+                    <div>
+                      <h3 style={styles.trackCardTitle}>Owner Access</h3>
+                      <p style={styles.trackCardText}>
+                        Receive a one-time access code to view and manage your pet&apos;s visit.
+                      </p>
+                    </div>
 
-    {authUserEmail && (
-      <div style={styles.ownerVisitPanel}>
-        <div>
-          <h3 style={styles.ownerVisitTitle}>Your Active Visits</h3>
-          <p style={styles.authHelpText}>
-            These visits are connected to {authUserEmail}. Tap one to open live updates.
-          </p>
-        </div>
+                    <form style={styles.trackForm} onSubmit={sendOwnerAccessCode}>
+                      <label style={styles.trackFieldLabel}>
+                        Phone number or email
+                        <input
+                          style={styles.trackInput}
+                          type="text"
+                          value={ownerAccessEmail}
+                          onChange={(event) => {
+                            setOwnerAccessEmail(event.target.value);
+                            setOwnerCodeSent(false);
+                            setOwnerAccessCode("");
+                            setAuthMessage("");
+                          }}
+                          placeholder="Enter your phone number or email"
+                          required
+                        />
+                      </label>
+                      <button
+                        style={{
+                          ...styles.trackPrimaryButton,
+                          ...(authLoading ? styles.disabledButton : {}),
+                        }}
+                        type="submit"
+                        disabled={authLoading}
+                      >
+                        {authLoading ? "Sending..." : "Send Access Code"}
+                      </button>
+                    </form>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <h3 style={styles.trackCardTitle}>Verify Access</h3>
+                      <p style={styles.trackCardText}>
+                        We sent a 6-digit code to {getAccessDestinationLabel()}.
+                      </p>
+                    </div>
 
-        {ownerVisitsLoading && <div style={styles.authMessage}>Loading your visits...</div>}
-        {ownerVisitsError && <div style={styles.errorBox}>{ownerVisitsError}</div>}
-        {!ownerVisitsLoading && !ownerVisitsError && ownerVisits.length === 0 && (
-          <div style={styles.emptyBox}>
-            No active visits were found for this email yet. If the clinic already checked in your
-            pet, ask them to resend or copy your secure visit link.
-          </div>
-        )}
+                    <form style={styles.trackForm} onSubmit={verifyOwnerAccessCode}>
+                      <label style={styles.trackFieldLabel}>
+                        6-digit code
+                        <input
+                          style={styles.trackInput}
+                          inputMode="numeric"
+                          autoComplete="one-time-code"
+                          value={ownerAccessCode}
+                          onChange={(event) =>
+                            setOwnerAccessCode(event.target.value.replace(/\D/g, "").slice(0, 6))
+                          }
+                          placeholder="Enter code"
+                          required
+                        />
+                      </label>
+                      <button
+                        style={{
+                          ...styles.trackPrimaryButton,
+                          ...(authLoading || ownerAccessCode.length < 6
+                            ? styles.disabledButton
+                            : {}),
+                        }}
+                        type="submit"
+                        disabled={authLoading || ownerAccessCode.length < 6}
+                      >
+                        {authLoading ? "Verifying..." : "Verify & Open Visits"}
+                      </button>
+                    </form>
 
-        <div style={styles.ownerVisitList}>
-          {ownerVisits.map((visit) => (
-            <button
-              key={visit.id}
-              type="button"
-              style={styles.ownerVisitCard}
-              onClick={() => {
-                setVisits((current) =>
-                  current.some((currentVisit) => currentVisit.id === visit.id)
-                    ? current.map((currentVisit) =>
-                        currentVisit.id === visit.id ? visit : currentVisit
-                      )
-                    : [visit, ...current]
-                );
-                setSelectedVisitId(visit.id);
-                setVisitAccessInput(visit.accessUrl || visit.accessToken || "");
-                setOwnerPortalTab("home");
-                setView("status");
-              }}
-            >
-              <img src={getPetPhoto(visit)} alt={visit.petName} style={styles.ownerVisitImage} />
-              <span style={styles.ownerVisitContent}>
-                <strong>{visit.petName}</strong>
-                <span>{visit.status || "Visit in progress"}</span>
-                <small>{new Date(visit.createdAt).toLocaleString()}</small>
-              </span>
-              <span style={styles.ownerVisitArrow}>Open</span>
-            </button>
-          ))}
-        </div>
-      </div>
-    )}
+                    <button
+                      type="button"
+                      style={styles.trackTextButton}
+                      onClick={() => {
+                        setOwnerCodeSent(false);
+                        setOwnerAccessCode("");
+                        setAuthMessage("");
+                      }}
+                    >
+                      Use a different phone/email
+                    </button>
+                  </>
+                )}
 
-    <div style={styles.manualVisitLinkPanel}>
-      <strong>Already have a secure visit link?</strong>
-      <p style={styles.authHelpText}>
-        Use this box only for the private /visit link from a text message or the clinic dashboard.
-        Email security codes go in the 6-digit code box above.
-      </p>
-    </div>
+                <div style={styles.trackFeatureNote}>
+                  <strong>Full access includes:</strong>
+                  <span>Live updates</span>
+                  <span>Form signing</span>
+                  <span>Estimate approvals</span>
+                  <span>Discharge instructions</span>
+                </div>
 
-    <form
-      style={styles.form}
-      onSubmit={async (e) => {
-        e.preventDefault();
+                {authMessage && <div style={styles.authMessage}>{authMessage}</div>}
+              </div>
 
-        setSearchError("");
-        setLoading(true);
+              <div style={styles.sharedAccessCard}>
+                <div>
+                  <h3 style={styles.trackCardTitle}>Shared Family Access</h3>
+                  <p style={styles.trackCardText}>
+                    Have a secure view-only link from the pet owner or veterinary team?
+                  </p>
+                </div>
 
-        const token = getTokenFromInput(visitAccessInput);
+                <form
+                  style={styles.trackForm}
+                  onSubmit={async (e) => {
+                    e.preventDefault();
 
-        if (!token) {
-          setSearchError("Please enter your secure visit access code or link.");
-          setLoading(false);
-          return;
-        }
+                    setSearchError("");
+                    setLoading(true);
 
-        if (/^\d{6}$/.test(token)) {
-          setSearchError(
-            "That looks like your email security code. Enter it in the 6-digit code box above, then tap Verify Code."
-          );
-          setLoading(false);
-          return;
-        }
+                    const token = getTokenFromInput(visitAccessInput);
 
-        try {
-          const result = await apiRequest<{ visit: Visit }>({
-            action: "loadVisitByToken",
-            token,
-          });
-          setLoading(false);
+                    if (!token) {
+                      setSearchError("Please paste a secure visit link.");
+                      setLoading(false);
+                      return;
+                    }
 
-          setVisits((current) =>
-            current.some((currentVisit) => currentVisit.id === result.visit.id)
-              ? current.map((currentVisit) =>
-                  currentVisit.id === result.visit.id
-                    ? { ...currentVisit, ...result.visit }
-                    : currentVisit
-                )
-              : [result.visit, ...current]
-          );
-          setSelectedVisitId(result.visit.id);
-          setOwnerPortalTab("home");
-          setView("status");
-        } catch (error) {
-          setLoading(false);
-          setSearchError(
-            error instanceof Error
-              ? error.message
-              : "We could not open that visit link. Please check the code and try again."
-          );
-          console.error(error);
-        }
-      }}
-    >
-      <input
-        style={styles.input}
-        value={visitAccessInput}
-        onChange={(event) => setVisitAccessInput(event.target.value)}
-        placeholder="Secure visit link, for example /visit/abc123"
-      />
+                    if (/^\d{6}$/.test(token)) {
+                      setSearchError(
+                        "That looks like an owner access code. Enter it in the Owner Access card above."
+                      );
+                      setLoading(false);
+                      return;
+                    }
 
-      <button
-        style={{
-          ...styles.primaryButton,
-          ...(loading ? styles.disabledButton : {}),
-        }}
-        type="submit"
-        disabled={loading}
-      >
-        {loading ? "Opening..." : "Open Visit"}
-      </button>
-    </form>
+                    try {
+                      const result = await apiRequest<{ visit: Visit }>({
+                        action: "loadVisitByToken",
+                        token,
+                      });
+                      setLoading(false);
 
-    {loading && <p style={styles.text}>Opening secure visit...</p>}
+                      setVisits((current) =>
+                        current.some((currentVisit) => currentVisit.id === result.visit.id)
+                          ? current.map((currentVisit) =>
+                              currentVisit.id === result.visit.id
+                                ? { ...currentVisit, ...result.visit }
+                                : currentVisit
+                            )
+                          : [result.visit, ...current]
+                      );
+                      setSelectedVisitId(result.visit.id);
+                      setOwnerPortalTab("home");
+                      setOwnerPortalMode("shared");
+                      setView("status");
+                    } catch (error) {
+                      setLoading(false);
+                      setSearchError(
+                        error instanceof Error
+                          ? error.message
+                          : "We could not open that visit link. Please check it and try again."
+                      );
+                      console.error(error);
+                    }
+                  }}
+                >
+                  <label style={styles.trackFieldLabel}>
+                    Secure visit link
+                    <input
+                      style={styles.trackInput}
+                      value={visitAccessInput}
+                      onChange={(event) => setVisitAccessInput(event.target.value)}
+                      placeholder="Paste shared visit link"
+                    />
+                  </label>
 
-    {searchError && (
-      <div style={styles.errorBox}>
-        {searchError}
-      </div>
-    )}
-  </section>
-)}
+                  <button
+                    style={{
+                      ...styles.trackSecondaryButton,
+                      ...(loading ? styles.disabledButton : {}),
+                    }}
+                    type="submit"
+                    disabled={loading}
+                  >
+                    {loading ? "Opening..." : "Open Shared View"}
+                  </button>
+                </form>
+
+                <p style={styles.trackSmallNote}>View-only access. No approvals or form signing.</p>
+              </div>
+
+              {loading && <p style={styles.text}>Opening secure visit...</p>}
+              {searchError && <div style={styles.errorBox}>{searchError}</div>}
+
+              {authUserEmail && (
+                <div style={styles.ownerVisitPanel}>
+                  <div>
+                    <h3 style={styles.ownerVisitTitle}>Your Pets</h3>
+                    <p style={styles.authHelpText}>Choose a pet to open live updates.</p>
+                  </div>
+
+                  {ownerVisitsLoading && <div style={styles.authMessage}>Loading your pets...</div>}
+                  {ownerVisitsError && <div style={styles.errorBox}>{ownerVisitsError}</div>}
+                  {!ownerVisitsLoading && !ownerVisitsError && ownerVisits.length === 0 && (
+                    <div style={styles.trackEmptyState}>
+                      <strong>No Active Visits Found</strong>
+                      <span>
+                        If your pet was recently checked in, it may take a few minutes to appear here.
+                      </span>
+                      <span>
+                        If someone shared a direct visit link with you, use Shared Family Access above.
+                      </span>
+                      <button
+                        type="button"
+                        style={styles.trackSecondaryButton}
+                        onClick={loadOwnerVisits}
+                        disabled={ownerVisitsLoading}
+                      >
+                        Try Again
+                      </button>
+                    </div>
+                  )}
+
+                  <div style={styles.ownerVisitList}>
+                    {ownerVisits.map((visit) => (
+                      <button
+                        key={visit.id}
+                        type="button"
+                        style={styles.ownerVisitCard}
+                        onClick={() => {
+                          setVisits((current) =>
+                            current.some((currentVisit) => currentVisit.id === visit.id)
+                              ? current.map((currentVisit) =>
+                                  currentVisit.id === visit.id ? visit : currentVisit
+                                )
+                              : [visit, ...current]
+                          );
+                          setSelectedVisitId(visit.id);
+                          setVisitAccessInput(visit.accessUrl || visit.accessToken || "");
+                          setOwnerPortalTab("home");
+                          setOwnerPortalMode("owner");
+                          setView("status");
+                        }}
+                      >
+                        <img src={getPetPhoto(visit)} alt={visit.petName} style={styles.ownerVisitImage} />
+                        <span style={styles.ownerVisitContent}>
+                          <strong>{visit.petName} <span aria-hidden="true">&#128062;</span></strong>
+                          <span>
+                            {isDischargedVisit(visit)
+                              ? "Discharged"
+                              : `${visit.visitType || "Emergency visit"} in progress`}
+                          </span>
+                          <span>{clinicSettings.name || "MyPawLink Emergency Hospital"}</span>
+                          <small>{getVisitRelativeTime(visit)}</small>
+                        </span>
+                        <span style={styles.ownerVisitArrow}>
+                          {isDischargedVisit(visit) ? "View Discharge" : "Open Updates"}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
     {view === "clinic" && (
             <section>
               {!clinicUnlocked ? (
@@ -4302,6 +4388,7 @@ export default function Home() {
                       onClick={() => {
                         setSelectedVisitId(visit.id);
                         setOwnerPortalTab("home");
+                        setOwnerPortalMode("owner");
                         setView("status");
                       }}
                     >
@@ -4321,7 +4408,8 @@ export default function Home() {
                 <button style={styles.customerHomeButton} onClick={() => setView("home")}>
                   Exit
                 </button>
-                {ownerActionCount > 0 && (
+                {ownerPortalMode === "shared" && <span style={styles.viewOnlyBadge}>VIEW ONLY</span>}
+                {ownerPortalMode === "owner" && ownerActionCount > 0 && (
                   <button
                     type="button"
                     style={styles.ownerActionAlert}
@@ -4340,7 +4428,11 @@ export default function Home() {
                       <h2 style={styles.ownerHeroTitle}>
                         {selectedVisit.petName} is now checked in <span aria-hidden="true">&hearts;</span>
                       </h2>
-                      <p style={styles.ownerHeroText}>{getOwnerReviewMessage(selectedVisit)}</p>
+                      <p style={styles.ownerHeroText}>
+                        {ownerPortalMode === "shared"
+                          ? `You are viewing shared updates for ${selectedVisit.petName}.`
+                          : getOwnerReviewMessage(selectedVisit)}
+                      </p>
                     </div>
                     <img src={getPetPhoto(selectedVisit)} alt={selectedVisit.petName} style={styles.ownerHeroPetImage} />
                   </div>
@@ -4865,7 +4957,7 @@ export default function Home() {
               )}
 
               <div style={styles.bottomNav}>
-                {ownerPortalTabs.map((tab) => (
+                {visibleOwnerPortalTabs.map((tab) => (
                   <button
                     key={tab.id}
                     type="button"
@@ -4876,7 +4968,7 @@ export default function Home() {
                     onClick={() => setOwnerPortalTab(tab.id)}
                   >
                     {tab.label}
-                    {tab.id === "actions" && ownerActionCount > 0 && (
+                    {ownerPortalMode === "owner" && tab.id === "actions" && ownerActionCount > 0 && (
                       <span style={styles.bottomNavBadge}>{ownerActionCount}</span>
                     )}
                   </button>
@@ -6043,11 +6135,140 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: 800,
     margin: 0,
   },
+  trackPage: {
+    display: "grid",
+    gap: 16,
+  },
+  trackHeader: {
+    display: "grid",
+    gap: 6,
+    textAlign: "center",
+  },
+  trackTitle: {
+    color: "#102a3a",
+    fontSize: "clamp(28px, 7vw, 34px)",
+    lineHeight: 1.08,
+    margin: 0,
+  },
+  trackSubtitle: {
+    color: "#52606d",
+    fontSize: 15,
+    lineHeight: 1.4,
+    margin: 0,
+  },
+  ownerAccessCard: {
+    background: "linear-gradient(135deg, #f0fffb, #ffffff)",
+    border: "1px solid #bfe9e0",
+    borderRadius: 18,
+    boxShadow: "0 16px 36px rgba(15, 143, 134, 0.13)",
+    display: "grid",
+    gap: 14,
+    padding: 18,
+  },
+  sharedAccessCard: {
+    background: "#f8fbff",
+    border: "1px solid #dcefeb",
+    borderRadius: 16,
+    boxShadow: "0 8px 20px rgba(41, 64, 83, 0.05)",
+    display: "grid",
+    gap: 12,
+    padding: 16,
+  },
+  trackCardTitle: {
+    color: "#102a3a",
+    fontSize: 20,
+    fontWeight: 900,
+    margin: "0 0 5px",
+  },
+  trackCardText: {
+    color: "#52606d",
+    fontSize: 14,
+    lineHeight: 1.4,
+    margin: 0,
+  },
+  trackForm: {
+    display: "grid",
+    gap: 10,
+  },
+  trackFieldLabel: {
+    color: "#102a3a",
+    display: "grid",
+    fontSize: 13,
+    fontWeight: 900,
+    gap: 7,
+  },
+  trackInput: {
+    background: "#ffffff",
+    border: "1px solid #cfe0df",
+    borderRadius: 14,
+    color: "#102a3a",
+    fontSize: 16,
+    minHeight: 56,
+    outline: "none",
+    padding: "0 15px",
+  },
+  trackPrimaryButton: {
+    background: "linear-gradient(135deg, #13a89e, #0f766e)",
+    border: "none",
+    borderRadius: 14,
+    color: "#ffffff",
+    cursor: "pointer",
+    fontSize: 16,
+    fontWeight: 900,
+    minHeight: 56,
+    padding: "0 16px",
+  },
+  trackSecondaryButton: {
+    background: "#ffffff",
+    border: "1px solid #b9d6da",
+    borderRadius: 14,
+    color: "#12485a",
+    cursor: "pointer",
+    fontSize: 15,
+    fontWeight: 900,
+    minHeight: 56,
+    padding: "0 16px",
+  },
+  trackTextButton: {
+    background: "transparent",
+    border: "none",
+    color: "#087f78",
+    cursor: "pointer",
+    fontSize: 13,
+    fontWeight: 900,
+    justifySelf: "start",
+    padding: 0,
+  },
+  trackFeatureNote: {
+    background: "rgba(255, 255, 255, 0.72)",
+    border: "1px solid #dcefeb",
+    borderRadius: 14,
+    color: "#52606d",
+    display: "grid",
+    fontSize: 13,
+    gap: 5,
+    padding: 12,
+  },
+  trackSmallNote: {
+    color: "#64717d",
+    fontSize: 12,
+    fontWeight: 800,
+    margin: 0,
+  },
+  trackEmptyState: {
+    background: "#f8fbff",
+    border: "1px dashed #a7c9f7",
+    borderRadius: 16,
+    color: "#52606d",
+    display: "grid",
+    gap: 9,
+    padding: 16,
+  },
   ownerVisitPanel: {
     background: "#ffffff",
     border: "1px solid #dcefeb",
-    borderRadius: 8,
-    padding: 14,
+    borderRadius: 16,
+    padding: 16,
     marginBottom: 18,
     display: "grid",
     gap: 12,
@@ -6055,7 +6276,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   ownerVisitTitle: {
     color: "#082f3f",
-    fontSize: 18,
+    fontSize: 20,
     margin: "0 0 4px",
   },
   ownerVisitList: {
@@ -6065,9 +6286,9 @@ const styles: { [key: string]: React.CSSProperties } = {
   ownerVisitCard: {
     width: "100%",
     border: "1px solid #dcefeb",
-    borderRadius: 8,
-    background: "#f8fbff",
-    padding: 10,
+    borderRadius: 16,
+    background: "#ffffff",
+    padding: 12,
     display: "grid",
     gridTemplateColumns: "52px minmax(0, 1fr) auto",
     gap: 12,
@@ -6090,8 +6311,9 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   ownerVisitArrow: {
     color: "#087f78",
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: 900,
+    textAlign: "right",
   },
   manualVisitLinkPanel: {
     background: "#f8fbff",
@@ -6609,6 +6831,16 @@ ownerActionAlert: {
   fontSize: 12,
   fontWeight: 900,
   padding: "8px 10px",
+},
+
+viewOnlyBadge: {
+  background: "#f8fbff",
+  border: "1px solid #b9d6da",
+  borderRadius: 999,
+  color: "#12485a",
+  fontSize: 11,
+  fontWeight: 900,
+  padding: "7px 10px",
 },
 
 ownerTabPanel: {
