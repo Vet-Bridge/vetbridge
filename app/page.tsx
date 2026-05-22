@@ -1894,93 +1894,69 @@ export default function Home() {
   return (
     <main style={styles.page}>
       {view === "home" && (
-      <section style={styles.hero}>
-        <div style={styles.heroLeft}>
+        <section style={styles.hero}>
           <div style={styles.brandRow}>
             <div style={styles.logoCrop}>
               <img src="/mypawlink-logo.png" alt="MyPawLink" style={styles.logoImage} />
             </div>
           </div>
 
-          <h2 style={styles.heroTitle}>
-            A calmer way to stay connected <span style={styles.accentText}>when it matters most.</span>
-          </h2>
+          <h1 style={styles.heroTitle}>Stay connected to your pet&apos;s care in real time.</h1>
 
           <p style={styles.heroSubtitle}>
-            Real-time updates from your emergency vet team so you&apos;re never left wondering.
+            Receive updates, approve treatment, and communicate with your veterinary team from your phone.
           </p>
-        </div>
-
-        <div style={styles.heroRight}>
-          <div style={styles.petHeroStage}>
-            <div style={{ ...styles.floatBubble, left: 8, top: 56 }}>
-              <MiniIcon type="chat" />
-            </div>
-            <div style={{ ...styles.floatBubble, right: 20, top: 4 }}>
-              <MiniIcon type="plus" />
-            </div>
-            <div style={{ ...styles.floatBubble, right: 0, bottom: 96 }}>
-              <MiniIcon type="heart" />
-            </div>
-            <img src="/vet-hero.jpeg" alt="Dog with veterinarian" style={styles.heroImage} />
-          </div>
-
-          <div style={styles.featurePanel}>
-            <InfoCard icon={<MiniIcon type="chat" />} title="Real-time updates" text="Know what&apos;s happening every step of the way." />
-            <InfoCard icon={<MiniIcon type="check" />} title="Better communication" text="Stay informed without the stress of calling." />
-            <InfoCard icon={<MiniIcon type="heart" />} title="Stronger trust" text="Keep owners and clinics connected during care." />
-            <div style={styles.secureLine}>
-              <MiniIcon type="lock" />
-              <span>Your pet&apos;s data is secure and private.</span>
-            </div>
-          </div>
-
-          <div style={styles.startHeader}>
-            <h2 style={styles.startHeaderTitle}>Let&apos;s get started</h2>
-            <p style={styles.startHeaderText}>Choose an option below to connect with your pet&apos;s care team.</p>
-          </div>
 
           <div style={styles.buttonRow}>
-  <button style={styles.primaryCardButton} onClick={() => setView("newPet")}>
-    <span style={styles.bigIcon}><MiniIcon type="paw" /></span>
-      <div style={styles.buttonText}>
-      <div style={styles.buttonTitle}>Start<br />New Visit</div>
-      <div style={styles.buttonSubtitle}>
-        Check your pet in before arrival or when you get to the hospital.
-      </div>
-    </div>
-    <span style={styles.cardCta}>Start New Visit -&gt;</span>
-  </button>
+            <button style={styles.primaryCardButton} onClick={() => setView("newPet")}>
+              <span style={styles.bigIcon}><MiniIcon type="paw" /></span>
+              <div style={styles.buttonText}>
+                <div style={styles.buttonTitle}>Start Visit</div>
+                <div style={styles.buttonSubtitle}>
+                  Check your pet in before arrival or when you get to the hospital.
+                </div>
+              </div>
+              <span style={styles.cardCta}>Start Visit</span>
+            </button>
 
             <button style={styles.darkCardButton} onClick={() => setView("existingPet")}>
-    <span style={styles.bigIcon}><MiniIcon type="search" /></span>
-    <div style={styles.buttonText}>
-      <div style={styles.buttonTitle}>Track Your<br />Pet&apos;s Visit</div>
-      <div style={styles.buttonSubtitle}>
-        Already checked in? Use your secure visit link or access code to view live updates.
-      </div>
-    </div>
-    <span style={styles.cardCtaBlue}>Track Visit -&gt;</span>
-  </button>
+              <span style={styles.bigIcon}><MiniIcon type="search" /></span>
+              <div style={styles.buttonText}>
+                <div style={styles.buttonTitle}>Track My Pet</div>
+                <div style={styles.buttonSubtitle}>
+                  Use your secure visit link or access code to view live updates.
+                </div>
+              </div>
+              <span style={styles.cardCtaBlue}>Track My Pet</span>
+            </button>
+          </div>
 
-            <button style={styles.referralCardButton} onClick={() => setView("referral")}>
-    <span style={styles.bigIcon}><MiniIcon type="referral" /></span>
-    <div style={styles.buttonText}>
-      <div style={styles.buttonTitle}>Referral<br />Intake</div>
-      <div style={styles.buttonSubtitle}>
-        Regular vets can send transfer notes, labs, imaging, medications, and doctor contact info.
-      </div>
-    </div>
-    <span style={styles.cardCtaReferral}>Start Referral -&gt;</span>
-  </button>
-</div> <button
-  style={styles.staffLinkButton}
-  onClick={() => setView("clinic")}
->
-  Clinic staff dashboard
-</button>
-        </div>
-      </section>
+          <div style={styles.secureLine}>
+            <MiniIcon type="lock" />
+            <span>Secure communication between pet owners and care teams.</span>
+          </div>
+
+          <div style={styles.statusPreviewCard}>
+            <div style={styles.statusPreviewTop}>
+              <span style={styles.statusPreviewBadge}>Live update</span>
+              <span style={styles.statusPreviewTime}>10:42 AM</span>
+            </div>
+            <strong>Bella has been checked in.</strong>
+            <p style={styles.statusPreviewText}>
+              Dr. Smith is reviewing the case. Estimate pending approval.
+            </p>
+          </div>
+
+          <div style={styles.teamLinkRow}>
+            <span>For veterinary teams</span>
+            <button style={styles.teamTextButton} onClick={() => setView("referral")}>
+              Vet Referral
+            </button>
+            <button style={styles.teamTextButton} onClick={() => setView("clinic")}>
+              Staff Login
+            </button>
+          </div>
+        </section>
       )}
 
       <section style={styles.mainGrid}>
@@ -1988,38 +1964,34 @@ export default function Home() {
           {view === "home" && (
             <section style={styles.homeProductSections}>
               <div style={styles.homeInfoSection}>
-                <h2 style={styles.homeSectionTitle}>Built for Emergency Veterinary Hospitals</h2>
-                <div style={styles.homeBenefitGrid}>
+                <h2 style={styles.homeSectionTitle}>How MyPawLink Works</h2>
+                <div style={styles.homeStepList}>
                   {[
-                    "Reduce owner phone calls",
-                    "Speed up digital intake",
-                    "Collect signed consents",
-                    "Send real-time updates",
-                    "Improve client trust",
-                    "Streamline discharge communication",
-                  ].map((benefit) => (
-                    <div key={benefit} style={styles.homeBenefitCard}>
-                      <span style={styles.homeBenefitCheck}>OK</span>
-                      <strong>{benefit}</strong>
+                    "Check in",
+                    "Receive live updates",
+                    "Approve care",
+                    "Pick up your pet",
+                  ].map((step, index) => (
+                    <div key={step} style={styles.homeStepCard}>
+                      <span style={styles.homeStepNumber}>{index + 1}</span>
+                      <strong>{step}</strong>
                     </div>
                   ))}
                 </div>
               </div>
 
               <div style={styles.homeInfoSection}>
-                <h2 style={styles.homeSectionTitle}>How MyPawLink Works</h2>
-                <div style={styles.homeStepList}>
+                <h2 style={styles.homeSectionTitle}>Built for Emergency Veterinary Hospitals</h2>
+                <div style={styles.homeBenefitGrid}>
                   {[
-                    "Start New Visit",
-                    "Clinic accepts and triages",
-                    "Receive live updates",
-                    "Review and sign forms",
-                    "Approve treatment estimates",
-                    "Receive discharge instructions",
-                  ].map((step, index) => (
-                    <div key={step} style={styles.homeStepCard}>
-                      <span style={styles.homeStepNumber}>{index + 1}</span>
-                      <strong>{step}</strong>
+                    "Fewer status-check phone calls",
+                    "Faster digital intake",
+                    "Signed consents and approvals",
+                    "Clear discharge communication",
+                  ].map((benefit) => (
+                    <div key={benefit} style={styles.homeBenefitCard}>
+                      <span style={styles.homeBenefitCheck}>OK</span>
+                      <strong>{benefit}</strong>
                     </div>
                   ))}
                 </div>
@@ -4530,18 +4502,6 @@ function MiniIcon({ type }: { type: "chat" | "check" | "heart" | "lock" | "paw" 
   );
 }
 
-function InfoCard({ icon, title, text }: { icon: React.ReactNode; title: string; text: string }) {
-  return (
-    <div style={styles.infoCard}>
-      <div style={styles.infoIcon}>{icon}</div>
-      <div>
-        <h3 style={styles.featureTitle}>{title}</h3>
-        <p style={styles.smallText}>{text}</p>
-      </div>
-    </div>
-  );
-}
-
 function actionStyle(background: string, color: string): React.CSSProperties {
   return {
     background,
@@ -4559,22 +4519,21 @@ function actionStyle(background: string, color: string): React.CSSProperties {
 const styles: { [key: string]: React.CSSProperties } = {
   page: {
     minHeight: "100vh",
-    background: "linear-gradient(135deg, #fff8f1 0%, #eef9f7 48%, #f6fbff 100%)",
+    background: "linear-gradient(180deg, #f7fcfc 0%, #eef8f6 100%)",
     fontFamily: "Arial, sans-serif",
     color: "#243447",
-    padding: "6px 14px 14px",
+    padding: "8px 12px 18px",
   },
   hero: {
-    maxWidth: 1180,
-    margin: "0 auto 18px",
+    maxWidth: 480,
+    margin: "0 auto 12px",
     background: "rgba(255, 255, 255, 0.92)",
-    border: "1px solid rgba(255, 255, 255, 0.75)",
+    border: "1px solid #e1ecec",
     borderRadius: 8,
-    padding: "8px clamp(18px, 4vw, 34px) clamp(18px, 4vw, 34px)",
+    padding: "8px 18px 18px",
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))",
-    gap: 22,
-    boxShadow: "0 18px 45px rgba(41, 64, 83, 0.12)",
+    gap: 12,
+    boxShadow: "0 14px 34px rgba(41, 64, 83, 0.08)",
   },
   heroLeft: {},
   heroRight: {
@@ -4585,12 +4544,11 @@ const styles: { [key: string]: React.CSSProperties } = {
   brandRow: {
     display: "flex",
     alignItems: "center",
-    gap: 14,
     justifyContent: "center",
   },
   logoCrop: {
-    width: "min(100%, 340px)",
-    height: 112,
+    width: "min(100%, 250px)",
+    height: 70,
     overflow: "hidden",
     borderRadius: 8,
   },
@@ -4598,7 +4556,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: "100%",
     height: "auto",
     display: "block",
-    transform: "translateY(-48px)",
+    transform: "translateY(-36px)",
   },
   logoMark: {
     width: 58,
@@ -4625,11 +4583,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: 700,
   },
   heroTitle: {
-    fontSize: "clamp(28px, 7vw, 38px)",
-    lineHeight: 1.12,
-    marginTop: 0,
-    marginBottom: 12,
-    color: "#243447",
+    fontSize: "clamp(29px, 8vw, 38px)",
+    lineHeight: 1.08,
+    margin: "2px 0 0",
+    color: "#102a3a",
     textAlign: "center",
   },
   accentText: {
@@ -4638,12 +4595,46 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   heroSubtitle: {
     color: "#526070",
-    fontSize: 18,
-    maxWidth: 500,
-    lineHeight: 1.55,
+    fontSize: 16,
+    lineHeight: 1.45,
     textAlign: "center",
-    marginLeft: "auto",
-    marginRight: "auto",
+    margin: 0,
+  },
+  statusPreviewCard: {
+    background: "#f8fbff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    boxShadow: "0 8px 20px rgba(41, 64, 83, 0.05)",
+    color: "#102a3a",
+    display: "grid",
+    gap: 6,
+    padding: 12,
+  },
+  statusPreviewTop: {
+    alignItems: "center",
+    display: "flex",
+    justifyContent: "space-between",
+  },
+  statusPreviewBadge: {
+    background: "#dcfce7",
+    border: "1px solid #bbf7d0",
+    borderRadius: 8,
+    color: "#047857",
+    fontSize: 11,
+    fontWeight: 900,
+    padding: "5px 8px",
+    textTransform: "uppercase",
+  },
+  statusPreviewTime: {
+    color: "#64717d",
+    fontSize: 12,
+    fontWeight: 800,
+  },
+  statusPreviewText: {
+    color: "#526070",
+    fontSize: 13,
+    lineHeight: 1.35,
+    margin: 0,
   },
   mobileCue: {
     background: "#fff8f1",
@@ -4736,12 +4727,15 @@ const styles: { [key: string]: React.CSSProperties } = {
     boxShadow: "0 14px 34px rgba(41, 64, 83, 0.1)",
   },
   secureLine: {
-    borderTop: "1px solid #eef3f4",
-    paddingTop: 14,
+    background: "#f0fbf8",
+    border: "1px solid #bfe9e0",
+    borderRadius: 8,
     color: "#087f78",
     display: "flex",
     alignItems: "center",
     gap: 10,
+    padding: "10px 12px",
+    fontSize: 13,
     fontWeight: 700,
   },
   startHeader: {
@@ -4764,11 +4758,11 @@ const styles: { [key: string]: React.CSSProperties } = {
     background: "linear-gradient(135deg, #0f9f94, #087f78)",
     color: "#ffffff",
     borderRadius: 8,
-    padding: "9px 14px",
-    marginTop: 12,
+    padding: "10px 14px",
+    marginTop: 10,
     textAlign: "center",
-    fontWeight: 800,
-    fontSize: 12,
+    fontWeight: 900,
+    fontSize: 13,
     lineHeight: 1.2,
     width: "100%",
     gridColumn: "1 / -1",
@@ -4776,14 +4770,14 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   cardCtaBlue: {
     display: "block",
-    background: "linear-gradient(135deg, #1677f2, #0b62d8)",
+    background: "linear-gradient(135deg, #12485a, #0b2f3d)",
     color: "#ffffff",
     borderRadius: 8,
-    padding: "9px 14px",
-    marginTop: 12,
+    padding: "10px 14px",
+    marginTop: 10,
     textAlign: "center",
-    fontWeight: 800,
-    fontSize: 12,
+    fontWeight: 900,
+    fontSize: 13,
     lineHeight: 1.2,
     width: "100%",
     gridColumn: "1 / -1",
@@ -4807,39 +4801,37 @@ const styles: { [key: string]: React.CSSProperties } = {
   buttonRow: {
     display: "grid",
     gridTemplateColumns: "1fr",
-    gap: 16,
+    gap: 10,
   },
   primaryCardButton: {
     background: "linear-gradient(135deg, #f0fffb, #e7fbf7)",
     color: "#087f78",
     border: "1px solid #bfe9e0",
-    padding: 22,
+    padding: 14,
     borderRadius: 8,
     cursor: "pointer",
     display: "grid",
-    gridTemplateColumns: "62px 1fr",
+    gridTemplateColumns: "44px 1fr",
     alignItems: "flex-start",
-    gap: 16,
+    gap: 12,
     textAlign: "left",
-    fontSize: 18,
-    minHeight: 188,
+    minHeight: 108,
     width: "100%",
     boxSizing: "border-box",
   },
   darkCardButton: {
-    background: "linear-gradient(135deg, #f8fbff, #edf5ff)",
-    color: "#0b62d8",
-    border: "1px solid #bdd7ff",
-    padding: 22,
+    background: "linear-gradient(135deg, #ffffff, #f5fbfb)",
+    color: "#12485a",
+    border: "1px solid #c8dddf",
+    padding: 14,
     borderRadius: 8,
     cursor: "pointer",
     display: "grid",
-    gridTemplateColumns: "62px 1fr",
+    gridTemplateColumns: "44px 1fr",
     alignItems: "flex-start",
-    gap: 16,
+    gap: 12,
     textAlign: "left",
-    fontSize: 18,
-    minHeight: 188,
+    minHeight: 108,
     width: "100%",
     boxSizing: "border-box",
   },
@@ -4872,8 +4864,8 @@ const styles: { [key: string]: React.CSSProperties } = {
   fontWeight: 700,
 },
   bigIcon: {
-    width: 62,
-    height: 62,
+    width: 44,
+    height: 44,
     borderRadius: "50%",
     background: "rgba(255, 255, 255, 0.72)",
     display: "grid",
@@ -4888,25 +4880,44 @@ const styles: { [key: string]: React.CSSProperties } = {
     minWidth: 0,
   },
   buttonTitle: {
-    fontSize: 15,
+    fontSize: 17,
     fontWeight: 900,
     lineHeight: 1.2,
   },
   buttonSubtitle: {
-    fontSize: 15,
+    fontSize: 13,
     opacity: 0.92,
-    lineHeight: 1.4,
+    lineHeight: 1.35,
+  },
+  teamLinkRow: {
+    alignItems: "center",
+    color: "#64717d",
+    display: "flex",
+    flexWrap: "wrap",
+    fontSize: 12,
+    gap: 6,
+    justifyContent: "center",
+  },
+  teamTextButton: {
+    background: "transparent",
+    border: "none",
+    color: "#087f78",
+    cursor: "pointer",
+    fontSize: 12,
+    fontWeight: 900,
+    padding: "4px 6px",
+    textDecoration: "underline",
   },
   mainGrid: {
-    maxWidth: 1180,
+    maxWidth: 760,
     margin: "0 auto",
   },
   panel: {
     background: "rgba(255, 255, 255, 0.94)",
-    border: "1px solid rgba(255, 255, 255, 0.75)",
+    border: "1px solid #e1ecec",
     borderRadius: 8,
-    padding: "clamp(16px, 4vw, 28px)",
-    boxShadow: "0 15px 40px rgba(41, 64, 83, 0.1)",
+    padding: "clamp(14px, 4vw, 24px)",
+    boxShadow: "0 10px 28px rgba(41, 64, 83, 0.07)",
   },
   homeProductSections: {
     display: "grid",
