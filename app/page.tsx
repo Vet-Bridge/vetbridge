@@ -56,6 +56,64 @@ type Visit = {
   accessUrl: string;
 };
 
+type VisitDraft = {
+  petName: string;
+  species: string;
+  otherSpecies: string;
+  breed: string;
+  petAge: string;
+  sex: string;
+  spayedNeutered: string;
+  weight: string;
+  emergencyReason: string;
+  symptoms: string;
+  whenStartedDays: string;
+  isConscious: string;
+  breathingNormally: string;
+  bleeding: string;
+  canWalk: string;
+  currentMedications: string;
+  allergies: string;
+  allergyDetails: string;
+  ownerFirstName: string;
+  ownerLastName: string;
+  phone: string;
+  email: string;
+  visitType: string;
+  referralName: string;
+  reason: string;
+  beenHereBefore: string;
+};
+
+const initialVisitDraft: VisitDraft = {
+  petName: "",
+  species: "",
+  otherSpecies: "",
+  breed: "",
+  petAge: "",
+  sex: "",
+  spayedNeutered: "",
+  weight: "",
+  emergencyReason: "",
+  symptoms: "",
+  whenStartedDays: "",
+  isConscious: "",
+  breathingNormally: "",
+  bleeding: "",
+  canWalk: "",
+  currentMedications: "",
+  allergies: "",
+  allergyDetails: "",
+  ownerFirstName: "",
+  ownerLastName: "",
+  phone: "",
+  email: "",
+  visitType: "Walk-in",
+  referralName: "",
+  reason: "",
+  beenHereBefore: "",
+};
+
 type ReferralDocument = {
   id: string;
   fileName: string;
@@ -552,7 +610,6 @@ export default function Home() {
   "home" | "newPet" | "existingPet" | "referral" | "ownerUpdates" | "clinic" | "status"
 >("home");
   const [selectedVisitId, setSelectedVisitId] = useState<string | null>(null);
-  const [selectedSpecies, setSelectedSpecies] = useState("");
   const [selectedReferralSpecies, setSelectedReferralSpecies] = useState("");
   const [searchError, setSearchError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -561,15 +618,15 @@ export default function Home() {
   const [visitSubmitError, setVisitSubmitError] = useState("");
   const [visitSubmitMessage, setVisitSubmitMessage] = useState("");
   const [visitMissingFields, setVisitMissingFields] = useState<string[]>([]);
+  const [visitWizardStep, setVisitWizardStep] = useState(1);
+  const [visitDraft, setVisitDraft] = useState<VisitDraft>({ ...initialVisitDraft });
   const [referralSubmitError, setReferralSubmitError] = useState("");
   const [referralSubmitMessage, setReferralSubmitMessage] = useState("");
   const [referralMissingFields, setReferralMissingFields] = useState<string[]>([]);
   const [clinicLoading, setClinicLoading] = useState(false);
   const [pendingClinicActions, setPendingClinicActions] = useState<Record<string, string>>({});
-  const [selectedVisitType, setSelectedVisitType] = useState("");
   const [petPhotoPreview, setPetPhotoPreview] = useState("");
   const [petPhotoByVisitId, setPetPhotoByVisitId] = useState<Record<string, string>>({});
-  const [selectedAllergies, setSelectedAllergies] = useState("");
   const [petMediaName, setPetMediaName] = useState("");
   const [petMediaType, setPetMediaType] = useState("");
   const [referralDocumentNames, setReferralDocumentNames] = useState<string[]>([]);
@@ -657,18 +714,6 @@ export default function Home() {
     "Bleeding or open wound",
     "Pain or unable to get comfortable",
     "Not eating or very lethargic",
-  ];
-  const commonSymptoms = [
-    "Vomiting",
-    "Diarrhea",
-    "Labored breathing",
-    "Coughing",
-    "Limping or unable to walk",
-    "Seizure activity",
-    "Pale gums",
-    "Swollen abdomen",
-    "Excessive drooling",
-    "Lethargy or weakness",
   ];
   const referralTypes = [
     "Emergency transfer",
@@ -1359,10 +1404,169 @@ export default function Home() {
     return false;
   };
 
+  const visitStepLabels = ["Pet + contact", "Emergency", "Extras", "Review"];
+  const whenStartedOptions = [
+    "Within 30 minutes",
+    "1-3 hours ago",
+    "Today",
+    "Yesterday",
+    "More than 1 day",
+  ];
+  const quickAnswerOptions = ["Yes", "No", "Not sure"];
+  const sexOptions = ["Male", "Female", "Unknown"];
+  const spayedOptions = ["Yes", "No", "Not sure"];
+  const visitTypeOptions = ["Walk-in", "Vet referral", "Follow up"];
+
+  const clearVisitFeedback = () => {
+    if (visitSubmitError) setVisitSubmitError("");
+    if (visitSubmitMessage) setVisitSubmitMessage("");
+    if (visitMissingFields.length) setVisitMissingFields([]);
+  };
+
+  const updateVisitDraft = (field: keyof VisitDraft, value: string) => {
+    clearVisitFeedback();
+    setVisitDraft((current) => {
+      const next = { ...current, [field]: value };
+
+      if (field === "species") {
+        next.otherSpecies = "";
+        next.breed = "";
+      }
+
+      if (field === "emergencyReason") {
+        next.symptoms = value;
+      }
+
+      if (field === "allergies" && value !== "Yes") {
+        next.allergyDetails = "";
+      }
+
+      if (field === "visitType" && value !== "Vet referral") {
+        next.referralName = "";
+      }
+
+      return next;
+    });
+  };
+
+  const getVisitStepMissingFields = (step: number | "all" = visitWizardStep) => {
+    const requiredByStep: Record<number, (keyof VisitDraft)[]> = {
+      1: ["ownerFirstName", "ownerLastName", "phone", "email", "petName", "species"],
+      2: [
+        "emergencyReason",
+        "whenStartedDays",
+        "isConscious",
+        "breathingNormally",
+        "bleeding",
+        "canWalk",
+      ],
+      3: [],
+      4: [],
+    };
+
+    if (visitDraft.species === "Other") {
+      requiredByStep[1] = [...requiredByStep[1], "otherSpecies"];
+    }
+
+    if (visitDraft.allergies === "Yes") {
+      requiredByStep[3] = [...requiredByStep[3], "allergyDetails"];
+    }
+
+    const fields =
+      step === "all"
+        ? Object.values(requiredByStep).flat()
+        : requiredByStep[step] || [];
+
+    return fields
+      .filter((field) => !String(visitDraft[field] || "").trim())
+      .map((field) => requiredFieldLabels[field] || "required information");
+  };
+
+  const goToVisitWizardStep = (step: number) => {
+    setVisitWizardStep(step);
+    window.setTimeout(() => {
+      document.getElementById("start-visit-form")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 0);
+  };
+
+  const continueVisitWizard = () => {
+    const missingFields = getVisitStepMissingFields();
+
+    if (missingFields.length) {
+      setVisitMissingFields(missingFields);
+      setVisitSubmitError("Please complete these quick details before continuing.");
+      setVisitSubmitMessage("");
+      return;
+    }
+
+    goToVisitWizardStep(Math.min(4, visitWizardStep + 1));
+  };
+
+  const backVisitWizard = () => {
+    clearVisitFeedback();
+    goToVisitWizardStep(Math.max(1, visitWizardStep - 1));
+  };
+
+  const renderVisitChoiceGroup = (
+    label: string,
+    field: keyof VisitDraft,
+    options: string[],
+    columns: "compact" | "wide" = "compact"
+  ) => (
+    <div style={styles.visitChoiceBlock}>
+      <p style={styles.visitChoiceLabel}>{label}</p>
+      <div
+        style={{
+          ...styles.visitChoiceGrid,
+          gridTemplateColumns:
+            columns === "wide"
+              ? "repeat(auto-fit, minmax(min(100%, 132px), 1fr))"
+              : "repeat(auto-fit, minmax(86px, 1fr))",
+        }}
+      >
+        {options.map((option) => {
+          const selected = visitDraft[field] === option;
+          return (
+            <button
+              key={option}
+              type="button"
+              style={{
+                ...styles.visitChoiceButton,
+                ...(selected ? styles.visitChoiceButtonSelected : {}),
+              }}
+              onClick={() => updateVisitDraft(field, option)}
+            >
+              {option}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
   const createVisit = async (e: React.FormEvent<HTMLFormElement>) => {
   e.preventDefault();
 
   if (submittingVisitRef.current) return;
+  const missingVisitFields = getVisitStepMissingFields("all");
+  if (missingVisitFields.length) {
+    setVisitMissingFields(missingVisitFields);
+    setVisitSubmitError("Please complete the missing required information before sending.");
+    setVisitSubmitMessage("");
+
+    const firstStepWithMissing = [1, 2, 3].find(
+      (step) => getVisitStepMissingFields(step).length > 0
+    );
+    if (firstStepWithMissing) {
+      goToVisitWizardStep(firstStepWithMissing);
+    }
+
+    return;
+  }
+
   if (
     !validateRequiredFields(
       e.currentTarget,
@@ -1390,9 +1594,11 @@ export default function Home() {
   const additionalDetails = String(form.get("reason") || "").trim();
   const mediaFile = form.get("petPhoto") as File | null;
   const mediaNote =
-    mediaFile && mediaFile.name
-      ? `${mediaFile.type.startsWith("video/") ? "Video" : "Photo"} selected: ${mediaFile.name}`
-      : "No photo or video selected";
+    petMediaName
+      ? `${petMediaType === "video" ? "Video" : "Photo"} selected: ${petMediaName}`
+      : mediaFile && mediaFile.name
+        ? `${mediaFile.type.startsWith("video/") ? "Video" : "Photo"} selected: ${mediaFile.name}`
+        : "No photo or video selected";
   const intakeSummary = [
     "Emergency intake",
     `Approx. age: ${petAge || "Not provided"}`,
@@ -1401,7 +1607,7 @@ export default function Home() {
     `Weight: ${weight ? `${weight} lb` : "Not provided"}`,
     `Emergency reason: ${String(form.get("emergencyReason") || "Not provided")}`,
     `Primary symptom: ${String(form.get("symptoms") || "Not provided")}`,
-    `Started: ${String(form.get("whenStartedDays") || "Not provided")} day(s) ago`,
+    `Started: ${String(form.get("whenStartedDays") || "Not provided")}`,
     `Conscious: ${String(form.get("isConscious") || "Not provided")}`,
     `Breathing normally: ${String(form.get("breathingNormally") || "Not provided")}`,
     `Bleeding: ${String(form.get("bleeding") || "Not provided")}`,
@@ -1466,9 +1672,8 @@ export default function Home() {
 
   setVisits((current) => [visit, ...current.filter((item) => item.id !== visit.id)]);
   setSelectedVisitId(visit.id);
-  setSelectedSpecies("");
-  setSelectedVisitType("");
-  setSelectedAllergies("");
+  setVisitDraft({ ...initialVisitDraft });
+  setVisitWizardStep(1);
   setPetMediaName("");
   setPetMediaType("");
   setPetPhotoPreview("");
@@ -2006,251 +2211,307 @@ export default function Home() {
           )}
 
           {view === "newPet" && (
-            <section>
-              <h2 style={styles.title}>Pet Owner</h2>
-              <p style={styles.text}>Submit a visit request</p>
-
-              <div style={styles.noticeBox}>
-                <strong>We&apos;re here to help your pet.</strong>
-                <p>
-                  Please provide the details below so our team can be prepared for your arrival.
+            <section id="start-visit-form">
+              <div style={styles.visitWizardHeader}>
+                <span style={styles.visitStepEyebrow}>Step {visitWizardStep} of 4</span>
+                <h2 style={styles.title}>Start Emergency Visit</h2>
+                <p style={styles.text}>
+                  Need emergency care? Complete this quick check-in so the veterinary team can prepare.
                 </p>
+              </div>
+
+              <div style={styles.visitProgressTrack}>
+                {visitStepLabels.map((label, index) => {
+                  const step = index + 1;
+                  const active = visitWizardStep === step;
+                  const complete = visitWizardStep > step;
+
+                  return (
+                    <button
+                      key={label}
+                      type="button"
+                      style={{
+                        ...styles.visitProgressStep,
+                        ...(active ? styles.visitProgressStepActive : {}),
+                        ...(complete ? styles.visitProgressStepComplete : {}),
+                      }}
+                      onClick={() => {
+                        if (step <= visitWizardStep) goToVisitWizardStep(step);
+                      }}
+                    >
+                      <span>{step}</span>
+                      <small>{label}</small>
+                    </button>
+                  );
+                })}
               </div>
 
               <form
                 onSubmit={createVisit}
                 noValidate
-                onChange={() => {
-                  if (visitSubmitError) setVisitSubmitError("");
-                  if (visitMissingFields.length) setVisitMissingFields([]);
-                }}
-                style={styles.form}
+                style={styles.visitWizardForm}
               >
-                <input style={styles.input} name="petName" placeholder="Pet name" required />
-
-                <select
-                  style={styles.input}
-                  name="species" 
-                  required
-                  value={selectedSpecies} 
-                  onChange={(e) => setSelectedSpecies(e.target.value)}
-                >
-                  <option value="">Species</option>
-                  <option value="Dog">Dog</option>
-                  <option value="Cat">Cat</option>
-                  <option value="Other">Other</option>
-                </select> {selectedSpecies === "Dog" && (
-  <select style={styles.input} name="breed" required>
-    <option value="">Select Dog Breed</option>
-    {dogBreeds.map((breed) => (
-      <option key={breed} value={breed}>
-        {breed}
-      </option>
-    ))}
-  </select>
-)}
-
-{selectedSpecies === "Cat" && (
-  <select style={styles.input} name="breed" required>
-    <option value="">Select Cat Breed</option>
-    {catBreeds.map((breed) => (
-      <option key={breed} value={breed}>
-        {breed}
-      </option>
-    ))}
-  </select>
-)}
-
-                <input
-                  style={styles.input}
-                  name="petAge"
-                  placeholder="Approx. age (optional)"
-                />
-
-                <select style={styles.input} name="sex" required>
-                  <option value="">Sex</option>
-                  <option value="Male">Male</option>
-                  <option value="Female">Female</option>
-                  <option value="Unknown">Unknown</option>
-                </select>
-
-                <select style={styles.input} name="spayedNeutered" required>
-                  <option value="">Spayed/neutered?</option>
-                  <option value="Yes">Yes</option>
-                  <option value="No">No</option>
-                </select>
-
-                <input
-                  style={styles.input}
-                  type="number"
-                  min="0"
-                  step="0.1"
-                  name="weight"
-                  placeholder="Weight in pounds (if known)"
-                />
-
-                {selectedSpecies === "Other" && (
-                  <input
-                    style={styles.input}
-                    name="otherSpecies"
-                    placeholder="Enter pet type, for example Rabbit or Bird"
-                    required
-                  />
+                {(Object.entries(visitDraft) as [keyof VisitDraft, string][]).map(
+                  ([field, value]) => (
+                    <input key={field} type="hidden" name={field} value={value} readOnly />
+                  )
                 )}
 
-                <select style={styles.input} name="emergencyReason" required>
-                  <option value="">Emergency reason</option>
-                  {emergencyReasons.map((reason) => (
-                    <option key={reason} value={reason}>
-                      {reason}
-                    </option>
-                  ))}
-                </select>
+                {visitWizardStep === 1 && (
+                  <section style={styles.visitStepCard}>
+                    <div>
+                      <h3 style={styles.visitStepTitle}>Pet + contact</h3>
+                      <p style={styles.visitStepText}>
+                        Contact comes first so the team can reach you if anything interrupts check-in.
+                      </p>
+                    </div>
 
-                <select style={styles.input} name="symptoms" required>
-                  <option value="">Main symptom</option>
-                  {commonSymptoms.map((symptom) => (
-                    <option key={symptom} value={symptom}>
-                      {symptom}
-                    </option>
-                  ))}
-                </select>
+                    <div style={styles.visitFieldGrid}>
+                      <input
+                        style={styles.input}
+                        value={visitDraft.ownerFirstName}
+                        onChange={(e) => updateVisitDraft("ownerFirstName", e.target.value)}
+                        placeholder="Owner first name"
+                        autoComplete="given-name"
+                      />
+                      <input
+                        style={styles.input}
+                        value={visitDraft.ownerLastName}
+                        onChange={(e) => updateVisitDraft("ownerLastName", e.target.value)}
+                        placeholder="Owner last name"
+                        autoComplete="family-name"
+                      />
+                      <input
+                        style={styles.input}
+                        value={visitDraft.phone}
+                        onChange={(e) => updateVisitDraft("phone", e.target.value)}
+                        placeholder="Phone number"
+                        inputMode="tel"
+                        autoComplete="tel"
+                      />
+                      <input
+                        style={styles.input}
+                        value={visitDraft.email}
+                        onChange={(e) => updateVisitDraft("email", e.target.value)}
+                        placeholder="Email"
+                        inputMode="email"
+                        autoComplete="email"
+                      />
+                      <input
+                        style={styles.input}
+                        value={visitDraft.petName}
+                        onChange={(e) => updateVisitDraft("petName", e.target.value)}
+                        placeholder="Pet name"
+                      />
+                      <input
+                        style={styles.input}
+                        value={visitDraft.petAge}
+                        onChange={(e) => updateVisitDraft("petAge", e.target.value)}
+                        placeholder="Approx. age (optional)"
+                      />
+                    </div>
 
-                <input
-                  style={styles.input}
-                  type="number"
-                  min="0"
-                  step="0.5"
-                  name="whenStartedDays"
-                  placeholder="When started (days ago)"
-                  required
-                />
+                    {renderVisitChoiceGroup("Pet type", "species", ["Dog", "Cat", "Other"])}
 
-                <select style={styles.input} name="isConscious" required>
-                  <option value="">Is pet conscious?</option>
-                  <option value="Yes">Yes</option>
-                  <option value="No">No</option>
-                </select>
+                    {visitDraft.species === "Other" && (
+                      <input
+                        style={styles.input}
+                        value={visitDraft.otherSpecies}
+                        onChange={(e) => updateVisitDraft("otherSpecies", e.target.value)}
+                        placeholder="Pet type, for example Rabbit or Bird"
+                      />
+                    )}
 
-                <select style={styles.input} name="breathingNormally" required>
-                  <option value="">Breathing normally?</option>
-                  <option value="Yes">Yes</option>
-                  <option value="No">No</option>
-                </select>
+                    <div style={styles.visitFieldGrid}>
+                      <input
+                        style={styles.input}
+                        value={visitDraft.breed}
+                        onChange={(e) => updateVisitDraft("breed", e.target.value)}
+                        placeholder="Breed (if known)"
+                        list={
+                          visitDraft.species === "Dog"
+                            ? "dog-breeds"
+                            : visitDraft.species === "Cat"
+                              ? "cat-breeds"
+                              : undefined
+                        }
+                      />
+                      <datalist id="dog-breeds">
+                        {dogBreeds.map((breed) => (
+                          <option key={breed} value={breed} />
+                        ))}
+                      </datalist>
+                      <datalist id="cat-breeds">
+                        {catBreeds.map((breed) => (
+                          <option key={breed} value={breed} />
+                        ))}
+                      </datalist>
+                      <input
+                        style={styles.input}
+                        type="number"
+                        min="0"
+                        step="0.1"
+                        value={visitDraft.weight}
+                        onChange={(e) => updateVisitDraft("weight", e.target.value)}
+                        placeholder="Weight in pounds (if known)"
+                        inputMode="decimal"
+                      />
+                    </div>
 
-                <select style={styles.input} name="bleeding" required>
-                  <option value="">Bleeding?</option>
-                  <option value="Yes">Yes</option>
-                  <option value="No">No</option>
-                </select>
-
-                <select style={styles.input} name="canWalk" required>
-                  <option value="">Can walk?</option>
-                  <option value="Yes">Yes</option>
-                  <option value="No">No</option>
-                </select>
-
-                <textarea
-                  style={styles.textarea}
-                  name="currentMedications"
-                  placeholder="Current medications (if any)"
-                />
-
-                <select
-                  style={styles.input}
-                  name="allergies"
-                  required
-                  value={selectedAllergies}
-                  onChange={(e) => setSelectedAllergies(e.target.value)}
-                >
-                  <option value="">Allergies?</option>
-                  <option value="Yes">Yes</option>
-                  <option value="No">No</option>
-                </select>
-
-                {selectedAllergies === "Yes" && (
-                  <input
-                    style={styles.input}
-                    name="allergyDetails"
-                    placeholder="List known allergies"
-                    required
-                  />
+                    {renderVisitChoiceGroup("Sex", "sex", sexOptions)}
+                    {renderVisitChoiceGroup("Spayed/neutered?", "spayedNeutered", spayedOptions)}
+                  </section>
                 )}
 
-                <input style={styles.input} name="ownerFirstName" placeholder="Owner first name" required />
-                <input style={styles.input} name="ownerLastName" placeholder="Owner last name" required />
-                <input style={styles.input} name="phone" placeholder="Phone number" required />
-                <input style={styles.input} name="email" placeholder="Email" required />
+                {visitWizardStep === 2 && (
+                  <section style={styles.visitStepCard}>
+                    <div>
+                      <h3 style={styles.visitStepTitle}>What&apos;s happening?</h3>
+                      <p style={styles.visitStepText}>
+                        Choose the closest option. The clinic can adjust it after triage.
+                      </p>
+                    </div>
 
-                <label style={styles.photoUploadBox}>
-                  <span style={styles.photoUploadTitle}>Pet photo/video (optional)</span>
-                  <span style={styles.photoUploadText}>
-                    Add a picture or short video for the care team. Photos also show on the owner status page.
-                  </span>
-                  <input
-                    style={styles.hiddenFileInput}
-                    type="file"
-                    name="petPhoto"
-                    accept="image/*,video/*"
-                    onChange={handlePetPhotoChange}
-                  />
-                  <span style={styles.photoUploadButton}>
-                    {petMediaName ? "Change File" : "Choose File"}
-                  </span>
-                </label>
-
-                <div style={styles.photoPreviewCard}>
-                  <img
-                    src={petPhotoPreview || "/vet-hero.jpeg"}
-                    alt="Pet preview"
-                    style={styles.photoPreviewImage}
-                  />
-                  <span>
-                    {petMediaName
-                      ? `${petMediaType === "video" ? "Video" : "Photo"} selected: ${petMediaName}`
-                      : "No photo yet - we'll use a sample pet image."}
-                  </span>
-                </div>
-
-                <select
-                  style={styles.input}
-                  name="visitType"
-                  required
-                  value={selectedVisitType}
-                  onChange={(e) => setSelectedVisitType(e.target.value)}
-                >
-                  <option value="">Visit type</option>
-                  <option value="Walk-in">Walk-in</option>
-                  <option value="Vet referral">Vet referral</option>
-                  <option value="Follow up">Follow up</option>
-                </select>
-
-                {selectedVisitType === "Vet referral" && (
-                  <input
-                    style={styles.input}
-                    name="referralName"
-                    placeholder="Referring vet or clinic name"
-                    required
-                  />
+                    {renderVisitChoiceGroup("Main concern", "emergencyReason", emergencyReasons, "wide")}
+                    {renderVisitChoiceGroup("When did this start?", "whenStartedDays", whenStartedOptions, "wide")}
+                    {renderVisitChoiceGroup("Is your pet conscious?", "isConscious", quickAnswerOptions)}
+                    {renderVisitChoiceGroup("Breathing normally?", "breathingNormally", quickAnswerOptions)}
+                    {renderVisitChoiceGroup("Bleeding?", "bleeding", quickAnswerOptions)}
+                    {renderVisitChoiceGroup("Can walk?", "canWalk", quickAnswerOptions)}
+                  </section>
                 )}
 
-                <textarea
-                  style={styles.textarea}
-                  name="reason"
-                  placeholder="Additional details for the care team (optional)"
-                />
+                {visitWizardStep === 3 && (
+                  <section style={styles.visitStepCard}>
+                    <div>
+                      <h3 style={styles.visitStepTitle}>Extra details</h3>
+                      <p style={styles.visitStepText}>
+                        Optional details help the care team prepare, but you can still send without them.
+                      </p>
+                    </div>
 
-                <div>
-                  <p style={styles.label}>Has your pet been in this location before?</p>
-                  <div style={styles.radioRow}>
-                    <label style={styles.radioBox}>
-                      <input type="radio" name="beenHereBefore" value="Yes" required /> Yes
+                    <textarea
+                      style={styles.textarea}
+                      value={visitDraft.currentMedications}
+                      onChange={(e) => updateVisitDraft("currentMedications", e.target.value)}
+                      placeholder="Current medications (if any)"
+                    />
+
+                    {renderVisitChoiceGroup("Known allergies?", "allergies", ["Yes", "No", "Not sure"])}
+
+                    {visitDraft.allergies === "Yes" && (
+                      <input
+                        style={styles.input}
+                        value={visitDraft.allergyDetails}
+                        onChange={(e) => updateVisitDraft("allergyDetails", e.target.value)}
+                        placeholder="List known allergies"
+                      />
+                    )}
+
+                    <label style={styles.photoUploadBox}>
+                      <span style={styles.photoUploadTitle}>Photo/video (optional)</span>
+                      <span style={styles.photoUploadText}>
+                        Upload a photo or short video if it helps explain the concern.
+                      </span>
+                      <input
+                        style={styles.hiddenFileInput}
+                        type="file"
+                        name="petPhoto"
+                        accept="image/*,video/*"
+                        onChange={handlePetPhotoChange}
+                      />
+                      <span style={styles.photoUploadButton}>
+                        {petMediaName ? "Change File" : "Choose File"}
+                      </span>
                     </label>
-                    <label style={styles.radioBox}>
-                      <input type="radio" name="beenHereBefore" value="No" required /> No
-                    </label>
-                  </div>
-                </div>
+
+                    <div style={styles.photoPreviewCard}>
+                      {petPhotoPreview ? (
+                        <img src={petPhotoPreview} alt="Pet preview" style={styles.photoPreviewImage} />
+                      ) : (
+                        <span style={styles.photoEmptyIcon}>+</span>
+                      )}
+                      <span>
+                        {petMediaName
+                          ? `${petMediaType === "video" ? "Video" : "Photo"} selected: ${petMediaName}`
+                          : "No image uploaded. This is optional."}
+                      </span>
+                    </div>
+
+                    {renderVisitChoiceGroup("How are you coming in?", "visitType", visitTypeOptions, "wide")}
+
+                    {visitDraft.visitType === "Vet referral" && (
+                      <input
+                        style={styles.input}
+                        value={visitDraft.referralName}
+                        onChange={(e) => updateVisitDraft("referralName", e.target.value)}
+                        placeholder="Referring vet or clinic name"
+                      />
+                    )}
+
+                    {renderVisitChoiceGroup(
+                      "Has your pet been here before?",
+                      "beenHereBefore",
+                      ["Yes", "No", "Not sure"]
+                    )}
+
+                    <textarea
+                      style={styles.textarea}
+                      value={visitDraft.reason}
+                      onChange={(e) => updateVisitDraft("reason", e.target.value)}
+                      placeholder="Anything else the care team should know? (optional)"
+                    />
+                  </section>
+                )}
+
+                {visitWizardStep === 4 && (
+                  <section style={styles.visitStepCard}>
+                    <div>
+                      <h3 style={styles.visitStepTitle}>Ready to send</h3>
+                      <p style={styles.visitStepText}>
+                        Review the basics, then send this check-in to the veterinary team.
+                      </p>
+                    </div>
+
+                    <div style={styles.visitReviewGrid}>
+                      <div style={styles.visitReviewCard}>
+                        <span>Pet</span>
+                        <strong>{visitDraft.petName || "Missing pet name"}</strong>
+                        <small>
+                          {[visitDraft.species, visitDraft.breed, visitDraft.petAge]
+                            .filter(Boolean)
+                            .join(" / ") || "Species needed"}
+                        </small>
+                      </div>
+                      <div style={styles.visitReviewCard}>
+                        <span>Contact</span>
+                        <strong>
+                          {[visitDraft.ownerFirstName, visitDraft.ownerLastName]
+                            .filter(Boolean)
+                            .join(" ") || "Missing owner name"}
+                        </strong>
+                        <small>{visitDraft.phone || visitDraft.email || "Phone and email needed"}</small>
+                      </div>
+                      <div style={styles.visitReviewCard}>
+                        <span>Concern</span>
+                        <strong>{visitDraft.emergencyReason || "Missing concern"}</strong>
+                        <small>{visitDraft.whenStartedDays || "Start time needed"}</small>
+                      </div>
+                      <div style={styles.visitReviewCard}>
+                        <span>Triage</span>
+                        <strong>
+                          {[
+                            `Conscious: ${visitDraft.isConscious || "-"}`,
+                            `Breathing: ${visitDraft.breathingNormally || "-"}`,
+                          ].join(" / ")}
+                        </strong>
+                        <small>
+                          Bleeding: {visitDraft.bleeding || "-"} / Can walk: {visitDraft.canWalk || "-"}
+                        </small>
+                      </div>
+                    </div>
+                  </section>
+                )}
 
                 {visitSubmitError && <div style={styles.errorBox}>{visitSubmitError}</div>}
                 {visitMissingFields.length > 0 && (
@@ -2266,16 +2527,40 @@ export default function Home() {
                 )}
                 {visitSubmitMessage && <div style={styles.authMessage}>{visitSubmitMessage}</div>}
 
-                <button
-                  style={{
-                    ...styles.primaryButton,
-                    ...(submittingVisit ? styles.disabledButton : {}),
-                  }}
-                  type="submit"
-                  disabled={submittingVisit}
-                >
-                  {submittingVisit ? "Submitting Visit..." : "Submit Visit Request"}
-                </button>
+                <div style={styles.visitWizardNav}>
+                  {visitWizardStep > 1 && (
+                    <button
+                      style={styles.visitBackButton}
+                      type="button"
+                      onClick={backVisitWizard}
+                      disabled={submittingVisit}
+                    >
+                      Back
+                    </button>
+                  )}
+
+                  {visitWizardStep < 4 ? (
+                    <button
+                      style={{ ...styles.primaryButton, ...styles.visitForwardButton }}
+                      type="button"
+                      onClick={continueVisitWizard}
+                    >
+                      Continue
+                    </button>
+                  ) : (
+                    <button
+                      style={{
+                        ...styles.primaryButton,
+                        ...styles.visitForwardButton,
+                        ...(submittingVisit ? styles.disabledButton : {}),
+                      }}
+                      type="submit"
+                      disabled={submittingVisit}
+                    >
+                      {submittingVisit ? "Sending Check-In..." : "Send Check-In"}
+                    </button>
+                  )}
+                </div>
               </form>
             </section>
           )}
@@ -5191,6 +5476,156 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderRadius: 8,
     padding: 18,
     marginBottom: 20,
+  },
+  visitWizardHeader: {
+    display: "grid",
+    gap: 6,
+    marginBottom: 14,
+  },
+  visitStepEyebrow: {
+    color: "#087f78",
+    fontSize: 12,
+    fontWeight: 900,
+    letterSpacing: 0,
+    textTransform: "uppercase",
+  },
+  visitProgressTrack: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+    gap: 6,
+    marginBottom: 14,
+  },
+  visitProgressStep: {
+    background: "#ffffff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    color: "#64717d",
+    cursor: "pointer",
+    display: "grid",
+    gap: 4,
+    minHeight: 58,
+    padding: "7px 4px",
+    placeItems: "center",
+    textAlign: "center",
+  },
+  visitProgressStepActive: {
+    background: "#e7fbf7",
+    borderColor: "#13a89e",
+    color: "#087f78",
+    boxShadow: "0 6px 14px rgba(15, 143, 134, 0.12)",
+  },
+  visitProgressStepComplete: {
+    background: "#f0fbf8",
+    color: "#087f78",
+  },
+  visitWizardForm: {
+    display: "grid",
+    gap: 14,
+    maxWidth: 780,
+  },
+  visitStepCard: {
+    background: "#ffffff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    boxShadow: "0 8px 20px rgba(41, 64, 83, 0.06)",
+    display: "grid",
+    gap: 14,
+    padding: 14,
+  },
+  visitStepTitle: {
+    color: "#102a3a",
+    fontSize: 20,
+    lineHeight: 1.15,
+    margin: 0,
+  },
+  visitStepText: {
+    color: "#64717d",
+    fontSize: 14,
+    lineHeight: 1.4,
+    margin: "5px 0 0",
+  },
+  visitFieldGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))",
+    gap: 10,
+  },
+  visitChoiceBlock: {
+    display: "grid",
+    gap: 8,
+  },
+  visitChoiceLabel: {
+    color: "#102a3a",
+    fontSize: 14,
+    fontWeight: 900,
+    margin: 0,
+  },
+  visitChoiceGrid: {
+    display: "grid",
+    gap: 8,
+  },
+  visitChoiceButton: {
+    background: "#f8fbff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    color: "#243447",
+    cursor: "pointer",
+    fontSize: 13,
+    fontWeight: 800,
+    lineHeight: 1.25,
+    minHeight: 44,
+    padding: "10px 9px",
+    textAlign: "center",
+  },
+  visitChoiceButtonSelected: {
+    background: "#087f78",
+    borderColor: "#087f78",
+    color: "#ffffff",
+    boxShadow: "0 8px 16px rgba(15, 143, 134, 0.16)",
+  },
+  photoEmptyIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 8,
+    background: "#e7fbf7",
+    color: "#087f78",
+    display: "grid",
+    placeItems: "center",
+    fontSize: 24,
+    fontWeight: 900,
+    flexShrink: 0,
+  },
+  visitReviewGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 170px), 1fr))",
+    gap: 10,
+  },
+  visitReviewCard: {
+    background: "#f8fbff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    display: "grid",
+    gap: 4,
+    padding: 12,
+  },
+  visitWizardNav: {
+    display: "flex",
+    gap: 10,
+    justifyContent: "space-between",
+  },
+  visitBackButton: {
+    background: "#ffffff",
+    border: "1px solid #cfe0df",
+    borderRadius: 8,
+    color: "#526070",
+    cursor: "pointer",
+    fontSize: 15,
+    fontWeight: 900,
+    minHeight: 52,
+    padding: "0 18px",
+  },
+  visitForwardButton: {
+    flex: 1,
+    width: "100%",
   },
   queueGrid: {
     display: "grid",
