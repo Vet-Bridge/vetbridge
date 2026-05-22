@@ -560,8 +560,10 @@ export default function Home() {
   const [submittingReferral, setSubmittingReferral] = useState(false);
   const [visitSubmitError, setVisitSubmitError] = useState("");
   const [visitSubmitMessage, setVisitSubmitMessage] = useState("");
+  const [visitMissingFields, setVisitMissingFields] = useState<string[]>([]);
   const [referralSubmitError, setReferralSubmitError] = useState("");
   const [referralSubmitMessage, setReferralSubmitMessage] = useState("");
+  const [referralMissingFields, setReferralMissingFields] = useState<string[]>([]);
   const [clinicLoading, setClinicLoading] = useState(false);
   const [pendingClinicActions, setPendingClinicActions] = useState<Record<string, string>>({});
   const [selectedVisitType, setSelectedVisitType] = useState("");
@@ -1320,13 +1322,33 @@ export default function Home() {
     form: HTMLFormElement,
     formName: "visit" | "referral",
     setError: (message: string) => void,
-    setMessage: (message: string) => void
+    setMessage: (message: string) => void,
+    setMissingFields: (fields: string[]) => void
   ) => {
-    if (form.checkValidity()) return true;
+    if (form.checkValidity()) {
+      setMissingFields([]);
+      return true;
+    }
 
     const invalidField = form.querySelector(":invalid");
-    const label = getRequiredFieldLabel(invalidField);
-    setError(`Please complete ${label} before submitting the ${formName}.`);
+    const invalidFields = Array.from(form.querySelectorAll(":invalid"));
+    const missingFields = Array.from(
+      new Map(
+        invalidFields.map((field) => {
+          const fieldName =
+            field instanceof HTMLInputElement ||
+            field instanceof HTMLSelectElement ||
+            field instanceof HTMLTextAreaElement
+              ? field.name || getRequiredFieldLabel(field)
+              : getRequiredFieldLabel(field);
+
+          return [fieldName, getRequiredFieldLabel(field)];
+        })
+      ).values()
+    );
+
+    setMissingFields(missingFields);
+    setError(`Please complete the missing required information before submitting the ${formName}.`);
     setMessage("");
 
     if (invalidField instanceof HTMLElement) {
@@ -1341,12 +1363,21 @@ export default function Home() {
   e.preventDefault();
 
   if (submittingVisitRef.current) return;
-  if (!validateRequiredFields(e.currentTarget, "visit", setVisitSubmitError, setVisitSubmitMessage)) {
+  if (
+    !validateRequiredFields(
+      e.currentTarget,
+      "visit",
+      setVisitSubmitError,
+      setVisitSubmitMessage,
+      setVisitMissingFields
+    )
+  ) {
     return;
   }
 
   setVisitSubmitError("");
   setVisitSubmitMessage("Submitting visit request...");
+  setVisitMissingFields([]);
   submittingVisitRef.current = true;
   setSubmittingVisit(true);
 
@@ -1456,7 +1487,8 @@ export default function Home() {
         e.currentTarget,
         "referral",
         setReferralSubmitError,
-        setReferralSubmitMessage
+        setReferralSubmitMessage,
+        setReferralMissingFields
       )
     ) {
       return;
@@ -1464,6 +1496,7 @@ export default function Home() {
 
     setReferralSubmitError("");
     setReferralSubmitMessage("Submitting referral intake...");
+    setReferralMissingFields([]);
     submittingReferralRef.current = true;
     setSubmittingReferral(true);
 
@@ -2017,6 +2050,7 @@ export default function Home() {
                 noValidate
                 onChange={() => {
                   if (visitSubmitError) setVisitSubmitError("");
+                  if (visitMissingFields.length) setVisitMissingFields([]);
                 }}
                 style={styles.form}
               >
@@ -2247,6 +2281,17 @@ export default function Home() {
                 </div>
 
                 {visitSubmitError && <div style={styles.errorBox}>{visitSubmitError}</div>}
+                {visitMissingFields.length > 0 && (
+                  <div style={styles.missingInfoBox}>
+                    <strong>Missing required information</strong>
+                    <p>Please complete these fields before submitting:</p>
+                    <ul style={styles.missingInfoList}>
+                      {visitMissingFields.map((field) => (
+                        <li key={field}>{field}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 {visitSubmitMessage && <div style={styles.authMessage}>{visitSubmitMessage}</div>}
 
                 <button
@@ -2280,6 +2325,7 @@ export default function Home() {
                 noValidate
                 onChange={() => {
                   if (referralSubmitError) setReferralSubmitError("");
+                  if (referralMissingFields.length) setReferralMissingFields([]);
                 }}
                 style={styles.form}
               >
@@ -2486,6 +2532,17 @@ export default function Home() {
                 />
 
                 {referralSubmitError && <div style={styles.errorBox}>{referralSubmitError}</div>}
+                {referralMissingFields.length > 0 && (
+                  <div style={styles.missingInfoBox}>
+                    <strong>Missing required information</strong>
+                    <p>Please complete these fields before submitting:</p>
+                    <ul style={styles.missingInfoList}>
+                      {referralMissingFields.map((field) => (
+                        <li key={field}>{field}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 {referralSubmitMessage && (
                   <div style={styles.authMessage}>{referralSubmitMessage}</div>
                 )}
@@ -5197,6 +5254,19 @@ const styles: { [key: string]: React.CSSProperties } = {
   borderRadius: 8,
   marginTop: 10,
 },
+  missingInfoBox: {
+    background: "#fff8f1",
+    border: "1px solid #fed7aa",
+    borderRadius: 8,
+    color: "#9a3412",
+    display: "grid",
+    gap: 6,
+    padding: 12,
+  },
+  missingInfoList: {
+    margin: "2px 0 0",
+    paddingLeft: 20,
+  },
   dashboardHeader: {
     display: "flex",
     justifyContent: "space-between",
