@@ -212,7 +212,9 @@ type ClinicDashboardView = "active" | "critical" | "approvals" | "pickup" | "dis
 
 type ClinicSort = "newest" | "oldest" | "pet" | "status";
 
-type ClinicWorkflowView = "activePatients" | "referrals";
+type ClinicWorkflowView = "patients" | "referrals" | "approvals" | "messages" | "more";
+
+type CommunicationHubTab = "owner" | "internal" | "referring";
 
 type OwnerUpdateMediaDraft = {
   name: string;
@@ -668,7 +670,6 @@ export default function Home() {
   const [clinicSettings, setClinicSettings] = useState<ClinicSettings>(defaultClinicSettings);
   const [clinicSettingsDraft, setClinicSettingsDraft] =
     useState<ClinicSettings>(defaultClinicSettings);
-  const [clinicSettingsOpen, setClinicSettingsOpen] = useState(false);
   const [clinicSettingsMessage, setClinicSettingsMessage] = useState("");
   const [savingClinicSettings, setSavingClinicSettings] = useState(false);
   const [integrationReadiness, setIntegrationReadiness] = useState<IntegrationReadiness>(
@@ -678,13 +679,16 @@ export default function Home() {
   const [clinicDashboardView, setClinicDashboardView] =
     useState<ClinicDashboardView>("active");
   const [clinicWorkflowView, setClinicWorkflowView] =
-    useState<ClinicWorkflowView>("activePatients");
+    useState<ClinicWorkflowView>("patients");
   const [clinicSearch, setClinicSearch] = useState("");
   const [clinicStatusFilter, setClinicStatusFilter] = useState("All statuses");
   const [clinicDoctorFilter, setClinicDoctorFilter] = useState("All doctors");
   const [clinicSort, setClinicSort] = useState<ClinicSort>("newest");
   const [ownerUpdateDrafts, setOwnerUpdateDrafts] = useState<Record<string, string>>({});
   const [ownerMediaDrafts, setOwnerMediaDrafts] = useState<Record<string, OwnerUpdateMediaDraft>>({});
+  const [communicationHubTabs, setCommunicationHubTabs] = useState<
+    Record<string, CommunicationHubTab>
+  >({});
   const [authUserEmail, setAuthUserEmail] = useState("");
   const [staffProfile, setStaffProfile] = useState<StaffProfile | null>(null);
   const [authMessage, setAuthMessage] = useState("");
@@ -916,6 +920,14 @@ export default function Home() {
   const approvalVisits = visits.filter((visit) => !isDischargedVisit(visit) && needsApprovalVisit(visit));
   const pickupVisits = visits.filter(isReadyForPickupVisit);
   const dischargedVisits = visits.filter(isDischargedVisit);
+  const hospitalizedVisits = visits.filter((visit) => {
+    const status = visit.status.toLowerCase();
+    return !isDischargedVisit(visit) && (status.includes("hospital") || status.includes("icu"));
+  });
+  const pendingDischargeVisits = visits.filter((visit) => {
+    const status = visit.status.toLowerCase();
+    return !isDischargedVisit(visit) && (status.includes("ready") || status.includes("discharge"));
+  });
   const queueVisits = activeVisits
     .filter((visit) => visit.status !== "Ready for pickup")
     .sort(
@@ -1007,6 +1019,21 @@ export default function Home() {
       ["Closed", "Converted to Visit"].includes(normalizeReferralStatus(referral.status))
     ).length,
   };
+  const operationsBoardCards: {
+    label: string;
+    count: number;
+    target: ClinicWorkflowView;
+    view?: ClinicDashboardView;
+    referralStatus?: string;
+  }[] = [
+    { label: "Active Patients", count: activeVisits.length, target: "patients", view: "active" },
+    { label: "Critical Patients", count: criticalVisits.length, target: "patients", view: "critical" },
+    { label: "Waiting Approval", count: approvalVisits.length, target: "approvals", view: "approvals" },
+    { label: "New Referrals", count: referralCounts.new, target: "referrals", referralStatus: "New Referral" },
+    { label: "Ready for Pickup", count: pickupVisits.length, target: "patients", view: "pickup" },
+    { label: "Hospitalized", count: hospitalizedVisits.length, target: "patients", view: "active" },
+    { label: "Pending Discharge", count: pendingDischargeVisits.length, target: "patients", view: "pickup" },
+  ];
   const filteredReferrals = referrals.filter(
     (referral) =>
       referralDashboardStatus === "All referrals" ||
@@ -1490,17 +1517,82 @@ export default function Home() {
       .join(" - ");
   };
 
+  const getTriageLevel = (visit: Visit) => {
+    const status = visit.status.toLowerCase();
+    if (status.includes("critical") || status.includes("red")) return "Critical";
+    if (status.includes("urgent") || status.includes("orange") || status.includes("yellow")) return "Urgent";
+    if (status.includes("stable") || status.includes("green")) return "Stable";
+    return "Not assigned";
+  };
+
+  const getCommunicationTab = (visitId: string) => communicationHubTabs[visitId] || "owner";
+
+  const setCommunicationTab = (visitId: string, tab: CommunicationHubTab) => {
+    setCommunicationHubTabs((current) => ({ ...current, [visitId]: tab }));
+  };
+
+  const getActionCenterCategory = (visit: Visit) => {
+    const status = visit.status.toLowerCase();
+
+    if (status.includes("closed") || status.includes("discharged") || status.includes("ready")) {
+      return "discharge";
+    }
+
+    if (
+      status.includes("treatment") ||
+      status.includes("surgery") ||
+      status.includes("recover") ||
+      status.includes("stable") ||
+      status.includes("critical") ||
+      status.includes("icu") ||
+      status.includes("hospital")
+    ) {
+      return "treatment";
+    }
+
+    if (
+      status.includes("doctor") ||
+      status.includes("exam") ||
+      status.includes("diagnostic") ||
+      status.includes("result") ||
+      status.includes("estimate")
+    ) {
+      return "diagnostics";
+    }
+
+    if (status.includes("accepted") || status.includes("checked") || status.includes("triage")) {
+      return "registration";
+    }
+
+    return "arrival";
+  };
+
+  const getActionCenterTitle = (visit: Visit) => {
+    const category = getActionCenterCategory(visit);
+    const labels: Record<string, string> = {
+      arrival: "Arrival / Triage",
+      registration: "Registration / Consent",
+      diagnostics: "Doctor / Diagnostics",
+      treatment: "Treatment",
+      care: "Care Events",
+      discharge: "Discharge",
+    };
+
+    return labels[category] || "Action Center";
+  };
+
   const visitTimelineSteps = [
-    "Request submitted",
-    "Checked in",
-    "Triage complete",
-    "Doctor assigned",
-    "In exam",
-    "Diagnostics underway",
-    "Estimate sent",
-    "Estimate approved",
-    "Treatment started",
-    "Ready for pickup",
+    "Request Submitted",
+    "Checked In",
+    "Triage Complete",
+    "Doctor Assigned",
+    "In Exam",
+    "Diagnostics Underway",
+    "Estimate Sent",
+    "Estimate Approved",
+    "Treatment Started",
+    "Monitoring / Hospitalized",
+    "Ready for Pickup",
     "Discharged",
     "Closed",
   ];
@@ -1509,10 +1601,11 @@ export default function Home() {
     const status = visit.status.toLowerCase();
     const doctorAssigned = Boolean(getAssignedDoctorFromNotes(visit.clinicNotes));
 
-    if (status.includes("closed")) return 11;
-    if (status.includes("discharged")) return 10;
-    if (status.includes("ready")) return 9;
-    if (status.includes("treatment") || status.includes("surgery") || status.includes("icu")) return 8;
+    if (status.includes("closed")) return 12;
+    if (status.includes("discharged")) return 11;
+    if (status.includes("ready")) return 10;
+    if (status.includes("hospital") || status.includes("icu") || status.includes("monitor")) return 9;
+    if (status.includes("treatment") || status.includes("surgery")) return 8;
     if (visit.estimateStatus.toLowerCase().includes("approved")) return 7;
     if (
       status.includes("estimate") ||
@@ -1536,7 +1629,7 @@ export default function Home() {
       return;
     }
 
-    setClinicWorkflowView("activePatients");
+    setClinicWorkflowView("patients");
     setSelectedVisitId(visit.id);
   };
 
@@ -2417,7 +2510,7 @@ export default function Home() {
         ...current.filter((visit) => visit.id !== result.visit.id),
       ]);
       setClinicDashboardView("active");
-      setClinicWorkflowView("activePatients");
+      setClinicWorkflowView("patients");
       setSelectedReferralId(null);
       setSelectedVisitId(result.visit.id);
     } catch (error) {
@@ -3872,84 +3965,149 @@ export default function Home() {
                   {authMessage && <div style={styles.authMessage}>{authMessage}</div>}
                   {clinicError && <div style={styles.errorBox}>{clinicError}</div>}
                 </div>
+              ) : clinicWorkflowView === "messages" ? (
+                <>
+                <div style={styles.dashboardHeader}>
+                  <div>
+                    <h2 style={styles.title}>{clinicSettings.name || "Clinic Dashboard"}</h2>
+                    <p style={styles.text}>
+                      Owner communication layer for live updates, approvals, referrals, and discharge.
+                    </p>
+                  </div>
+                  <span style={styles.counter}>
+                    {activeVisits.length} Active / {closedVisits.length} Closed
+                  </span>
+                </div>
+
+                <nav style={styles.clinicMainNav} aria-label="Clinic workflow">
+                  {[
+                    ["patients", "Patients"],
+                    ["referrals", "Referrals"],
+                    ["approvals", "Approvals"],
+                    ["messages", "Messages"],
+                    ["more", "More"],
+                  ].map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      style={{
+                        ...styles.clinicMainNavButton,
+                        ...(clinicWorkflowView === id ? styles.clinicMainNavButtonActive : {}),
+                      }}
+                      onClick={() => {
+                        const nextView = id as ClinicWorkflowView;
+                        setClinicWorkflowView(nextView);
+                        if (nextView === "approvals") setClinicDashboardView("approvals");
+                        if (nextView === "patients") setClinicDashboardView("active");
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </nav>
+
+                <section style={styles.referralDashboardPanel}>
+                  <div style={styles.referralDashboardHeader}>
+                    <div>
+                      <h3 style={styles.ownerVisitTitle}>Messages</h3>
+                      <p style={styles.authHelpText}>
+                        Recent owner-facing updates and quick access to each visit communication hub.
+                      </p>
+                    </div>
+                  </div>
+                  <div style={styles.visitList}>
+                    {activeVisits.map((visit) => (
+                      <article key={visit.id} style={styles.referralCard}>
+                        <div style={styles.referralCardHeader}>
+                          <div>
+                            <h4 style={styles.referralPetName}>{visit.petName}</h4>
+                            <p style={styles.text}>Owner: {getOwnerName(visit)}</p>
+                          </div>
+                          <span style={styles.referralStatusBadge}>{visit.status}</span>
+                        </div>
+                        <div style={styles.latestMessagePreview}>
+                          {visit.updates[visit.updates.length - 1]?.message ||
+                            "No owner update sent yet."}
+                        </div>
+                        <button
+                          type="button"
+                          style={styles.primaryButton}
+                          onClick={() => {
+                            setClinicWorkflowView("patients");
+                            setClinicDashboardView("active");
+                            setCommunicationTab(visit.id, "owner");
+                            setSelectedVisitId(visit.id);
+                          }}
+                        >
+                          Open Communication Hub
+                        </button>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+                </>
               ) : (
                 <>
               <div style={styles.dashboardHeader}>
                 <div>
                   <h2 style={styles.title}>{clinicSettings.name || "Clinic Dashboard"}</h2>
                   <p style={styles.text}>
-                    {staffProfile
-                      ? `${staffProfile.fullName || staffProfile.email} - ${staffProfile.role}`
-                      : authUserEmail
-                        ? `Signed in as ${authUserEmail}`
-                        : "Review visit requests and send updates."}
+                    Owner communication layer for live updates, approvals, referrals, and discharge.
                   </p>
                 </div>
-                {authUserEmail && (
-                  <button style={styles.staffSignOutButton} onClick={signOut}>
-                    Sign Out
-                  </button>
-                )}
-                <button
-                  type="button"
-                  style={styles.staffSignOutButton}
-                  onClick={() => setClinicSettingsOpen((open) => !open)}
-                >
-                  {clinicSettingsOpen ? "Close Settings" : "Clinic Settings"}
-                </button>
                 <span style={styles.counter}>
-  {activeVisits.length} Active / {closedVisits.length} Closed
-</span>
+                  {activeVisits.length} Active / {closedVisits.length} Closed
+                </span>
               </div>
 
+              <nav style={styles.clinicMainNav} aria-label="Clinic workflow">
+                {[
+                  ["patients", "Patients"],
+                  ["referrals", "Referrals"],
+                  ["approvals", "Approvals"],
+                  ["messages", "Messages"],
+                  ["more", "More"],
+                ].map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    style={{
+                      ...styles.clinicMainNavButton,
+                      ...(clinicWorkflowView === id ? styles.clinicMainNavButtonActive : {}),
+                    }}
+                    onClick={() => {
+                      const nextView = id as ClinicWorkflowView;
+                      setClinicWorkflowView(nextView);
+                      if (nextView === "approvals") setClinicDashboardView("approvals");
+                      if (nextView === "patients") setClinicDashboardView("active");
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </nav>
+
+              {clinicWorkflowView !== "more" && (
               <div style={styles.clinicCommandCenter}>
-                <div style={styles.clinicInsightGrid}>
-                  <div style={styles.clinicInsightCard}>
-                    <span>Active visits</span>
-                    <strong>{activeVisits.length}</strong>
-                  </div>
-                  <div style={styles.clinicInsightCard}>
-                    <span>Critical</span>
-                    <strong>{criticalVisits.length}</strong>
-                  </div>
-                  <div style={styles.clinicInsightCard}>
-                    <span>Approvals</span>
-                    <strong>{approvalVisits.length}</strong>
-                  </div>
-                  <div style={styles.clinicInsightCard}>
-                    <span>Referrals</span>
-                    <strong>{referrals.length}</strong>
-                  </div>
+                <div style={styles.operationsBoardGrid}>
+                  {operationsBoardCards.map((card) => (
+                    <button
+                      key={card.label}
+                      type="button"
+                      style={styles.operationsBoardCard}
+                      onClick={() => {
+                        setClinicWorkflowView(card.target);
+                        if (card.view) setClinicDashboardView(card.view);
+                        if (card.referralStatus) setReferralDashboardStatus(card.referralStatus);
+                      }}
+                    >
+                      <span>{card.label}</span>
+                      <strong>{card.count}</strong>
+                    </button>
+                  ))}
                 </div>
 
-                <div style={styles.clinicWorkflowTabs}>
-                  <button
-                    type="button"
-                    style={{
-                      ...styles.clinicWorkflowTab,
-                      ...(clinicWorkflowView === "activePatients"
-                        ? styles.clinicWorkflowTabActive
-                        : {}),
-                    }}
-                    onClick={() => setClinicWorkflowView("activePatients")}
-                  >
-                    <strong>Active Patient Visits</strong>
-                    <span>Owner updates, forms, estimates, discharge</span>
-                  </button>
-                  <button
-                    type="button"
-                    style={{
-                      ...styles.clinicWorkflowTab,
-                      ...(clinicWorkflowView === "referrals" ? styles.clinicWorkflowTabActive : {}),
-                    }}
-                    onClick={() => setClinicWorkflowView("referrals")}
-                  >
-                    <strong>Referral Queue</strong>
-                    <span>Review transfers and convert arrivals to visits</span>
-                  </button>
-                </div>
-
-                {clinicWorkflowView === "activePatients" && (
+                {clinicWorkflowView === "patients" && (
                   <>
                     <div style={styles.clinicViewTabs}>
                       {dashboardTabs.map((tab) => (
@@ -4016,19 +4174,48 @@ export default function Home() {
                   </>
                 )}
               </div>
+              )}
 
-              {clinicSettingsOpen && (
+              {clinicWorkflowView === "more" && (
                 <form style={styles.clinicSettingsPanel} onSubmit={saveClinicSettings}>
                   <div style={styles.clinicSettingsHeader}>
                     <div>
-                      <h3 style={styles.ownerVisitTitle}>Clinic Settings</h3>
+                      <h3 style={styles.ownerVisitTitle}>More</h3>
                       <p style={styles.authHelpText}>
-                        Demo clinic profile, branding, communication defaults, and future
-                        multi-hospital configuration.
+                        Clinic profile, roles, templates, forms, branding, integrations, and access.
                       </p>
                     </div>
-                    <span style={styles.speciesPill}>Phase 9</span>
+                    <span style={styles.speciesPill}>Clinic Admin</span>
                   </div>
+
+                  <div style={styles.moreMenuGrid}>
+                    {[
+                      "Clinic Profile",
+                      "Users & Roles",
+                      "Communication Templates",
+                      "Forms Library",
+                      "Branding",
+                      "Integrations",
+                    ].map((item) => (
+                      <div key={item} style={styles.moreMenuCard}>
+                        <strong>{item}</strong>
+                        <span>
+                          {item === "Integrations"
+                            ? "PIMS and owner notification readiness"
+                            : item === "Communication Templates"
+                              ? "Reusable owner update wording"
+                              : item === "Forms Library"
+                                ? "Consent and approval templates"
+                                : "Clinic administration"}
+                        </span>
+                      </div>
+                    ))}
+                    <button type="button" style={styles.moreMenuLogout} onClick={signOut}>
+                      Logout
+                    </button>
+                  </div>
+
+                  <h4 style={styles.workflowSectionTitle}>Clinic Profile & Branding</h4>
 
                   {clinicSettingsDraft.setupRequired && (
                     <div style={styles.queueMiniCard}>
@@ -4184,6 +4371,7 @@ export default function Home() {
                     </label>
                   </div>
 
+                  <h4 style={styles.workflowSectionTitle}>Integrations</h4>
                   <div style={styles.integrationPanel}>
                     <div style={styles.integrationHeader}>
                       <div>
@@ -4285,7 +4473,7 @@ export default function Home() {
                 </form>
               )}
 
-              {clinicWorkflowView === "referrals" ? (
+              {clinicWorkflowView !== "more" && (clinicWorkflowView === "referrals" ? (
                 <section style={styles.referralDashboardPanel}>
                   <div style={styles.referralDashboardHeader}>
                     <div>
@@ -4601,7 +4789,7 @@ export default function Home() {
                                   type="button"
                                   style={styles.secondaryButton}
                                   onClick={() => {
-                                    setClinicWorkflowView("activePatients");
+                                    setClinicWorkflowView("patients");
                                     setSelectedVisitId(convertedVisit.id);
                                   }}
                                 >
@@ -4742,66 +4930,89 @@ export default function Home() {
                       const pendingMessage = pendingClinicActions[visit.id];
                       const mediaDraft = ownerMediaDrafts[visit.id];
                       const timelineIndex = getVisitTimelineIndex(visit);
+                      const actionCategory = getActionCenterCategory(visit);
+                      const communicationTab = getCommunicationTab(visit.id);
+                      const isReferralPatient =
+                        (visit.visitType || "").toLowerCase().includes("referral") ||
+                        Boolean(visit.referralName);
 
                       return (
                         <article key={visit.id} style={styles.patientWorkflowCard}>
-                          <header style={styles.patientHeaderCard}>
-                            <div>
-                              <span style={styles.ownerHeroEyebrow}>Active patient visit</span>
-                              <h3 style={styles.petName}>{visit.petName}</h3>
-                              <p style={styles.patientMetaLine}>{getPatientMetaLine(visit)}</p>
-                              <p style={styles.text}>Owner: {getOwnerName(visit)}</p>
+                          <section style={styles.patientOverviewSticky}>
+                            <header style={styles.patientHeaderCard}>
+                              <div>
+                                <span style={styles.ownerHeroEyebrow}>Patient Overview</span>
+                                <h3 style={styles.petName}>{visit.petName}</h3>
+                                <p style={styles.patientMetaLine}>{getPatientMetaLine(visit)}</p>
+                              </div>
+                              <div style={styles.patientStatusColumn}>
+                                <span style={styles.status}>{visit.status}</span>
+                                <span style={styles.pill}>{visit.visitType || "Walk-in"}</span>
+                              </div>
+                            </header>
+
+                            <div style={styles.patientOverviewMetaGrid}>
+                              <span>
+                                <strong>Owner</strong>
+                                {getOwnerName(visit)}
+                              </span>
+                              <span>
+                                <strong>Doctor</strong>
+                                {doctor ? `Dr. ${doctor.name}` : "Not assigned"}
+                              </span>
+                              <span>
+                                <strong>Triage</strong>
+                                {getTriageLevel(visit)}
+                              </span>
+                              <span>
+                                <strong>Visit Type</strong>
+                                {visit.visitType || "Walk-in"}
+                              </span>
                             </div>
-                            <div style={styles.patientStatusColumn}>
-                              <span style={styles.status}>{visit.status}</span>
-                              <span style={styles.pill}>{visit.visitType || "Walk-in"}</span>
-                            </div>
-                          </header>
 
-                          <div style={styles.quickActionRow}>
-                            <a style={styles.quickActionButton} href={`tel:${visit.phone}`}>
-                              Call Owner
-                            </a>
-                            <a style={styles.quickActionButton} href={`sms:${visit.phone}`}>
-                              Text Owner
-                            </a>
-                            <button
-                              type="button"
-                              style={{
-                                ...styles.quickActionButton,
-                                ...(!visit.ownerEmail ? styles.disabledButton : {}),
-                              }}
-                              onClick={() => emailVisitLink(visit)}
-                              disabled={!visit.ownerEmail}
-                            >
-                              Email Owner
-                            </button>
-                          </div>
-
-                          {doctor && (
-                            <a
-                              href={doctor.profileUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              style={styles.clinicDoctorLink}
-                            >
-                              Assigned doctor: Dr. {doctor.name} - View profile
-                            </a>
-                          )}
-
-                          <div style={styles.queueSafeCard}>
-                            <strong>High volume currently.</strong>
-                            <span>Patients are prioritized by medical urgency.</span>
-                            {getQueueDetails(visit) && (
-                              <small>
-                                Internal: #{getQueueDetails(visit)?.position} in queue,{" "}
-                                {getQueueDetails(visit)?.patientsAhead} ahead.
-                              </small>
+                            {doctor && (
+                              <a
+                                href={doctor.profileUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={styles.clinicDoctorLink}
+                              >
+                                View Dr. {doctor.name} profile
+                              </a>
                             )}
-                          </div>
 
-                          <section style={styles.workflowSection}>
-                            <h4 style={styles.workflowSectionTitle}>Owner Communication</h4>
+                            <div style={styles.quickActionRow}>
+                              <a style={styles.quickActionButton} href={`tel:${visit.phone}`}>
+                                Call Owner
+                              </a>
+                              <a style={styles.quickActionButton} href={`sms:${visit.phone}`}>
+                                Text Owner
+                              </a>
+                              <button
+                                type="button"
+                                style={{
+                                  ...styles.quickActionButton,
+                                  ...(!visit.ownerEmail ? styles.disabledButton : {}),
+                                }}
+                                onClick={() => emailVisitLink(visit)}
+                                disabled={!visit.ownerEmail}
+                              >
+                                Email Owner
+                              </button>
+                              <button
+                                type="button"
+                                style={styles.quickActionButton}
+                                onClick={() => {
+                                  setSelectedVisitId(visit.id);
+                                  setOwnerPortalTab("home");
+                                  setOwnerPortalMode("owner");
+                                  setView("status");
+                                }}
+                              >
+                                Preview Owner Page
+                              </button>
+                            </div>
+
                             <div style={styles.secureVisitLinkCard}>
                               <div>
                                 <strong>Owner Access Link</strong>
@@ -4810,8 +5021,8 @@ export default function Home() {
                                   for this visit.
                                 </p>
                                 <small style={styles.trackSmallNote}>
-                                  Shared family links are view only. No form signing, approvals, or
-                                  payments.
+                                  Shared family links are view only. No forms, approvals, payments,
+                                  or owner profile editing.
                                 </small>
                               </div>
                               <div style={styles.ownerLinkButtonRow}>
@@ -4838,49 +5049,17 @@ export default function Home() {
                                 </button>
                               </div>
                             </div>
-                          </section>
 
-                          <section style={styles.workflowSection}>
-                            <h4 style={styles.workflowSectionTitle}>Intake Summary</h4>
-                            <div style={styles.intakeCardGrid}>
-                              {[
-                                ["Chief Complaint", `${intake.chiefComplaint} / ${intake.symptom}`],
-                                ["Symptoms Started", intake.started],
-                                ["Breathing", intake.breathing],
-                                ["Conscious", intake.conscious],
-                                ["Mobility", intake.mobility],
-                                ["Bleeding", intake.bleeding],
-                                ["Medications", intake.medications],
-                                ["Allergies", intake.allergies],
-                                ["Attached Media", intake.mediaSummary],
-                                ["Additional Notes", intake.notes],
-                              ].map(([label, value]) => (
-                                <div key={label} style={styles.intakeDataCard}>
-                                  <span>{label}</span>
-                                  <strong>{value}</strong>
-                                </div>
-                              ))}
+                            <div style={styles.queueSafeCard}>
+                              <strong>High volume currently.</strong>
+                              <span>Patients are prioritized by medical urgency.</span>
+                              {getQueueDetails(visit) && (
+                                <small>
+                                  Internal: #{getQueueDetails(visit)?.position} in queue,{" "}
+                                  {getQueueDetails(visit)?.patientsAhead} ahead.
+                                </small>
+                              )}
                             </div>
-                          </section>
-
-                          <section style={styles.workflowSection}>
-                            <h4 style={styles.workflowSectionTitle}>Internal Notes</h4>
-                            <textarea
-                              style={{
-                                ...styles.notesBox,
-                                ...(!canEditClinicNotes ? styles.disabledButton : {}),
-                              }}
-                              placeholder={
-                                canEditClinicNotes
-                                  ? "Add internal notes visible only to clinic staff."
-                                  : "Internal notes are limited to technician, veterinarian, and admin roles."
-                              }
-                              value={removeAppMetadata(visit.clinicNotes)}
-                              onChange={(event) => {
-                                if (canEditClinicNotes) saveClinicNotes(visit.id, event.target.value);
-                              }}
-                              disabled={!canEditClinicNotes}
-                            />
                           </section>
 
                           {pendingMessage && (
@@ -4888,7 +5067,7 @@ export default function Home() {
                           )}
 
                           <section style={styles.workflowSection}>
-                            <h4 style={styles.workflowSectionTitle}>Visit Timeline</h4>
+                            <h4 style={styles.workflowSectionTitle}>Workflow Timeline</h4>
                             <div style={styles.clinicTimeline}>
                               {visitTimelineSteps.map((step, index) => {
                                 const complete = index < timelineIndex;
@@ -4903,7 +5082,7 @@ export default function Home() {
                                         ...(current ? styles.clinicTimelineDotCurrent : {}),
                                       }}
                                     >
-                                      {complete ? "OK" : ""}
+                                      {complete ? "Done" : current ? "Now" : ""}
                                     </span>
                                     <strong>{step}</strong>
                                   </div>
@@ -4912,268 +5091,271 @@ export default function Home() {
                             </div>
                           </section>
 
-                          <fieldset
-                            disabled={Boolean(pendingMessage)}
-                            style={{
-                              ...styles.clinicWorkflowFieldset,
-                              ...(pendingMessage ? styles.disabledActionGrid : {}),
-                            }}
-                          >
-                            <details style={styles.workflowAccordion} open>
-                              <summary style={styles.workflowAccordionSummary}>
-                                Clinical Actions
-                              </summary>
-                              <div style={styles.workflowSectionGrid}>
-                                <section style={styles.workflowSection}>
-                                  <h4 style={styles.workflowSectionTitle}>Arrival / Triage</h4>
-                                  <div style={styles.contextActionRow}>
-                                    <button
-                                      type="button"
-                                      style={styles.greenAction}
-                                      onClick={() =>
-                                        sendUpdate(
-                                          visit.id,
-                                          "Accepted",
-                                          `Your visit request for ${visit.petName} has been received by the emergency team.`
-                                        )
-                                      }
-                                    >
-                                      Accept Visit
-                                    </button>
-                                    <button
-                                      type="button"
-                                      style={styles.blueAction}
-                                      onClick={() =>
-                                        sendUpdate(
-                                          visit.id,
-                                          "Checked in",
-                                          `${visit.petName} has arrived and check-in has started.`
-                                        )
-                                      }
-                                    >
-                                      Mark Checked In
-                                    </button>
-                                    <button
-                                      type="button"
-                                      style={styles.redAction}
-                                      onClick={() =>
-                                        sendUpdate(
-                                          visit.id,
-                                          "Critical triage",
-                                          `${visit.petName} has been triaged as critical and moved immediately to the treatment area.`
-                                        )
-                                      }
-                                    >
-                                      Critical
-                                    </button>
-                                    <button
-                                      type="button"
-                                      style={styles.orangeAction}
-                                      onClick={() =>
-                                        sendUpdate(
-                                          visit.id,
-                                          "Urgent triage",
-                                          `${visit.petName} has been triaged as urgent and is being stabilized by the medical team.`
-                                        )
-                                      }
-                                    >
-                                      Urgent
-                                    </button>
-                                    <button
-                                      type="button"
-                                      style={styles.tealAction}
-                                      onClick={() =>
-                                        sendUpdate(
-                                          visit.id,
-                                          "Stable triage",
-                                          `${visit.petName} has been triaged as stable and will be seen based on medical priority.`
-                                        )
-                                      }
-                                    >
-                                      Stable
-                                    </button>
-                                    <button
-                                      type="button"
-                                      style={styles.tealAction}
-                                      onClick={() =>
-                                        sendCustomCareUpdate(
-                                          visit,
-                                          visit.status,
-                                          "Enter a short vitals update for the owner",
-                                          `${visit.petName}'s vital signs were checked and are stable at this time.`
-                                        )
-                                      }
-                                    >
-                                      Add Vitals
-                                    </button>
-                                  </div>
-                                </section>
+                          <section style={styles.workflowSection}>
+                            <div style={styles.sectionHeaderRow}>
+                              <div>
+                                <h4 style={styles.workflowSectionTitle}>Action Center</h4>
+                                <p style={styles.authHelpText}>
+                                  Next workflow: {getActionCenterTitle(visit)}
+                                </p>
+                              </div>
+                              <span style={styles.speciesPill}>{getActionCenterTitle(visit)}</span>
+                            </div>
 
-                                <section style={styles.workflowSection}>
-                                  <h4 style={styles.workflowSectionTitle}>Registration / Consent</h4>
-                                  <div style={styles.contextActionRow}>
-                                    <button
-                                      type="button"
-                                      style={styles.blueAction}
-                                      onClick={() =>
-                                        sendUpdate(
-                                          visit.id,
-                                          visit.status,
-                                          `${visit.petName}'s registration information has been received.`
-                                        )
-                                      }
-                                    >
-                                      Registration Complete
-                                    </button>
-                                    <button
-                                      type="button"
-                                      style={styles.purpleAction}
-                                      onClick={() =>
-                                        sendFormToVisit(
-                                          visit,
-                                          "Treatment authorization",
-                                          [
-                                            "I authorize the emergency team to examine my pet and provide emergency stabilization as needed.",
-                                            "I understand I am financially responsible for care provided.",
-                                            "I authorize MyPawLink updates by SMS/email when available.",
-                                          ].join("\n\n"),
-                                          `A treatment authorization form is ready for ${visit.petName}.`
-                                        )
-                                      }
-                                    >
-                                      Send General Consent
-                                    </button>
-                                    <button
-                                      type="button"
-                                      style={styles.purpleAction}
-                                      onClick={() =>
-                                        sendFormToVisit(
-                                          visit,
-                                          "CPR / DNR preference",
-                                          [
-                                            "Please choose and sign a resuscitation preference for your pet.",
-                                            "Options include Full CPR, DNR, or Limited CPR.",
-                                            "Full CPR may include chest compressions, intubation, emergency drugs, defibrillation, and advanced life support.",
-                                          ].join("\n\n"),
-                                          `A CPR/DNR preference form is ready for ${visit.petName}.`
-                                        )
-                                      }
-                                    >
-                                      Send CPR / DNR Form
-                                    </button>
-                                    <button
-                                      type="button"
-                                      style={styles.orangeAction}
-                                      onClick={() =>
-                                        sendCustomCareUpdate(
-                                          visit,
-                                          "Deposit requested",
-                                          "Enter deposit request, for example: A $1,000 deposit is requested to continue care.",
-                                          `A deposit is requested to continue care for ${visit.petName}.`
-                                        )
-                                      }
-                                    >
-                                      Request Deposit
-                                    </button>
-                                  </div>
-                                </section>
+                            <fieldset
+                              disabled={Boolean(pendingMessage)}
+                              style={{
+                                ...styles.clinicWorkflowFieldset,
+                                ...(pendingMessage ? styles.disabledActionGrid : {}),
+                              }}
+                            >
+                              {actionCategory === "arrival" && (
+                                <div style={styles.contextActionRow}>
+                                  <button
+                                    type="button"
+                                    style={styles.greenAction}
+                                    onClick={() =>
+                                      sendUpdate(
+                                        visit.id,
+                                        "Accepted",
+                                        `Your visit request for ${visit.petName} has been received by the emergency team.`
+                                      )
+                                    }
+                                  >
+                                    Accept Visit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    style={styles.blueAction}
+                                    onClick={() =>
+                                      sendUpdate(
+                                        visit.id,
+                                        "Checked in",
+                                        `${visit.petName} has arrived and check-in has started.`
+                                      )
+                                    }
+                                  >
+                                    Mark Checked In
+                                  </button>
+                                  <button
+                                    type="button"
+                                    style={styles.redAction}
+                                    onClick={() =>
+                                      sendUpdate(
+                                        visit.id,
+                                        "Critical triage",
+                                        `${visit.petName} has been triaged as critical and moved immediately to the treatment area.`
+                                      )
+                                    }
+                                  >
+                                    Critical
+                                  </button>
+                                  <button
+                                    type="button"
+                                    style={styles.orangeAction}
+                                    onClick={() =>
+                                      sendUpdate(
+                                        visit.id,
+                                        "Urgent triage",
+                                        `${visit.petName} has been triaged as urgent and is being stabilized by the medical team.`
+                                      )
+                                    }
+                                  >
+                                    Urgent
+                                  </button>
+                                  <button
+                                    type="button"
+                                    style={styles.tealAction}
+                                    onClick={() =>
+                                      sendUpdate(
+                                        visit.id,
+                                        "Stable triage",
+                                        `${visit.petName} has been triaged as stable and will be seen based on medical priority.`
+                                      )
+                                    }
+                                  >
+                                    Stable
+                                  </button>
+                                  <button
+                                    type="button"
+                                    style={styles.tealAction}
+                                    onClick={() =>
+                                      sendCustomCareUpdate(
+                                        visit,
+                                        visit.status,
+                                        "Enter a short vitals update for the owner",
+                                        `${visit.petName}'s vital signs were checked and are stable at this time.`
+                                      )
+                                    }
+                                  >
+                                    Add Vitals
+                                  </button>
+                                </div>
+                              )}
 
-                                <section style={styles.workflowSection}>
-                                  <h4 style={styles.workflowSectionTitle}>Doctor / Diagnostics</h4>
-                                  <div style={styles.contextActionRow}>
-                                    <select
-                                      style={styles.doctorSelect}
-                                      defaultValue=""
-                                      onChange={(event) => {
-                                        if (!event.target.value) return;
-                                        assignDoctorToVisit(visit.id, event.target.value);
-                                        event.target.value = "";
-                                      }}
-                                    >
-                                      <option value="">Assign Doctor</option>
-                                      {doctors.map((doctorOption) => (
-                                        <option key={doctorOption.name} value={doctorOption.name}>
-                                          Dr. {doctorOption.name}
-                                        </option>
-                                      ))}
-                                    </select>
-                                    <button
-                                      type="button"
-                                      style={styles.purpleAction}
-                                      onClick={() =>
-                                        sendUpdate(
-                                          visit.id,
-                                          "Doctor reviewing",
-                                          `The doctor is reviewing ${visit.petName}'s history, triage notes, and current symptoms.`
-                                        )
-                                      }
-                                    >
-                                      Doctor Reviewing
-                                    </button>
-                                    <button
-                                      type="button"
-                                      style={styles.blueAction}
-                                      onClick={() =>
-                                        sendUpdate(
-                                          visit.id,
-                                          "Diagnostics underway",
-                                          `Diagnostics are underway for ${visit.petName}. We will update you as results are reviewed.`
-                                        )
-                                      }
-                                    >
-                                      Diagnostics Underway
-                                    </button>
-                                    <button
-                                      type="button"
-                                      style={styles.blueAction}
-                                      onClick={() =>
-                                        sendUpdate(
-                                          visit.id,
-                                          "Diagnostics underway",
-                                          `Bloodwork is in progress for ${visit.petName}.`
-                                        )
-                                      }
-                                    >
-                                      Bloodwork Ordered
-                                    </button>
-                                    <button
-                                      type="button"
-                                      style={styles.blueAction}
-                                      onClick={() =>
-                                        sendUpdate(
-                                          visit.id,
-                                          "Awaiting test results",
-                                          `Radiographs have been completed for ${visit.petName}. The doctor is reviewing the images.`
-                                        )
-                                      }
-                                    >
-                                      X-rays Complete
-                                    </button>
-                                    <button
-                                      type="button"
-                                      style={styles.orangeAction}
-                                      onClick={() =>
-                                        sendUpdate(
-                                          visit.id,
-                                          "Awaiting test results",
-                                          `${visit.petName}'s test results are pending doctor review.`
-                                        )
-                                      }
-                                    >
-                                      Awaiting Results
-                                    </button>
-                                    <button
-                                      type="button"
-                                      style={styles.greenAction}
-                                      onClick={() => sendEstimateApproval(visit)}
-                                    >
-                                      Send Estimate
-                                    </button>
-                                  </div>
-                                </section>
+                              {actionCategory === "registration" && (
+                                <div style={styles.contextActionRow}>
+                                  <button
+                                    type="button"
+                                    style={styles.blueAction}
+                                    onClick={() =>
+                                      sendUpdate(
+                                        visit.id,
+                                        visit.status,
+                                        `${visit.petName}'s registration information has been received.`
+                                      )
+                                    }
+                                  >
+                                    Registration Complete
+                                  </button>
+                                  <button
+                                    type="button"
+                                    style={styles.purpleAction}
+                                    onClick={() =>
+                                      sendFormToVisit(
+                                        visit,
+                                        "Treatment authorization",
+                                        [
+                                          "I authorize the emergency team to examine my pet and provide emergency stabilization as needed.",
+                                          "I understand I am financially responsible for care provided.",
+                                          "I authorize MyPawLink updates by SMS/email when available.",
+                                        ].join("\n\n"),
+                                        `A treatment authorization form is ready for ${visit.petName}.`
+                                      )
+                                    }
+                                  >
+                                    Send General Consent
+                                  </button>
+                                  <button
+                                    type="button"
+                                    style={styles.purpleAction}
+                                    onClick={() =>
+                                      sendFormToVisit(
+                                        visit,
+                                        "CPR / DNR preference",
+                                        [
+                                          "Please choose and sign a resuscitation preference for your pet.",
+                                          "Options include Full CPR, DNR, or Limited CPR.",
+                                          "Full CPR may include chest compressions, intubation, emergency drugs, defibrillation, and advanced life support.",
+                                        ].join("\n\n"),
+                                        `A CPR/DNR preference form is ready for ${visit.petName}.`
+                                      )
+                                    }
+                                  >
+                                    Send CPR / DNR Form
+                                  </button>
+                                  <button
+                                    type="button"
+                                    style={styles.orangeAction}
+                                    onClick={() =>
+                                      sendCustomCareUpdate(
+                                        visit,
+                                        "Deposit requested",
+                                        "Enter deposit request, for example: A $1,000 deposit is requested to continue care.",
+                                        `A deposit is requested to continue care for ${visit.petName}.`
+                                      )
+                                    }
+                                  >
+                                    Request Deposit
+                                  </button>
+                                </div>
+                              )}
 
-                                <section style={styles.workflowSection}>
-                                  <h4 style={styles.workflowSectionTitle}>Treatment</h4>
+                              {actionCategory === "diagnostics" && (
+                                <div style={styles.contextActionRow}>
+                                  <select
+                                    style={styles.doctorSelect}
+                                    defaultValue=""
+                                    onChange={(event) => {
+                                      if (!event.target.value) return;
+                                      assignDoctorToVisit(visit.id, event.target.value);
+                                      event.target.value = "";
+                                    }}
+                                  >
+                                    <option value="">Assign Doctor</option>
+                                    {doctors.map((doctorOption) => (
+                                      <option key={doctorOption.name} value={doctorOption.name}>
+                                        Dr. {doctorOption.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <button
+                                    type="button"
+                                    style={styles.purpleAction}
+                                    onClick={() =>
+                                      sendUpdate(
+                                        visit.id,
+                                        "Doctor reviewing",
+                                        `The doctor is reviewing ${visit.petName}'s history, triage notes, and current symptoms.`
+                                      )
+                                    }
+                                  >
+                                    Doctor Reviewing
+                                  </button>
+                                  <button
+                                    type="button"
+                                    style={styles.blueAction}
+                                    onClick={() =>
+                                      sendUpdate(
+                                        visit.id,
+                                        "Diagnostics underway",
+                                        `Diagnostics are underway for ${visit.petName}. We will update you as results are reviewed.`
+                                      )
+                                    }
+                                  >
+                                    Diagnostics Underway
+                                  </button>
+                                  <button
+                                    type="button"
+                                    style={styles.blueAction}
+                                    onClick={() =>
+                                      sendUpdate(
+                                        visit.id,
+                                        "Diagnostics underway",
+                                        `Bloodwork is in progress for ${visit.petName}.`
+                                      )
+                                    }
+                                  >
+                                    Bloodwork Ordered
+                                  </button>
+                                  <button
+                                    type="button"
+                                    style={styles.blueAction}
+                                    onClick={() =>
+                                      sendUpdate(
+                                        visit.id,
+                                        "Awaiting test results",
+                                        `Radiographs have been completed for ${visit.petName}. The doctor is reviewing the images.`
+                                      )
+                                    }
+                                  >
+                                    X-rays Complete
+                                  </button>
+                                  <button
+                                    type="button"
+                                    style={styles.orangeAction}
+                                    onClick={() =>
+                                      sendUpdate(
+                                        visit.id,
+                                        "Awaiting test results",
+                                        `${visit.petName}'s test results are pending doctor review.`
+                                      )
+                                    }
+                                  >
+                                    Awaiting Results
+                                  </button>
+                                  <button
+                                    type="button"
+                                    style={styles.greenAction}
+                                    onClick={() => sendEstimateApproval(visit)}
+                                  >
+                                    Send Estimate
+                                  </button>
+                                </div>
+                              )}
+
+                              {actionCategory === "treatment" && (
+                                <div style={styles.contextActionStack}>
                                   <div style={styles.contextActionRow}>
                                     {[
                                       ["Treatment started", "Treatment Started"],
@@ -5186,7 +5368,9 @@ export default function Home() {
                                       <button
                                         key={label}
                                         type="button"
-                                        style={status.includes("Critical") ? styles.redAction : styles.orangeAction}
+                                        style={
+                                          status.includes("Critical") ? styles.redAction : styles.orangeAction
+                                        }
                                         onClick={() =>
                                           sendUpdate(
                                             visit.id,
@@ -5199,349 +5383,548 @@ export default function Home() {
                                       </button>
                                     ))}
                                   </div>
-                                </section>
-
-                                <section style={styles.workflowSection}>
-                                  <h4 style={styles.workflowSectionTitle}>Care Events</h4>
-                                  <div style={styles.contextActionRow}>
-                                    <button
-                                      type="button"
-                                      style={styles.greenAction}
-                                      onClick={() =>
-                                        sendCustomCareUpdate(
-                                          visit,
-                                          visit.status,
-                                          "Enter medication/treatment update",
-                                          `${visit.petName}'s scheduled medication or treatment was completed.`
-                                        )
-                                      }
-                                    >
-                                      Medication Given
-                                    </button>
-                                    <button
-                                      type="button"
-                                      style={styles.tealAction}
-                                      onClick={() =>
-                                        sendCustomCareUpdate(
-                                          visit,
-                                          visit.status,
-                                          "Enter monitoring update",
-                                          `${visit.petName} is resting and being monitored by the care team.`
-                                        )
-                                      }
-                                    >
-                                      Monitoring Note
-                                    </button>
-                                    <button
-                                      type="button"
-                                      style={styles.blueAction}
-                                      onClick={() =>
-                                        sendCustomCareUpdate(
-                                          visit,
-                                          visit.status,
-                                          "Enter feeding/nursing update",
-                                          `${visit.petName}'s nursing care was completed.`
-                                        )
-                                      }
-                                    >
-                                      Feeding / Nursing
-                                    </button>
-                                    <button
-                                      type="button"
-                                      style={styles.blueAction}
-                                      onClick={() =>
-                                        sendUpdate(
-                                          visit.id,
-                                          visit.status,
-                                          `${visit.petName} was walked by the care team.`
-                                        )
-                                      }
-                                    >
-                                      Walked
-                                    </button>
-                                    <button
-                                      type="button"
-                                      style={styles.blueAction}
-                                      onClick={() =>
-                                        sendUpdate(
-                                          visit.id,
-                                          visit.status,
-                                          `${visit.petName} urinated during the latest care check.`
-                                        )
-                                      }
-                                    >
-                                      Urinated
-                                    </button>
-                                    <button
-                                      type="button"
-                                      style={styles.blueAction}
-                                      onClick={() =>
-                                        sendUpdate(
-                                          visit.id,
-                                          visit.status,
-                                          `${visit.petName} defecated during the latest care check.`
-                                        )
-                                      }
-                                    >
-                                      Defecated
-                                    </button>
+                                  <div style={styles.careEventPanel}>
+                                    <strong>Care Events</strong>
+                                    <div style={styles.contextActionRow}>
+                                      <button
+                                        type="button"
+                                        style={styles.greenAction}
+                                        onClick={() =>
+                                          sendCustomCareUpdate(
+                                            visit,
+                                            visit.status,
+                                            "Enter medication/treatment update",
+                                            `${visit.petName}'s scheduled medication or treatment was completed.`
+                                          )
+                                        }
+                                      >
+                                        Medication Given
+                                      </button>
+                                      <button
+                                        type="button"
+                                        style={styles.tealAction}
+                                        onClick={() =>
+                                          sendCustomCareUpdate(
+                                            visit,
+                                            visit.status,
+                                            "Enter monitoring update",
+                                            `${visit.petName} is resting and being monitored by the care team.`
+                                          )
+                                        }
+                                      >
+                                        Monitoring Note
+                                      </button>
+                                      <button
+                                        type="button"
+                                        style={styles.blueAction}
+                                        onClick={() =>
+                                          sendCustomCareUpdate(
+                                            visit,
+                                            visit.status,
+                                            "Enter feeding/nursing update",
+                                            `${visit.petName}'s nursing care was completed.`
+                                          )
+                                        }
+                                      >
+                                        Feeding / Nursing
+                                      </button>
+                                      {["Walked", "Urinated", "Defecated"].map((label) => (
+                                        <button
+                                          key={label}
+                                          type="button"
+                                          style={styles.blueAction}
+                                          onClick={() =>
+                                            sendUpdate(
+                                              visit.id,
+                                              visit.status,
+                                              `${visit.petName} ${label.toLowerCase()} during the latest care check.`
+                                            )
+                                          }
+                                        >
+                                          {label}
+                                        </button>
+                                      ))}
+                                    </div>
                                   </div>
-                                </section>
-                              </div>
-                            </details>
-                          </fieldset>
+                                </div>
+                              )}
+
+                              {actionCategory === "discharge" && (
+                                <div style={styles.contextActionRow}>
+                                  <button
+                                    type="button"
+                                    style={styles.redAction}
+                                    onClick={() =>
+                                      sendUpdate(
+                                        visit.id,
+                                        "Ready for pickup",
+                                        `${visit.petName} is ready for pickup. Please check in at the front desk when you arrive.`
+                                      )
+                                    }
+                                  >
+                                    Ready for Pickup
+                                  </button>
+                                  <button
+                                    type="button"
+                                    style={styles.purpleAction}
+                                    onClick={() => sendDischargeInstructions(visit)}
+                                  >
+                                    Send Discharge Instructions
+                                  </button>
+                                  <button
+                                    type="button"
+                                    style={styles.greenAction}
+                                    onClick={() =>
+                                      sendUpdate(
+                                        visit.id,
+                                        visit.status,
+                                        `A follow-up reminder has been set for ${visit.petName}.`
+                                      )
+                                    }
+                                  >
+                                    Aftercare Reminder
+                                  </button>
+                                  <button
+                                    type="button"
+                                    style={styles.greenAction}
+                                    onClick={() =>
+                                      sendUpdate(
+                                        visit.id,
+                                        visit.status,
+                                        `Payment has been completed for ${visit.petName}'s visit.`
+                                      )
+                                    }
+                                  >
+                                    Payment Complete
+                                  </button>
+                                  <button
+                                    type="button"
+                                    style={styles.redAction}
+                                    onClick={() =>
+                                      sendUpdate(
+                                        visit.id,
+                                        "Closed",
+                                        `${visit.petName}'s visit has been completed and closed.`
+                                      )
+                                    }
+                                  >
+                                    Close Visit
+                                  </button>
+                                </div>
+                              )}
+                            </fieldset>
+                          </section>
 
                           <section style={styles.workflowSection}>
-                            <h4 style={styles.workflowSectionTitle}>Owner Updates</h4>
-                            <div style={styles.ownerUpdateTemplateGrid}>
-                              {[
-                                "Your pet has been checked in.",
-                                "Your pet is waiting for triage.",
-                                "The doctor is reviewing your pet now.",
-                                "Diagnostics are underway.",
-                                "We are waiting on lab results.",
-                                "Your pet is resting comfortably.",
-                                "Treatment has started.",
-                                "Your pet is ready for pickup.",
-                                "Please review and approve the estimate.",
-                                "Please review and sign the consent form.",
-                              ].map((template) => (
+                            <div style={styles.sectionHeaderRow}>
+                              <div>
+                                <h4 style={styles.workflowSectionTitle}>Communication Hub</h4>
+                                <p style={styles.authHelpText}>
+                                  Owner updates, internal notes, and referral coordination.
+                                </p>
+                              </div>
+                            </div>
+
+                            <div style={styles.communicationTabRow}>
+                              {(["owner", "internal"] as CommunicationHubTab[]).map((tab) => (
                                 <button
-                                  key={template}
+                                  key={tab}
                                   type="button"
-                                  style={styles.templateButton}
-                                  onClick={() => sendOwnerUpdate(visit, template)}
+                                  style={{
+                                    ...styles.communicationTabButton,
+                                    ...(communicationTab === tab
+                                      ? styles.communicationTabButtonActive
+                                      : {}),
+                                  }}
+                                  onClick={() => setCommunicationTab(visit.id, tab)}
                                 >
-                                  {template}
+                                  {tab === "owner" ? "Owner" : "Internal"}
                                 </button>
                               ))}
+                              {isReferralPatient && (
+                                <button
+                                  type="button"
+                                  style={{
+                                    ...styles.communicationTabButton,
+                                    ...(communicationTab === "referring"
+                                      ? styles.communicationTabButtonActive
+                                      : {}),
+                                  }}
+                                  onClick={() => setCommunicationTab(visit.id, "referring")}
+                                >
+                                  Referring Clinic
+                                </button>
+                              )}
                             </div>
 
-                            <textarea
-                              style={styles.textarea}
-                              value={ownerUpdateDrafts[visit.id] || ""}
-                              onChange={(event) =>
-                                setOwnerUpdateDrafts((current) => ({
-                                  ...current,
-                                  [visit.id]: event.target.value,
-                                }))
-                              }
-                              placeholder="Add a custom note before sending"
-                            />
-
-                            <div style={styles.mediaActionRow}>
-                              <label style={styles.mediaUploadButton}>
-                                Send Photo / Video
-                                <input
-                                  hidden
-                                  type="file"
-                                  accept="image/*,video/*"
-                                  capture="environment"
-                                  onChange={(event) => handleOwnerUpdateMediaChange(visit.id, event)}
-                                />
-                              </label>
-                              <button
-                                type="button"
-                                style={styles.greenAction}
-                                onClick={() =>
-                                  sendOwnerUpdate(
-                                    visit,
-                                    mediaDraft
-                                      ? `A new ${mediaDraft.type} update is available for ${visit.petName}.`
-                                      : `There is a new update for ${visit.petName}.`
-                                  )
-                                }
-                              >
-                                Send Update
-                              </button>
-                            </div>
-
-                            {mediaDraft && (
-                              <div style={styles.mediaPreviewCard}>
-                                {mediaDraft.previewUrl ? (
-                                  <img
-                                    src={mediaDraft.previewUrl}
-                                    alt={mediaDraft.name}
-                                    style={styles.mediaPreviewImage}
-                                  />
-                                ) : (
-                                  <span style={styles.mediaPreviewIcon}>
-                                    {mediaDraft.type === "video" ? "Video" : "File"}
-                                  </span>
-                                )}
-                                <div>
-                                  <strong>{mediaDraft.name}</strong>
-                                  <input
-                                    style={styles.trackInput}
-                                    value={mediaDraft.caption}
-                                    onChange={(event) =>
-                                      updateOwnerMediaCaption(visit.id, event.target.value)
+                            {communicationTab === "owner" && (
+                              <div style={styles.communicationPanel}>
+                                <div style={styles.contextActionRow}>
+                                  <button
+                                    type="button"
+                                    style={styles.tealAction}
+                                    onClick={() =>
+                                      sendOwnerUpdate(
+                                        visit,
+                                        ownerUpdateDrafts[visit.id] ||
+                                          `There is a new update for ${visit.petName}.`
+                                      )
                                     }
-                                    placeholder="Optional caption"
-                                  />
+                                  >
+                                    Send Message
+                                  </button>
+                                  <button
+                                    type="button"
+                                    style={styles.purpleAction}
+                                    onClick={() =>
+                                      sendFormToVisit(
+                                        visit,
+                                        "General consent form",
+                                        "Please review and sign this consent so the care team can continue the recommended visit workflow.",
+                                        `A consent form is ready for ${visit.petName}.`
+                                      )
+                                    }
+                                  >
+                                    Send Consent Form
+                                  </button>
+                                  <button
+                                    type="button"
+                                    style={styles.greenAction}
+                                    onClick={() => sendEstimateApproval(visit)}
+                                  >
+                                    Send Estimate
+                                  </button>
+                                  <button
+                                    type="button"
+                                    style={styles.blueAction}
+                                    onClick={() => sendDischargeInstructions(visit)}
+                                  >
+                                    Send Discharge Instructions
+                                  </button>
                                 </div>
+
+                                <div style={styles.mediaActionRow}>
+                                  <label style={styles.mediaUploadButton}>
+                                    Take Photo
+                                    <input
+                                      hidden
+                                      type="file"
+                                      accept="image/*"
+                                      capture="environment"
+                                      onChange={(event) =>
+                                        handleOwnerUpdateMediaChange(visit.id, event)
+                                      }
+                                    />
+                                  </label>
+                                  <label style={styles.mediaUploadButton}>
+                                    Record Video
+                                    <input
+                                      hidden
+                                      type="file"
+                                      accept="video/*"
+                                      capture="environment"
+                                      onChange={(event) =>
+                                        handleOwnerUpdateMediaChange(visit.id, event)
+                                      }
+                                    />
+                                  </label>
+                                  <label style={styles.mediaUploadButton}>
+                                    Upload Media
+                                    <input
+                                      hidden
+                                      type="file"
+                                      accept="image/*,video/*"
+                                      onChange={(event) =>
+                                        handleOwnerUpdateMediaChange(visit.id, event)
+                                      }
+                                    />
+                                  </label>
+                                </div>
+
+                                {mediaDraft && (
+                                  <div style={styles.mediaPreviewCard}>
+                                    {mediaDraft.previewUrl ? (
+                                      <img
+                                        src={mediaDraft.previewUrl}
+                                        alt={mediaDraft.name}
+                                        style={styles.mediaPreviewImage}
+                                      />
+                                    ) : (
+                                      <span style={styles.mediaPreviewIcon}>
+                                        {mediaDraft.type === "video" ? "Video" : "File"}
+                                      </span>
+                                    )}
+                                    <div>
+                                      <strong>{mediaDraft.name}</strong>
+                                      <input
+                                        style={styles.trackInput}
+                                        value={mediaDraft.caption}
+                                        onChange={(event) =>
+                                          updateOwnerMediaCaption(visit.id, event.target.value)
+                                        }
+                                        placeholder="Optional caption"
+                                      />
+                                    </div>
+                                  </div>
+                                )}
+
+                                <div style={styles.ownerUpdateTemplateGrid}>
+                                  {[
+                                    "Your pet has been checked in.",
+                                    "Your pet is waiting for triage.",
+                                    "The doctor is reviewing your pet now.",
+                                    "Diagnostics are underway.",
+                                    "We are waiting on lab results.",
+                                    "Your pet is resting comfortably.",
+                                    "Treatment has started.",
+                                    "Please review and approve the estimate.",
+                                    "Please review and sign the consent form.",
+                                    "Your pet is ready for pickup.",
+                                  ].map((template) => (
+                                    <button
+                                      key={template}
+                                      type="button"
+                                      style={styles.templateButton}
+                                      onClick={() => sendOwnerUpdate(visit, template)}
+                                    >
+                                      {template}
+                                    </button>
+                                  ))}
+                                </div>
+
+                                <textarea
+                                  style={styles.textarea}
+                                  value={ownerUpdateDrafts[visit.id] || ""}
+                                  onChange={(event) =>
+                                    setOwnerUpdateDrafts((current) => ({
+                                      ...current,
+                                      [visit.id]: event.target.value,
+                                    }))
+                                  }
+                                  placeholder="Edit or write an owner-friendly update before sending"
+                                />
+
+                                <button
+                                  type="button"
+                                  style={styles.primaryButton}
+                                  onClick={() =>
+                                    sendOwnerUpdate(
+                                      visit,
+                                      mediaDraft
+                                        ? `A new ${mediaDraft.type} update is available for ${visit.petName}.`
+                                        : ownerUpdateDrafts[visit.id] ||
+                                            `There is a new update for ${visit.petName}.`
+                                    )
+                                  }
+                                >
+                                  Send Owner Update
+                                </button>
+                              </div>
+                            )}
+
+                            {communicationTab === "internal" && (
+                              <div style={styles.communicationPanel}>
+                                <p style={styles.authHelpText}>
+                                  Internal notes are visible only to clinic staff and never appear on
+                                  the owner page.
+                                </p>
+                                <textarea
+                                  style={{
+                                    ...styles.notesBox,
+                                    ...(!canEditClinicNotes ? styles.disabledButton : {}),
+                                  }}
+                                  placeholder={
+                                    canEditClinicNotes
+                                      ? "Add internal notes visible only to clinic staff."
+                                      : "Internal notes are limited to technician, veterinarian, and admin roles."
+                                  }
+                                  value={removeAppMetadata(visit.clinicNotes)}
+                                  onChange={(event) => {
+                                    if (canEditClinicNotes) {
+                                      saveClinicNotes(visit.id, event.target.value);
+                                    }
+                                  }}
+                                  disabled={!canEditClinicNotes}
+                                />
+                              </div>
+                            )}
+
+                            {communicationTab === "referring" && isReferralPatient && (
+                              <div style={styles.communicationPanel}>
+                                <p style={styles.authHelpText}>
+                                  Coordinate records, ETA, and transfer updates with the referring
+                                  clinic.
+                                </p>
+                                <div style={styles.contextActionRow}>
+                                  {[
+                                    "Request additional records",
+                                    "Confirm ETA",
+                                    "Send referral status update",
+                                  ].map((message) => (
+                                    <button
+                                      key={message}
+                                      type="button"
+                                      style={styles.blueAction}
+                                      onClick={() =>
+                                        window.alert(`${message} queued for the referring clinic.`)
+                                      }
+                                    >
+                                      {message}
+                                    </button>
+                                  ))}
+                                </div>
+                                <textarea
+                                  style={styles.textarea}
+                                  placeholder="Message the referring doctor or clinic"
+                                />
                               </div>
                             )}
                           </section>
 
-                          <section style={styles.workflowSection}>
-                            <h4 style={styles.workflowSectionTitle}>Forms & Approvals</h4>
-                            <div style={styles.contextActionRow}>
-                              <button
-                                type="button"
-                                style={styles.purpleAction}
-                                onClick={() =>
-                                  sendFormToVisit(
-                                    visit,
-                                    "General consent form",
-                                    "Please review and sign this consent so the care team can continue the recommended visit workflow.",
-                                    `A consent form is ready for ${visit.petName}.`
-                                  )
-                                }
-                              >
-                                Send Consent Form
-                              </button>
-                              <button
-                                type="button"
-                                style={styles.purpleAction}
-                                onClick={() =>
-                                  sendFormToVisit(
-                                    visit,
-                                    "CPR / DNR preference",
-                                    "Please review and choose a resuscitation preference for this visit.",
-                                    `A CPR/DNR form is ready for ${visit.petName}.`
-                                  )
-                                }
-                              >
-                                Send CPR / DNR Form
-                              </button>
-                              <button
-                                type="button"
-                                style={styles.greenAction}
-                                onClick={() => sendEstimateApproval(visit)}
-                              >
-                                Send Estimate
-                              </button>
-                              <button
-                                type="button"
-                                style={styles.blueAction}
-                                onClick={() => {
-                                  const formType = window.prompt(
-                                    "Enter document name, for example Procedure Authorization"
-                                  );
-                                  if (!formType) return;
-                                  const formBody = window.prompt(
-                                    "Enter the details the customer needs to review"
-                                  );
-                                  if (!formBody) return;
-                                  sendFormToVisit(
-                                    visit,
-                                    formType,
-                                    formBody,
-                                    `A new ${formType} document is ready for ${visit.petName}.`
-                                  );
-                                }}
-                              >
-                                Send Custom Document
-                              </button>
-                            </div>
-                            <div style={styles.approvalStatusGrid}>
-                              <span>Estimate: {visit.estimateStatus || "Not Sent"}</span>
-                              {visit.forms.length > 0 ? (
-                                visit.forms.map((form) => (
-                                  <span key={form.id}>
-                                    {form.form_type}: {form.form_status}
-                                  </span>
-                                ))
-                              ) : (
-                                <span>Forms: Not Sent</span>
-                              )}
-                            </div>
-                          </section>
+                          <details style={styles.workflowAccordion}>
+                            <summary style={styles.workflowAccordionSummary}>
+                              Clinical Details
+                            </summary>
+                            <div style={styles.workflowSectionGrid}>
+                              <section style={styles.workflowSection}>
+                                <h4 style={styles.workflowSectionTitle}>Intake Summary</h4>
+                                <div style={styles.intakeCardGrid}>
+                                  {[
+                                    [
+                                      "Chief Complaint",
+                                      `${intake.chiefComplaint} / ${intake.symptom}`,
+                                    ],
+                                    ["Symptoms Started", intake.started],
+                                    ["Breathing", intake.breathing],
+                                    ["Conscious", intake.conscious],
+                                    ["Mobility", intake.mobility],
+                                    ["Bleeding", intake.bleeding],
+                                    ["Medications", intake.medications],
+                                    ["Allergies", intake.allergies],
+                                    ["Attached Media", intake.mediaSummary],
+                                    ["Additional Notes", intake.notes],
+                                  ].map(([label, value]) => (
+                                    <div key={label} style={styles.intakeDataCard}>
+                                      <span>{label}</span>
+                                      <strong>{value}</strong>
+                                    </div>
+                                  ))}
+                                </div>
+                              </section>
 
-                          <section style={styles.workflowSection}>
-                            <h4 style={styles.workflowSectionTitle}>Discharge</h4>
-                            <div style={styles.contextActionRow}>
-                              <button
-                                type="button"
-                                style={styles.redAction}
-                                onClick={() =>
-                                  sendUpdate(
-                                    visit.id,
-                                    "Ready for pickup",
-                                    `${visit.petName} is ready for pickup. Please check in at the front desk when you arrive.`
-                                  )
-                                }
-                              >
-                                Mark Ready for Pickup
-                              </button>
-                              <button
-                                type="button"
-                                style={styles.purpleAction}
-                                onClick={() => sendDischargeInstructions(visit)}
-                              >
-                                Send Discharge Instructions
-                              </button>
-                              <button
-                                type="button"
-                                style={styles.greenAction}
-                                onClick={() =>
-                                  sendUpdate(
-                                    visit.id,
-                                    visit.status,
-                                    `A follow-up reminder has been set for ${visit.petName}.`
-                                  )
-                                }
-                              >
-                                Send Aftercare Reminder
-                              </button>
-                              <button
-                                type="button"
-                                style={styles.greenAction}
-                                onClick={() =>
-                                  sendUpdate(
-                                    visit.id,
-                                    visit.status,
-                                    `Payment has been completed for ${visit.petName}'s visit.`
-                                  )
-                                }
-                              >
-                                Payment Complete
-                              </button>
-                              <button
-                                type="button"
-                                style={styles.redAction}
-                                onClick={() =>
-                                  sendUpdate(
-                                    visit.id,
-                                    "Closed",
-                                    `${visit.petName}'s visit has been completed and closed.`
-                                  )
-                                }
-                              >
-                                Close Visit
-                              </button>
-                            </div>
-                          </section>
+                              <section style={styles.workflowSection}>
+                                <h4 style={styles.workflowSectionTitle}>Documents</h4>
+                                <button type="button" style={styles.attachmentCard}>
+                                  <strong>{intake.mediaSummary}</strong>
+                                  <span>Tap media from the owner update or intake upload when present.</span>
+                                </button>
+                              </section>
 
-                          <button
-                            type="button"
-                            style={styles.secondaryButton}
-                            onClick={() => {
-                              setSelectedVisitId(visit.id);
-                              setOwnerPortalTab("home");
-                              setOwnerPortalMode("owner");
-                              setView("status");
-                            }}
-                          >
-                            View Owner Page
-                          </button>
+                              <section style={styles.workflowSection}>
+                                <h4 style={styles.workflowSectionTitle}>Forms & Approvals</h4>
+                                <div style={styles.contextActionRow}>
+                                  <button
+                                    type="button"
+                                    style={styles.purpleAction}
+                                    onClick={() =>
+                                      sendFormToVisit(
+                                        visit,
+                                        "CPR / DNR preference",
+                                        "Please review and choose a resuscitation preference for this visit.",
+                                        `A CPR/DNR form is ready for ${visit.petName}.`
+                                      )
+                                    }
+                                  >
+                                    Send CPR / DNR Form
+                                  </button>
+                                  <button
+                                    type="button"
+                                    style={styles.greenAction}
+                                    onClick={() => sendEstimateApproval(visit)}
+                                  >
+                                    Send Estimate
+                                  </button>
+                                  <button
+                                    type="button"
+                                    style={styles.blueAction}
+                                    onClick={() => {
+                                      const formType = window.prompt(
+                                        "Enter document name, for example Procedure Authorization"
+                                      );
+                                      if (!formType) return;
+                                      const formBody = window.prompt(
+                                        "Enter the details the customer needs to review"
+                                      );
+                                      if (!formBody) return;
+                                      sendFormToVisit(
+                                        visit,
+                                        formType,
+                                        formBody,
+                                        `A new ${formType} document is ready for ${visit.petName}.`
+                                      );
+                                    }}
+                                  >
+                                    Send Custom Document
+                                  </button>
+                                </div>
+                                <div style={styles.approvalStatusGrid}>
+                                  <span>Estimate: {visit.estimateStatus || "Not Sent"}</span>
+                                  {visit.forms.length > 0 ? (
+                                    visit.forms.map((form) => (
+                                      <span key={form.id}>
+                                        {form.form_type}: {form.form_status}
+                                      </span>
+                                    ))
+                                  ) : (
+                                    <span>Forms: Not Sent</span>
+                                  )}
+                                </div>
+                              </section>
+
+                              <section style={styles.workflowSection}>
+                                <h4 style={styles.workflowSectionTitle}>Care History</h4>
+                                <div style={styles.referralMessageList}>
+                                  {visit.updates.slice(-5).map((update, index) => (
+                                    <span key={`${update.time}-${index}`}>
+                                      <strong>{update.time}</strong> {update.message}
+                                    </span>
+                                  ))}
+                                </div>
+                              </section>
+
+                              <section style={styles.workflowSection}>
+                                <h4 style={styles.workflowSectionTitle}>Discharge History</h4>
+                                <div style={styles.contextActionRow}>
+                                  <button
+                                    type="button"
+                                    style={styles.purpleAction}
+                                    onClick={() => sendDischargeInstructions(visit)}
+                                  >
+                                    Send Discharge Instructions
+                                  </button>
+                                  <button
+                                    type="button"
+                                    style={styles.greenAction}
+                                    onClick={() =>
+                                      sendUpdate(
+                                        visit.id,
+                                        visit.status,
+                                        `A follow-up reminder has been set for ${visit.petName}.`
+                                      )
+                                    }
+                                  >
+                                    Send Aftercare Reminder
+                                  </button>
+                                </div>
+                              </section>
+                            </div>
+                          </details>
                         </article>
                       );
                     })}
                   </div>
                 </>
-              )}
+              ))}
                 </>
               )}
             </section>
@@ -7327,6 +7710,52 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: 12,
     boxShadow: "0 8px 20px rgba(41, 64, 83, 0.06)",
   },
+  clinicMainNav: {
+    background: "#ffffff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    display: "grid",
+    gap: 6,
+    gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+    marginBottom: 12,
+    padding: 6,
+    position: "sticky",
+    top: 0,
+    zIndex: 12,
+  },
+  clinicMainNavButton: {
+    background: "transparent",
+    border: "none",
+    borderRadius: 8,
+    color: "#52606d",
+    cursor: "pointer",
+    fontSize: 12,
+    fontWeight: 900,
+    minHeight: 42,
+    padding: "8px 4px",
+  },
+  clinicMainNavButtonActive: {
+    background: "#087f78",
+    color: "#ffffff",
+    boxShadow: "0 8px 16px rgba(15, 143, 134, 0.18)",
+  },
+  operationsBoardGrid: {
+    display: "grid",
+    gap: 8,
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 130px), 1fr))",
+  },
+  operationsBoardCard: {
+    background: "linear-gradient(135deg, #f0fffb, #ffffff)",
+    border: "1px solid #bfe9e0",
+    borderRadius: 8,
+    color: "#102a3a",
+    cursor: "pointer",
+    display: "grid",
+    gap: 6,
+    minHeight: 76,
+    padding: 12,
+    textAlign: "left",
+  },
   clinicWorkflowTabs: {
     display: "grid",
     gap: 10,
@@ -7680,6 +8109,33 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: 12,
     flexWrap: "wrap",
   },
+  moreMenuGrid: {
+    display: "grid",
+    gap: 10,
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 155px), 1fr))",
+  },
+  moreMenuCard: {
+    background: "#f8fbff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    color: "#52606d",
+    display: "grid",
+    gap: 5,
+    minHeight: 82,
+    padding: 12,
+  },
+  moreMenuLogout: {
+    background: "#fff1f2",
+    border: "1px solid #fecdd3",
+    borderRadius: 8,
+    color: "#be123c",
+    cursor: "pointer",
+    fontSize: 14,
+    fontWeight: 900,
+    minHeight: 82,
+    padding: 12,
+    textAlign: "left",
+  },
   settingsGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))",
@@ -8025,6 +8481,18 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: 14,
     padding: 16,
   },
+  patientOverviewSticky: {
+    background: "rgba(255, 255, 255, 0.98)",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    boxShadow: "0 10px 24px rgba(41, 64, 83, 0.08)",
+    display: "grid",
+    gap: 12,
+    padding: 14,
+    position: "sticky",
+    top: 58,
+    zIndex: 8,
+  },
   patientHeaderCard: {
     alignItems: "start",
     display: "flex",
@@ -8046,10 +8514,15 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: 8,
     justifyContent: "flex-end",
   },
+  patientOverviewMetaGrid: {
+    display: "grid",
+    gap: 8,
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 135px), 1fr))",
+  },
   quickActionRow: {
     display: "grid",
     gap: 8,
-    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 118px), 1fr))",
   },
   quickActionButton: {
     alignItems: "center",
@@ -8212,6 +8685,13 @@ const styles: { [key: string]: React.CSSProperties } = {
     minInlineSize: 0,
     padding: 0,
   },
+  sectionHeaderRow: {
+    alignItems: "start",
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 10,
+    justifyContent: "space-between",
+  },
   workflowAccordion: {
     background: "#ffffff",
     border: "1px solid #dcefeb",
@@ -8224,6 +8704,46 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: 17,
     fontWeight: 900,
     padding: 14,
+  },
+  contextActionStack: {
+    display: "grid",
+    gap: 12,
+  },
+  careEventPanel: {
+    background: "#f8fbff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    display: "grid",
+    gap: 10,
+    padding: 12,
+  },
+  communicationTabRow: {
+    background: "#f8fbff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    display: "grid",
+    gap: 6,
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 110px), 1fr))",
+    padding: 5,
+  },
+  communicationTabButton: {
+    background: "transparent",
+    border: "none",
+    borderRadius: 8,
+    color: "#52606d",
+    cursor: "pointer",
+    fontSize: 13,
+    fontWeight: 900,
+    minHeight: 40,
+    padding: "8px 10px",
+  },
+  communicationTabButtonActive: {
+    background: "#087f78",
+    color: "#ffffff",
+  },
+  communicationPanel: {
+    display: "grid",
+    gap: 12,
   },
   ownerUpdateTemplateGrid: {
     display: "grid",
