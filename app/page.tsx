@@ -7638,9 +7638,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     marginTop: 12,
     marginBottom: 12,
     display: "grid",
-    gridTemplateColumns: "minmax(0, 1fr) auto",
     gap: 12,
-    alignItems: "center",
+    alignItems: "start",
   },
   secureVisitLinkText: {
     color: "#52606d",
@@ -7662,7 +7661,8 @@ const styles: { [key: string]: React.CSSProperties } = {
   ownerLinkButtonRow: {
     display: "grid",
     gap: 8,
-    gridTemplateColumns: "repeat(auto-fit, minmax(96px, 1fr))",
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    width: "100%",
   },
   errorBox: {
   background: "#fff1f2",
