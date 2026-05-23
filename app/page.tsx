@@ -928,12 +928,6 @@ export default function Home() {
     const status = visit.status.toLowerCase();
     return !isDischargedVisit(visit) && (status.includes("ready") || status.includes("discharge"));
   });
-  const queueVisits = activeVisits
-    .filter((visit) => visit.status !== "Ready for pickup")
-    .sort(
-      (a, b) =>
-        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-    );
   const clinicStatuses = Array.from(
     new Set(visits.map((visit) => visit.status).filter(Boolean))
   ).sort((a, b) => a.localeCompare(b));
@@ -1451,22 +1445,6 @@ export default function Home() {
     setReferralDocumentPreviews(previews);
   };
 
-  const getQueueDetails = (visit: Visit) => {
-    if (visit.status === "Closed" || visit.status === "Ready for pickup") {
-      return null;
-    }
-
-    const queueIndex = queueVisits.findIndex((queuedVisit) => queuedVisit.id === visit.id);
-    const patientsAhead = Math.max(queueIndex, 0);
-    const estimatedWaitMinutes = patientsAhead * 25 + 15;
-
-    return {
-      position: patientsAhead + 1,
-      patientsAhead,
-      estimatedWaitMinutes,
-    };
-  };
-
   const getIntakeField = (visit: Visit, label: string) => {
     const match = visit.reason
       .split("\n")
@@ -1504,14 +1482,13 @@ export default function Home() {
     };
   };
 
-  const getPatientMetaLine = (visit: Visit) => {
+  const getCompactPatientMetaLine = (visit: Visit) => {
     const intake = getIntakeSummary(visit);
     return [
       getSpecies(visit) || "Species not provided",
       visit.breed || "Breed not provided",
-      intake.sex !== "Not provided" ? intake.sex : "",
       intake.age !== "Not provided" ? intake.age : "",
-      intake.weight !== "Not provided" ? intake.weight : "",
+      visit.visitType || "Walk-in",
     ]
       .filter(Boolean)
       .join(" - ");
@@ -1522,7 +1499,94 @@ export default function Home() {
     if (status.includes("critical") || status.includes("red")) return "Critical";
     if (status.includes("urgent") || status.includes("orange") || status.includes("yellow")) return "Urgent";
     if (status.includes("stable") || status.includes("green")) return "Stable";
-    return "Not assigned";
+    return "Pending";
+  };
+
+  const getClinicWorkflowStatusLabel = (visit: Visit) => {
+    const status = visit.status.toLowerCase();
+    if (status.includes("request") || status.includes("accepted") || status.includes("checked")) {
+      return "Awaiting Triage";
+    }
+    if (status.includes("triage")) return "Triage In Progress";
+    if (status.includes("doctor")) return "Doctor Reviewing";
+    if (status.includes("diagnostic") || status.includes("result")) return "Diagnostics Active";
+    if (status.includes("estimate")) return "Estimate Pending";
+    if (status.includes("ready")) return "Ready for Pickup";
+    if (status.includes("closed")) return "Closed";
+    return visit.status || "Awaiting Triage";
+  };
+
+  const getStatusChips = (visit: Visit, doctor: DoctorOption | null) => {
+    const chips: { label: string; tone: "neutral" | "teal" | "orange" | "red" | "blue" }[] = [];
+    const status = visit.status.toLowerCase();
+    const visitType = (visit.visitType || "").toLowerCase();
+
+    if (visitType.includes("referral") || visit.referralName) {
+      chips.push({ label: "Referral", tone: "blue" });
+      chips.push({ label: "Converted", tone: "teal" });
+    } else if (status.includes("converted")) {
+      chips.push({ label: "Converted", tone: "teal" });
+    }
+    if (getTriageLevel(visit) === "Pending") chips.push({ label: "Needs Triage", tone: "orange" });
+    if (!doctor) chips.push({ label: "Doctor Needed", tone: "neutral" });
+    if (isCriticalVisit(visit)) chips.push({ label: "Critical", tone: "red" });
+
+    return chips.slice(0, 4);
+  };
+
+  const getPrimaryClinicalAction = (visit: Visit, doctor: DoctorOption | null) => {
+    const status = visit.status.toLowerCase();
+    const triage = getTriageLevel(visit);
+
+    if (status.includes("ready") || status.includes("discharge")) {
+      return {
+        kind: "sendDischarge",
+        label: "Send Discharge",
+        helper: "Send pickup or discharge instructions to the owner.",
+      };
+    }
+
+    if (
+      status.includes("estimate") ||
+      visit.estimateStatus.toLowerCase().includes("pending") ||
+      (visit.estimateTotal > 0 && !visit.estimateStatus.toLowerCase().includes("approved"))
+    ) {
+      return {
+        kind: "sendEstimate",
+        label: "Send Estimate",
+        helper: "Request owner approval for the treatment estimate.",
+      };
+    }
+
+    if (status.includes("diagnostic") || status.includes("result") || status.includes("bloodwork")) {
+      return {
+        kind: "updateDiagnostics",
+        label: "Update Diagnostics",
+        helper: "Send a diagnostics milestone or results-waiting update.",
+      };
+    }
+
+    if (triage === "Pending" || status.includes("request") || status.includes("accepted") || status.includes("checked")) {
+      return {
+        kind: "startTriage",
+        label: "Start Triage",
+        helper: "Begin triage and assign a medical urgency level.",
+      };
+    }
+
+    if (!doctor) {
+      return {
+        kind: "assignDoctor",
+        label: "Assign Doctor",
+        helper: "Choose the doctor responsible for owner-facing updates.",
+      };
+    }
+
+    return {
+      kind: "sendOwnerUpdate",
+      label: "Send Owner Update",
+      helper: "Share the next owner-facing care milestone.",
+    };
   };
 
   const getCommunicationTab = (visitId: string) => communicationHubTabs[visitId] || "owner";
@@ -1581,21 +1645,18 @@ export default function Home() {
     return labels[category] || "Action Center";
   };
 
-  const visitTimelineSteps = [
-    "Request Submitted",
-    "Checked In",
-    "Triage Complete",
-    "Doctor Assigned",
-    "In Exam",
-    "Diagnostics Underway",
-    "Estimate Sent",
-    "Estimate Approved",
-    "Treatment Started",
-    "Monitoring / Hospitalized",
-    "Ready for Pickup",
-    "Discharged",
-    "Closed",
-  ];
+  const compactWorkflowSteps = ["Request", "Check-In", "Triage", "Doctor", "Diagnostics", "Treatment", "Discharge"];
+
+  const getCompactWorkflowIndex = (visit: Visit) => {
+    const timelineIndex = getVisitTimelineIndex(visit);
+    if (timelineIndex >= 10) return 6;
+    if (timelineIndex >= 8) return 5;
+    if (timelineIndex >= 5) return 4;
+    if (timelineIndex >= 3) return 3;
+    if (timelineIndex >= 2) return 2;
+    if (timelineIndex >= 1) return 1;
+    return 0;
+  };
 
   const getVisitTimelineIndex = (visit: Visit) => {
     const status = visit.status.toLowerCase();
@@ -4929,9 +4990,12 @@ export default function Home() {
                       const doctor = getAssignedDoctorFromNotes(visit.clinicNotes);
                       const pendingMessage = pendingClinicActions[visit.id];
                       const mediaDraft = ownerMediaDrafts[visit.id];
-                      const timelineIndex = getVisitTimelineIndex(visit);
                       const actionCategory = getActionCenterCategory(visit);
                       const communicationTab = getCommunicationTab(visit.id);
+                      const workflowStatus = getClinicWorkflowStatusLabel(visit);
+                      const primaryClinicalAction = getPrimaryClinicalAction(visit, doctor);
+                      const compactWorkflowIndex = getCompactWorkflowIndex(visit);
+                      const statusChips = getStatusChips(visit, doctor);
                       const isReferralPatient =
                         (visit.visitType || "").toLowerCase().includes("referral") ||
                         Boolean(visit.referralName);
@@ -4941,34 +5005,48 @@ export default function Home() {
                           <section style={styles.patientOverviewSticky}>
                             <header style={styles.patientHeaderCard}>
                               <div>
-                                <span style={styles.ownerHeroEyebrow}>Patient Overview</span>
                                 <h3 style={styles.petName}>{visit.petName}</h3>
-                                <p style={styles.patientMetaLine}>{getPatientMetaLine(visit)}</p>
-                              </div>
-                              <div style={styles.patientStatusColumn}>
-                                <span style={styles.status}>{visit.status}</span>
-                                <span style={styles.pill}>{visit.visitType || "Walk-in"}</span>
+                                <p style={styles.patientMetaLine}>{getCompactPatientMetaLine(visit)}</p>
                               </div>
                             </header>
 
-                            <div style={styles.patientOverviewMetaGrid}>
+                            <div style={styles.patientOverviewMetaList}>
                               <span>
-                                <strong>Owner</strong>
+                                <strong>Owner:</strong>
                                 {getOwnerName(visit)}
                               </span>
                               <span>
-                                <strong>Doctor</strong>
-                                {doctor ? `Dr. ${doctor.name}` : "Not assigned"}
+                                <strong>Doctor:</strong>
+                                {doctor ? `Dr. ${doctor.name}` : "Unassigned"}
                               </span>
                               <span>
-                                <strong>Triage</strong>
+                                <strong>Triage:</strong>
                                 {getTriageLevel(visit)}
                               </span>
                               <span>
-                                <strong>Visit Type</strong>
-                                {visit.visitType || "Walk-in"}
+                                <strong>Status:</strong>
+                                {workflowStatus}
                               </span>
                             </div>
+
+                            {statusChips.length > 0 && (
+                              <div style={styles.patientChipRow}>
+                                {statusChips.map((chip) => (
+                                  <span
+                                    key={chip.label}
+                                    style={{
+                                      ...styles.patientStatusChip,
+                                      ...(chip.tone === "teal" ? styles.patientStatusChipTeal : {}),
+                                      ...(chip.tone === "orange" ? styles.patientStatusChipOrange : {}),
+                                      ...(chip.tone === "red" ? styles.patientStatusChipRed : {}),
+                                      ...(chip.tone === "blue" ? styles.patientStatusChipBlue : {}),
+                                    }}
+                                  >
+                                    {chip.label}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
 
                             {doctor && (
                               <a
@@ -4981,12 +5059,77 @@ export default function Home() {
                               </a>
                             )}
 
+                            <div style={styles.primaryClinicalActionCard}>
+                              <div>
+                                <span style={styles.ownerHeroEyebrow}>Next clinical action</span>
+                                <strong>{primaryClinicalAction.label}</strong>
+                                <p style={styles.authHelpText}>{primaryClinicalAction.helper}</p>
+                              </div>
+
+                              {primaryClinicalAction.kind === "assignDoctor" ? (
+                                <select
+                                  style={styles.primaryClinicalSelect}
+                                  defaultValue=""
+                                  onChange={(event) => {
+                                    if (!event.target.value) return;
+                                    assignDoctorToVisit(visit.id, event.target.value);
+                                    event.target.value = "";
+                                  }}
+                                >
+                                  <option value="">Assign Doctor</option>
+                                  {doctors.map((doctorOption) => (
+                                    <option key={doctorOption.name} value={doctorOption.name}>
+                                      Dr. {doctorOption.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <button
+                                  type="button"
+                                  style={styles.primaryClinicalActionButton}
+                                  onClick={() => {
+                                    if (primaryClinicalAction.kind === "startTriage") {
+                                      sendUpdate(
+                                        visit.id,
+                                        "Triage in progress",
+                                        `${visit.petName}'s triage assessment has started.`
+                                      );
+                                      return;
+                                    }
+                                    if (primaryClinicalAction.kind === "updateDiagnostics") {
+                                      sendUpdate(
+                                        visit.id,
+                                        "Diagnostics underway",
+                                        `Diagnostics are being updated for ${visit.petName}. We will share the next milestone as soon as it is ready.`
+                                      );
+                                      return;
+                                    }
+                                    if (primaryClinicalAction.kind === "sendEstimate") {
+                                      sendEstimateApproval(visit);
+                                      return;
+                                    }
+                                    if (primaryClinicalAction.kind === "sendDischarge") {
+                                      sendDischargeInstructions(visit);
+                                      return;
+                                    }
+                                    sendOwnerUpdate(
+                                      visit,
+                                      ownerUpdateDrafts[visit.id] ||
+                                        `There is a new update for ${visit.petName}.`
+                                    );
+                                  }}
+                                >
+                                  {primaryClinicalAction.label}
+                                </button>
+                              )}
+                            </div>
+
                             <div style={styles.quickActionRow}>
                               <a style={styles.quickActionButton} href={`tel:${visit.phone}`}>
-                                Call Owner
+                                <span aria-hidden="true">📞</span> Call
                               </a>
                               <a style={styles.quickActionButton} href={`sms:${visit.phone}`}>
-                                Text Owner
+                                <span aria-hidden="true">💬</span> Text
                               </a>
                               <button
                                 type="button"
@@ -4997,7 +5140,7 @@ export default function Home() {
                                 onClick={() => emailVisitLink(visit)}
                                 disabled={!visit.ownerEmail}
                               >
-                                Email Owner
+                                <span aria-hidden="true">✉️</span> Email
                               </button>
                               <button
                                 type="button"
@@ -5009,56 +5152,8 @@ export default function Home() {
                                   setView("status");
                                 }}
                               >
-                                Preview Owner Page
+                                <span aria-hidden="true">👁</span> Owner View
                               </button>
-                            </div>
-
-                            <div style={styles.secureVisitLinkCard}>
-                              <div>
-                                <strong>Owner Access Link</strong>
-                                <p style={styles.secureVisitLinkText}>
-                                  Share this secure link with the pet owner so they can view updates
-                                  for this visit.
-                                </p>
-                                <small style={styles.trackSmallNote}>
-                                  Shared family links are view only. No forms, approvals, payments,
-                                  or owner profile editing.
-                                </small>
-                              </div>
-                              <div style={styles.ownerLinkButtonRow}>
-                                <button
-                                  type="button"
-                                  style={styles.secureVisitLinkButton}
-                                  onClick={() => copyVisitLink(visit)}
-                                >
-                                  Copy Link
-                                </button>
-                                <button
-                                  type="button"
-                                  style={styles.secureVisitLinkButton}
-                                  onClick={() => textVisitLink(visit)}
-                                >
-                                  Text Link
-                                </button>
-                                <button
-                                  type="button"
-                                  style={styles.secureVisitLinkButton}
-                                  onClick={() => emailVisitLink(visit)}
-                                >
-                                  Email Link
-                                </button>
-                              </div>
-                            </div>
-
-                            <div style={styles.queueSafeCard}>
-                              <strong>High volume currently.</strong>
-                              <span>Patients are prioritized by medical urgency.</span>
-                              {getQueueDetails(visit) && (
-                                <small>
-                                  Internal: #{getQueueDetails(visit)?.position} in queue,{" "}
-                                  {getQueueDetails(visit)?.patientsAhead} ahead.
-                                </small>
-                              )}
                             </div>
                           </section>
 
@@ -5067,22 +5162,27 @@ export default function Home() {
                           )}
 
                           <section style={styles.workflowSection}>
-                            <h4 style={styles.workflowSectionTitle}>Workflow Timeline</h4>
-                            <div style={styles.clinicTimeline}>
-                              {visitTimelineSteps.map((step, index) => {
-                                const complete = index < timelineIndex;
-                                const current = index === timelineIndex;
+                            <div style={styles.sectionHeaderRow}>
+                              <div>
+                                <h4 style={styles.workflowSectionTitle}>Workflow Timeline</h4>
+                                <p style={styles.authHelpText}>Current Status: {workflowStatus}</p>
+                              </div>
+                            </div>
+                            <div style={styles.compactWorkflowTracker}>
+                              {compactWorkflowSteps.map((step, index) => {
+                                const complete = index < compactWorkflowIndex;
+                                const current = index === compactWorkflowIndex;
 
                                 return (
-                                  <div key={step} style={styles.clinicTimelineItem}>
+                                  <div key={step} style={styles.compactWorkflowItem}>
                                     <span
                                       style={{
-                                        ...styles.clinicTimelineDot,
-                                        ...(complete ? styles.clinicTimelineDotComplete : {}),
-                                        ...(current ? styles.clinicTimelineDotCurrent : {}),
+                                        ...styles.compactWorkflowDot,
+                                        ...(complete ? styles.compactWorkflowDotComplete : {}),
+                                        ...(current ? styles.compactWorkflowDotCurrent : {}),
                                       }}
                                     >
-                                      {complete ? "Done" : current ? "Now" : ""}
+                                      {complete ? "✓" : current ? "•" : ""}
                                     </span>
                                     <strong>{step}</strong>
                                   </div>
@@ -5559,6 +5659,41 @@ export default function Home() {
 
                             {communicationTab === "owner" && (
                               <div style={styles.communicationPanel}>
+                                <details style={styles.ownerAccessDetails}>
+                                  <summary style={styles.ownerAccessSummary}>Owner Access Link</summary>
+                                  <p style={styles.secureVisitLinkText}>
+                                    Share this secure link with the pet owner so they can view updates
+                                    for this visit.
+                                  </p>
+                                  <small style={styles.trackSmallNote}>
+                                    Shared family links are view only. No forms, approvals, payments,
+                                    or owner profile editing.
+                                  </small>
+                                  <div style={styles.ownerLinkButtonRow}>
+                                    <button
+                                      type="button"
+                                      style={styles.secureVisitLinkButton}
+                                      onClick={() => copyVisitLink(visit)}
+                                    >
+                                      Copy Link
+                                    </button>
+                                    <button
+                                      type="button"
+                                      style={styles.secureVisitLinkButton}
+                                      onClick={() => textVisitLink(visit)}
+                                    >
+                                      Text Link
+                                    </button>
+                                    <button
+                                      type="button"
+                                      style={styles.secureVisitLinkButton}
+                                      onClick={() => emailVisitLink(visit)}
+                                    >
+                                      Email Link
+                                    </button>
+                                  </div>
+                                </details>
+
                                 <div style={styles.contextActionRow}>
                                   <button
                                     type="button"
@@ -7664,6 +7799,20 @@ const styles: { [key: string]: React.CSSProperties } = {
     gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
     width: "100%",
   },
+  ownerAccessDetails: {
+    background: "#f0fbf8",
+    border: "1px solid #bfe9e0",
+    borderRadius: 8,
+    display: "grid",
+    gap: 8,
+    padding: 10,
+  },
+  ownerAccessSummary: {
+    color: "#087f78",
+    cursor: "pointer",
+    fontSize: 13,
+    fontWeight: 900,
+  },
   errorBox: {
   background: "#fff1f2",
   border: "1px solid #e11d48",
@@ -8482,8 +8631,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderRadius: 8,
     boxShadow: "0 12px 30px rgba(41, 64, 83, 0.08)",
     display: "grid",
-    gap: 14,
-    padding: 16,
+    gap: 10,
+    padding: 10,
   },
   patientOverviewSticky: {
     background: "rgba(255, 255, 255, 0.98)",
@@ -8491,8 +8640,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderRadius: 8,
     boxShadow: "0 10px 24px rgba(41, 64, 83, 0.08)",
     display: "grid",
-    gap: 12,
-    padding: 14,
+    gap: 9,
+    padding: 12,
     position: "sticky",
     top: 58,
     zIndex: 8,
@@ -8506,10 +8655,10 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   patientMetaLine: {
     color: "#52606d",
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: 800,
-    lineHeight: 1.35,
-    margin: "6px 0 8px",
+    lineHeight: 1.25,
+    margin: "3px 0 0",
   },
   patientStatusColumn: {
     alignItems: "flex-start",
@@ -8523,10 +8672,84 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: 8,
     gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 135px), 1fr))",
   },
+  patientOverviewMetaList: {
+    color: "#52606d",
+    display: "grid",
+    fontSize: 13,
+    gap: 4,
+  },
+  patientChipRow: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  patientStatusChip: {
+    background: "#f8fbff",
+    border: "1px solid #dcefeb",
+    borderRadius: 999,
+    color: "#52606d",
+    fontSize: 11,
+    fontWeight: 900,
+    padding: "5px 8px",
+  },
+  patientStatusChipTeal: {
+    background: "#e6f7f5",
+    borderColor: "#bfe9e0",
+    color: "#087f78",
+  },
+  patientStatusChipOrange: {
+    background: "#fff8f1",
+    borderColor: "#fed7c2",
+    color: "#c2410c",
+  },
+  patientStatusChipRed: {
+    background: "#fff1f2",
+    borderColor: "#fecdd3",
+    color: "#be123c",
+  },
+  patientStatusChipBlue: {
+    background: "#eff6ff",
+    borderColor: "#bfdbfe",
+    color: "#1d4ed8",
+  },
+  primaryClinicalActionCard: {
+    alignItems: "center",
+    background: "linear-gradient(135deg, #087f78, #0f766e)",
+    borderRadius: 8,
+    color: "#ffffff",
+    display: "grid",
+    gap: 10,
+    gridTemplateColumns: "minmax(0, 1fr) auto",
+    padding: 12,
+  },
+  primaryClinicalActionButton: {
+    background: "#ffffff",
+    border: "none",
+    borderRadius: 8,
+    color: "#087f78",
+    cursor: "pointer",
+    fontSize: 14,
+    fontWeight: 900,
+    minHeight: 44,
+    padding: "0 14px",
+    whiteSpace: "nowrap",
+  },
+  primaryClinicalSelect: {
+    background: "#ffffff",
+    border: "none",
+    borderRadius: 8,
+    color: "#087f78",
+    cursor: "pointer",
+    fontSize: 14,
+    fontWeight: 900,
+    minHeight: 44,
+    padding: "0 10px",
+    width: "100%",
+  },
   quickActionRow: {
     display: "grid",
-    gap: 8,
-    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 118px), 1fr))",
+    gap: 6,
+    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
   },
   quickActionButton: {
     alignItems: "center",
@@ -8536,11 +8759,12 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: "#087f78",
     cursor: "pointer",
     display: "flex",
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: 900,
+    gap: 4,
     justifyContent: "center",
-    minHeight: 44,
-    padding: "8px 9px",
+    minHeight: 38,
+    padding: "6px 5px",
     textAlign: "center",
     textDecoration: "none",
   },
@@ -8668,6 +8892,42 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderColor: "#087f78",
   },
   clinicTimelineDotCurrent: {
+    background: "#14b8a6",
+    borderColor: "#14b8a6",
+  },
+  compactWorkflowTracker: {
+    display: "grid",
+    gap: 5,
+    gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
+  },
+  compactWorkflowItem: {
+    alignItems: "center",
+    color: "#52606d",
+    display: "grid",
+    fontSize: 10,
+    fontWeight: 900,
+    gap: 5,
+    justifyItems: "center",
+    lineHeight: 1.05,
+    textAlign: "center",
+  },
+  compactWorkflowDot: {
+    background: "#ffffff",
+    border: "2px solid #dbe5e8",
+    borderRadius: "50%",
+    color: "#ffffff",
+    display: "grid",
+    fontSize: 10,
+    fontWeight: 900,
+    height: 24,
+    placeItems: "center",
+    width: 24,
+  },
+  compactWorkflowDotComplete: {
+    background: "#087f78",
+    borderColor: "#087f78",
+  },
+  compactWorkflowDotCurrent: {
     background: "#14b8a6",
     borderColor: "#14b8a6",
   },
