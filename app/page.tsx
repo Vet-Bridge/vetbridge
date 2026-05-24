@@ -631,6 +631,7 @@ export default function Home() {
   "home" | "newPet" | "existingPet" | "referral" | "ownerUpdates" | "clinic" | "status"
 >("home");
   const [selectedVisitId, setSelectedVisitId] = useState<string | null>(null);
+  const [clinicSelectedVisitId, setClinicSelectedVisitId] = useState<string | null>(null);
   const [selectedReferralSpecies, setSelectedReferralSpecies] = useState("");
   const [searchError, setSearchError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -987,6 +988,10 @@ export default function Home() {
       }
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
+  const clinicSelectedVisit =
+    filteredClinicVisits.find((visit) => visit.id === clinicSelectedVisitId) ||
+    visits.find((visit) => visit.id === clinicSelectedVisitId) ||
+    null;
   const normalizeReferralStatus = (status: string) => {
     const statusMap: Record<string, string> = {
       "Referral Submitted": "New Referral",
@@ -1691,7 +1696,8 @@ export default function Home() {
     }
 
     setClinicWorkflowView("patients");
-    setSelectedVisitId(visit.id);
+    setClinicDashboardView("active");
+    setClinicSelectedVisitId(visit.id);
   };
 
   const handleOwnerUpdateMediaChange = async (
@@ -2573,7 +2579,7 @@ export default function Home() {
       setClinicDashboardView("active");
       setClinicWorkflowView("patients");
       setSelectedReferralId(null);
-      setSelectedVisitId(result.visit.id);
+      setClinicSelectedVisitId(result.visit.id);
     } catch (error) {
       alert(error instanceof Error ? error.message : "Unable to convert referral");
     } finally {
@@ -4058,6 +4064,8 @@ export default function Home() {
                       onClick={() => {
                         const nextView = id as ClinicWorkflowView;
                         setClinicWorkflowView(nextView);
+                        setClinicSelectedVisitId(null);
+                        setSelectedReferralId(null);
                         if (nextView === "approvals") setClinicDashboardView("approvals");
                         if (nextView === "patients") setClinicDashboardView("active");
                       }}
@@ -4097,7 +4105,8 @@ export default function Home() {
                             setClinicWorkflowView("patients");
                             setClinicDashboardView("active");
                             setCommunicationTab(visit.id, "owner");
-                            setSelectedVisitId(visit.id);
+                            setSelectedReferralId(null);
+                            setClinicSelectedVisitId(visit.id);
                           }}
                         >
                           Open Communication Hub
@@ -4137,18 +4146,20 @@ export default function Home() {
                       ...(clinicWorkflowView === id ? styles.clinicMainNavButtonActive : {}),
                     }}
                     onClick={() => {
-                      const nextView = id as ClinicWorkflowView;
-                      setClinicWorkflowView(nextView);
-                      if (nextView === "approvals") setClinicDashboardView("approvals");
-                      if (nextView === "patients") setClinicDashboardView("active");
-                    }}
+                        const nextView = id as ClinicWorkflowView;
+                        setClinicWorkflowView(nextView);
+                        setClinicSelectedVisitId(null);
+                        setSelectedReferralId(null);
+                        if (nextView === "approvals") setClinicDashboardView("approvals");
+                        if (nextView === "patients") setClinicDashboardView("active");
+                      }}
                   >
                     {label}
                   </button>
                 ))}
               </nav>
 
-              {clinicWorkflowView !== "more" && (
+              {clinicWorkflowView !== "more" && !clinicSelectedVisit && !selectedReferral && (
               <div style={styles.clinicCommandCenter}>
                 <div style={styles.operationsBoardGrid}>
                   {operationsBoardCards.map((card) => (
@@ -4158,6 +4169,8 @@ export default function Home() {
                       style={styles.operationsBoardCard}
                       onClick={() => {
                         setClinicWorkflowView(card.target);
+                        setClinicSelectedVisitId(null);
+                        setSelectedReferralId(null);
                         if (card.view) setClinicDashboardView(card.view);
                         if (card.referralStatus) setReferralDashboardStatus(card.referralStatus);
                       }}
@@ -4179,7 +4192,10 @@ export default function Home() {
                             ...styles.clinicViewTab,
                             ...(clinicDashboardView === tab.id ? styles.clinicViewTabActive : {}),
                           }}
-                          onClick={() => setClinicDashboardView(tab.id)}
+                          onClick={() => {
+                            setClinicSelectedVisitId(null);
+                            setClinicDashboardView(tab.id);
+                          }}
                         >
                           <span>{tab.label}</span>
                           <strong>{tab.count}</strong>
@@ -4851,7 +4867,9 @@ export default function Home() {
                                   style={styles.secondaryButton}
                                   onClick={() => {
                                     setClinicWorkflowView("patients");
-                                    setSelectedVisitId(convertedVisit.id);
+                                    setClinicDashboardView("active");
+                                    setSelectedReferralId(null);
+                                    setClinicSelectedVisitId(convertedVisit.id);
                                   }}
                                 >
                                   Open {convertedVisit.petName}
@@ -4972,20 +4990,85 @@ export default function Home() {
                 </section>
               ) : (
                 <>
-                  {visits.length === 0 && (
+                  {!clinicSelectedVisit && visits.length === 0 && (
                     <div style={styles.emptyBox}>
                       No active patient visits yet. Submitted visits and converted referrals will
                       appear here.
                     </div>
                   )}
-                  {visits.length > 0 && filteredClinicVisits.length === 0 && (
+                  {!clinicSelectedVisit && visits.length > 0 && filteredClinicVisits.length === 0 && (
                     <div style={styles.emptyBox}>
                       No visits match this view or filter. Try Active Visits or clear the search.
                     </div>
                   )}
 
-                  <div style={styles.visitList}>
-                    {filteredClinicVisits.map((visit) => {
+                  {!clinicSelectedVisit && filteredClinicVisits.length > 0 && (
+                    <section style={styles.patientListPanel}>
+                      <div style={styles.patientListHeader}>
+                        <div>
+                          <h3 style={styles.ownerVisitTitle}>Patients</h3>
+                          <p style={styles.authHelpText}>
+                            Search or filter, then open the specific patient workspace.
+                          </p>
+                        </div>
+                        <span style={styles.speciesPill}>{filteredClinicVisits.length} shown</span>
+                      </div>
+
+                      <div style={styles.patientListGrid}>
+                        {filteredClinicVisits.map((visit) => {
+                          const doctorName = getAssignedDoctorName(visit);
+                          const triageLevel = getTriageLevel(visit);
+                          const workflowStatus = getClinicWorkflowStatusLabel(visit);
+
+                          return (
+                            <button
+                              key={visit.id}
+                              type="button"
+                              style={styles.patientListCard}
+                              onClick={() => setClinicSelectedVisitId(visit.id)}
+                            >
+                              <span style={styles.patientListSummary}>
+                                <strong>{visit.petName}</strong>
+                                <span>{getCompactPatientMetaLine(visit)}</span>
+                              </span>
+                              <span style={styles.patientListMeta}>
+                                <span
+                                  style={{
+                                    ...styles.patientListTriageChip,
+                                    ...(triageLevel === "Critical" ? styles.patientStatusChipRed : {}),
+                                    ...(triageLevel === "Urgent" ? styles.patientStatusChipOrange : {}),
+                                    ...(triageLevel === "Stable" ? styles.patientStatusChipTeal : {}),
+                                  }}
+                                >
+                                  {triageLevel}
+                                </span>
+                                <span>
+                                  {doctorName === "Unassigned"
+                                    ? "Unassigned"
+                                    : `Dr. ${doctorName.split(" ").slice(-1)[0]}`}
+                                </span>
+                                <span>{workflowStatus}</span>
+                              </span>
+                              <span style={styles.patientListOpen}>Open</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  )}
+
+                  {clinicSelectedVisit && (
+                    <div style={styles.patientDetailScreen}>
+                      <button
+                        type="button"
+                        style={styles.patientDetailBackButton}
+                        onClick={() => setClinicSelectedVisitId(null)}
+                      >
+                        Back to Patients
+                      </button>
+
+                      <div style={styles.visitList}>
+                    {[clinicSelectedVisit].map((visit) => {
                       const intake = getIntakeSummary(visit);
                       const doctor = getAssignedDoctorFromNotes(visit.clinicNotes);
                       const pendingMessage = pendingClinicActions[visit.id];
@@ -6057,7 +6140,9 @@ export default function Home() {
                         </article>
                       );
                     })}
-                  </div>
+                      </div>
+                    </div>
+                  )}
                 </>
               ))}
                 </>
@@ -8624,6 +8709,88 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: "grid",
     gap: 18,
     marginTop: 18,
+  },
+  patientListPanel: {
+    background: "#ffffff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    boxShadow: "0 10px 24px rgba(41, 64, 83, 0.07)",
+    display: "grid",
+    gap: 12,
+    marginTop: 14,
+    padding: 12,
+  },
+  patientListHeader: {
+    alignItems: "flex-start",
+    display: "flex",
+    gap: 10,
+    justifyContent: "space-between",
+  },
+  patientListGrid: {
+    display: "grid",
+    gap: 10,
+  },
+  patientListCard: {
+    alignItems: "center",
+    background: "#f8fbff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    color: "#102a3a",
+    cursor: "pointer",
+    display: "grid",
+    gap: 8,
+    gridTemplateColumns: "minmax(0, 1fr) auto",
+    minHeight: 72,
+    padding: 12,
+    textAlign: "left",
+  },
+  patientListSummary: {
+    display: "grid",
+    gap: 3,
+    minWidth: 0,
+  },
+  patientListMeta: {
+    alignItems: "center",
+    color: "#52606d",
+    display: "flex",
+    flexWrap: "wrap",
+    fontSize: 12,
+    fontWeight: 800,
+    gap: 6,
+    gridColumn: "1 / -1",
+  },
+  patientListTriageChip: {
+    background: "#f8fbff",
+    border: "1px solid #dcefeb",
+    borderRadius: 999,
+    color: "#52606d",
+    fontSize: 11,
+    fontWeight: 900,
+    padding: "4px 8px",
+  },
+  patientListOpen: {
+    background: "#e6f7f5",
+    borderRadius: 999,
+    color: "#087f78",
+    fontSize: 12,
+    fontWeight: 900,
+    padding: "7px 10px",
+  },
+  patientDetailScreen: {
+    display: "grid",
+    gap: 10,
+    marginTop: 14,
+  },
+  patientDetailBackButton: {
+    alignSelf: "start",
+    background: "#ffffff",
+    border: "1px solid #dcefeb",
+    borderRadius: 999,
+    color: "#087f78",
+    cursor: "pointer",
+    fontSize: 13,
+    fontWeight: 900,
+    padding: "9px 12px",
   },
   patientWorkflowCard: {
     background: "#ffffff",
