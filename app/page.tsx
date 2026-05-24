@@ -4552,56 +4552,53 @@ export default function Home() {
 
               {clinicWorkflowView !== "more" && (clinicWorkflowView === "referrals" ? (
                 <section style={styles.referralDashboardPanel}>
-                  <div style={styles.referralDashboardHeader}>
-                    <div>
-                      <h3 style={styles.ownerVisitTitle}>Referral Workflow</h3>
-                      <p style={styles.authHelpText}>
-                        Review transfers, request records, accept cases, and convert referrals into
-                        active MyPawLink visits.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      style={styles.staffSignOutButton}
-                      onClick={() => setSelectedReferralId(null)}
-                    >
-                      Queue
-                    </button>
-                  </div>
+                  {!selectedReferral && (
+                    <>
+                      <div style={styles.referralDashboardHeader}>
+                        <div>
+                          <h3 style={styles.ownerVisitTitle}>Referral Queue</h3>
+                          <p style={styles.authHelpText}>
+                            Review transfers, request records, accept cases, and convert referrals into
+                            active MyPawLink visits.
+                          </p>
+                        </div>
+                      </div>
 
-                  {referralWorkflowSetupRequired && (
-                    <div style={styles.queueMiniCard}>
-                      Run the Phase 13 SQL file in Supabase to store referrals separately from visits.
-                    </div>
+                      {referralWorkflowSetupRequired && (
+                        <div style={styles.queueMiniCard}>
+                          Run the Phase 13 SQL file in Supabase to store referrals separately from visits.
+                        </div>
+                      )}
+
+                      <div style={styles.referralStatsGrid}>
+                        {([
+                          ["New", "New Referral", referralCounts.new],
+                          ["Under Review", "Under Review", referralCounts.underReview],
+                          ["Waiting Info", "Waiting on Info", referralCounts.waitingInfo],
+                          ["Accepted", "Accepted", referralCounts.accepted],
+                          ["Redirected", "Redirected", referralCounts.redirected],
+                          ["Closed", "Closed", referralCounts.closed],
+                        ] as const).map(([label, status, count]) => (
+                          <button
+                            key={label}
+                            type="button"
+                            style={{
+                              ...styles.referralStatCard,
+                              ...(referralDashboardStatus === status ? styles.referralStatCardActive : {}),
+                            }}
+                            onClick={() =>
+                              setReferralDashboardStatus(
+                                referralDashboardStatus === status ? "All referrals" : status
+                              )
+                            }
+                          >
+                            <span>{label}</span>
+                            <strong>{count}</strong>
+                          </button>
+                        ))}
+                      </div>
+                    </>
                   )}
-
-                  <div style={styles.referralStatsGrid}>
-                    {([
-                      ["New", "New Referral", referralCounts.new],
-                      ["Under Review", "Under Review", referralCounts.underReview],
-                      ["Waiting Info", "Waiting on Info", referralCounts.waitingInfo],
-                      ["Accepted", "Accepted", referralCounts.accepted],
-                      ["Redirected", "Redirected", referralCounts.redirected],
-                      ["Closed", "Closed", referralCounts.closed],
-                    ] as const).map(([label, status, count]) => (
-                      <button
-                        key={label}
-                        type="button"
-                        style={{
-                          ...styles.referralStatCard,
-                          ...(referralDashboardStatus === status ? styles.referralStatCardActive : {}),
-                        }}
-                        onClick={() =>
-                          setReferralDashboardStatus(
-                            referralDashboardStatus === status ? "All referrals" : status
-                          )
-                        }
-                      >
-                        <span>{label}</span>
-                        <strong>{count}</strong>
-                      </button>
-                    ))}
-                  </div>
 
                   {selectedReferral ? (
                     (() => {
@@ -4915,7 +4912,17 @@ export default function Home() {
                       );
                     })()
                   ) : (
-                    <>
+                    <section style={styles.patientListPanel}>
+                      <div style={styles.patientListHeader}>
+                        <div>
+                          <h3 style={styles.ownerVisitTitle}>Referrals</h3>
+                          <p style={styles.authHelpText}>
+                            Open one referral at a time to review records and choose the next action.
+                          </p>
+                        </div>
+                        <span style={styles.speciesPill}>{filteredReferrals.length} shown</span>
+                      </div>
+
                       <select
                         style={styles.clinicCompactSelect}
                         value={referralDashboardStatus}
@@ -4935,57 +4942,40 @@ export default function Home() {
                         <div style={styles.emptyBox}>No referrals match this view yet.</div>
                       )}
 
-                      <div style={styles.referralCardGrid}>
+                      <div style={styles.patientListGrid}>
                         {filteredReferrals.map((referral) => (
-                          <article key={referral.id} style={styles.referralCard}>
-                            <div style={styles.referralCardHeader}>
-                              <div>
-                                <h4 style={styles.referralPetName}>{referral.petName}</h4>
-                                <p style={styles.text}>
-                                  {[referral.species, referral.breed, referral.age]
-                                    .filter(Boolean)
-                                    .join(" - ")}
-                                </p>
-                              </div>
+                          <button
+                            key={referral.id}
+                            type="button"
+                            style={styles.patientListCard}
+                            onClick={() => {
+                              setClinicSelectedVisitId(null);
+                              setSelectedReferralId(referral.id);
+                            }}
+                          >
+                            <span style={styles.patientListSummary}>
+                              <strong>{referral.petName}</strong>
+                              <span>
+                                {[referral.species, referral.breed, referral.age]
+                                  .filter(Boolean)
+                                  .join(" - ") || "Patient details pending"}
+                              </span>
+                            </span>
+                            <span style={styles.patientListMeta}>
                               <span style={styles.referralStatusBadge}>
                                 {normalizeReferralStatus(referral.status)}
                               </span>
-                            </div>
-
-                            <div style={styles.referralMetaGrid}>
-                              <span>
-                                <strong>Referring clinic</strong>
-                                {referral.referringClinicName || "Not provided"}
-                              </span>
-                              <span>
-                                <strong>Doctor</strong>
-                                {referral.referringDoctorName || "Not provided"}
-                              </span>
-                              <span>
-                                <strong>Urgency</strong>
-                                {referral.stabilityLevel || "Not provided"}
-                              </span>
-                              <span>
-                                <strong>ETA</strong>
-                                {referral.transferTime || "Not provided"}
-                              </span>
-                              <span>
-                                <strong>Documents</strong>
-                                {referral.documents.length} attached
-                              </span>
-                            </div>
-
-                            <button
-                              type="button"
-                              style={styles.primaryButton}
-                              onClick={() => setSelectedReferralId(referral.id)}
-                            >
-                              Review Referral
-                            </button>
-                          </article>
+                              <span>{referral.referringClinicName || "Clinic not provided"}</span>
+                              <span>{referral.referringDoctorName || "Doctor not provided"}</span>
+                              <span>{referral.stabilityLevel || "Urgency not set"}</span>
+                              <span>{referral.transferTime || "ETA not set"}</span>
+                              <span>{referral.documents.length} docs</span>
+                            </span>
+                            <span style={styles.patientListOpen}>Review</span>
+                          </button>
                         ))}
                       </div>
-                    </>
+                    </section>
                   )}
                 </section>
               ) : (
