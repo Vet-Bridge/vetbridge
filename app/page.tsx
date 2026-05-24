@@ -4118,46 +4118,50 @@ export default function Home() {
                 </>
               ) : (
                 <>
-              <div style={styles.dashboardHeader}>
-                <div>
-                  <h2 style={styles.title}>{clinicSettings.name || "Clinic Dashboard"}</h2>
-                  <p style={styles.text}>
-                    Owner communication layer for live updates, approvals, referrals, and discharge.
-                  </p>
-                </div>
-                <span style={styles.counter}>
-                  {activeVisits.length} Active / {closedVisits.length} Closed
-                </span>
-              </div>
+              {!clinicSelectedVisit && (
+                <>
+                  <div style={styles.dashboardHeader}>
+                    <div>
+                      <h2 style={styles.title}>{clinicSettings.name || "Clinic Dashboard"}</h2>
+                      <p style={styles.text}>
+                        Owner communication layer for live updates, approvals, referrals, and discharge.
+                      </p>
+                    </div>
+                    <span style={styles.counter}>
+                      {activeVisits.length} Active / {closedVisits.length} Closed
+                    </span>
+                  </div>
 
-              <nav style={styles.clinicMainNav} aria-label="Clinic workflow">
-                {[
-                  ["patients", "Patients"],
-                  ["referrals", "Referrals"],
-                  ["approvals", "Approvals"],
-                  ["messages", "Messages"],
-                  ["more", "More"],
-                ].map(([id, label]) => (
-                  <button
-                    key={id}
-                    type="button"
-                    style={{
-                      ...styles.clinicMainNavButton,
-                      ...(clinicWorkflowView === id ? styles.clinicMainNavButtonActive : {}),
-                    }}
-                    onClick={() => {
-                        const nextView = id as ClinicWorkflowView;
-                        setClinicWorkflowView(nextView);
-                        setClinicSelectedVisitId(null);
-                        setSelectedReferralId(null);
-                        if (nextView === "approvals") setClinicDashboardView("approvals");
-                        if (nextView === "patients") setClinicDashboardView("active");
-                      }}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </nav>
+                  <nav style={styles.clinicMainNav} aria-label="Clinic workflow">
+                    {[
+                      ["patients", "Patients"],
+                      ["referrals", "Referrals"],
+                      ["approvals", "Approvals"],
+                      ["messages", "Messages"],
+                      ["more", "More"],
+                    ].map(([id, label]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        style={{
+                          ...styles.clinicMainNavButton,
+                          ...(clinicWorkflowView === id ? styles.clinicMainNavButtonActive : {}),
+                        }}
+                        onClick={() => {
+                          const nextView = id as ClinicWorkflowView;
+                          setClinicWorkflowView(nextView);
+                          setClinicSelectedVisitId(null);
+                          setSelectedReferralId(null);
+                          if (nextView === "approvals") setClinicDashboardView("approvals");
+                          if (nextView === "patients") setClinicDashboardView("active");
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </nav>
+                </>
+              )}
 
               {clinicWorkflowView !== "more" && !clinicSelectedVisit && !selectedReferral && (
               <div style={styles.clinicCommandCenter}>
@@ -5049,13 +5053,19 @@ export default function Home() {
 
                   {clinicSelectedVisit && (
                     <div style={styles.patientDetailScreen}>
-                      <button
-                        type="button"
-                        style={styles.patientDetailBackButton}
-                        onClick={() => setClinicSelectedVisitId(null)}
-                      >
-                        Back to Patients
-                      </button>
+                      <div style={styles.patientRecordTopBar}>
+                        <button
+                          type="button"
+                          style={styles.patientDetailBackButton}
+                          onClick={() => setClinicSelectedVisitId(null)}
+                        >
+                          Back
+                        </button>
+                        <div style={styles.patientRecordTopCopy}>
+                          <strong>{clinicSelectedVisit.petName}</strong>
+                          <span>Patient record</span>
+                        </div>
+                      </div>
 
                       <div style={styles.visitList}>
                     {[clinicSelectedVisit].map((visit) => {
@@ -8767,9 +8777,32 @@ const styles: { [key: string]: React.CSSProperties } = {
     padding: "7px 10px",
   },
   patientDetailScreen: {
+    background: "#f7fcfc",
     display: "grid",
     gap: 10,
-    marginTop: 14,
+    margin: "-2px -4px 0",
+    minHeight: "100vh",
+    padding: "4px 4px 18px",
+    position: "relative",
+    zIndex: 30,
+  },
+  patientRecordTopBar: {
+    alignItems: "center",
+    background: "#f7fcfc",
+    borderBottom: "1px solid #dcefeb",
+    display: "flex",
+    gap: 10,
+    padding: "4px 0 10px",
+    position: "sticky",
+    top: 0,
+    zIndex: 35,
+  },
+  patientRecordTopCopy: {
+    color: "#102a3a",
+    display: "grid",
+    fontSize: 12,
+    gap: 1,
+    lineHeight: 1.2,
   },
   patientDetailBackButton: {
     alignSelf: "start",
@@ -8792,7 +8825,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     padding: 10,
   },
   patientOverviewSticky: {
-    background: "rgba(255, 255, 255, 0.98)",
+    background: "#ffffff",
     border: "1px solid #dcefeb",
     borderRadius: 8,
     boxShadow: "0 10px 24px rgba(41, 64, 83, 0.08)",
@@ -8800,8 +8833,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: 9,
     padding: 12,
     position: "sticky",
-    top: 58,
-    zIndex: 8,
+    top: 47,
+    zIndex: 32,
   },
   patientHeaderCard: {
     alignItems: "start",
