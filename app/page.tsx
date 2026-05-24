@@ -5067,7 +5067,7 @@ export default function Home() {
                         </div>
                       </div>
 
-                      <div style={styles.visitList}>
+                      <div style={styles.patientRecordContent}>
                     {[clinicSelectedVisit].map((visit) => {
                       const intake = getIntakeSummary(visit);
                       const doctor = getAssignedDoctorFromNotes(visit.clinicNotes);
@@ -5146,7 +5146,7 @@ export default function Home() {
                               <div>
                                 <span style={styles.ownerHeroEyebrow}>Next clinical action</span>
                                 <strong>{primaryClinicalAction.label}</strong>
-                                <p style={styles.authHelpText}>{primaryClinicalAction.helper}</p>
+                                <p style={styles.primaryClinicalHelper}>{primaryClinicalAction.helper}</p>
                               </div>
 
                               {primaryClinicalAction.kind === "assignDoctor" ? (
@@ -8780,11 +8780,14 @@ const styles: { [key: string]: React.CSSProperties } = {
     background: "#f7fcfc",
     display: "grid",
     gap: 10,
-    margin: "-2px -4px 0",
-    minHeight: "100vh",
-    padding: "4px 4px 18px",
-    position: "relative",
-    zIndex: 30,
+    gridTemplateRows: "auto 1fr",
+    inset: 0,
+    minHeight: "100dvh",
+    overflowY: "auto",
+    overscrollBehavior: "contain",
+    padding: "8px 10px 22px",
+    position: "fixed",
+    zIndex: 999,
   },
   patientRecordTopBar: {
     alignItems: "center",
@@ -8792,10 +8795,20 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderBottom: "1px solid #dcefeb",
     display: "flex",
     gap: 10,
+    margin: "0 auto",
+    maxWidth: 560,
     padding: "4px 0 10px",
     position: "sticky",
     top: 0,
+    width: "100%",
     zIndex: 35,
+  },
+  patientRecordContent: {
+    display: "grid",
+    gap: 12,
+    margin: "0 auto",
+    maxWidth: 560,
+    width: "100%",
   },
   patientRecordTopCopy: {
     color: "#102a3a",
@@ -8908,9 +8921,15 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderRadius: 8,
     color: "#ffffff",
     display: "grid",
-    gap: 10,
-    gridTemplateColumns: "minmax(0, 1fr) auto",
-    padding: 12,
+    gap: 8,
+    gridTemplateColumns: "minmax(0, 1fr) minmax(96px, auto)",
+    padding: 10,
+  },
+  primaryClinicalHelper: {
+    color: "rgba(255, 255, 255, 0.82)",
+    fontSize: 11,
+    lineHeight: 1.25,
+    margin: "2px 0 0",
   },
   primaryClinicalActionButton: {
     background: "#ffffff",
@@ -8918,10 +8937,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderRadius: 8,
     color: "#087f78",
     cursor: "pointer",
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: 900,
-    minHeight: 44,
-    padding: "0 14px",
+    minHeight: 36,
+    padding: "0 10px",
     whiteSpace: "nowrap",
   },
   primaryClinicalSelect: {
@@ -8930,15 +8949,15 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderRadius: 8,
     color: "#087f78",
     cursor: "pointer",
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: 900,
-    minHeight: 44,
-    padding: "0 10px",
+    minHeight: 36,
+    padding: "0 8px",
     width: "100%",
   },
   quickActionRow: {
     display: "grid",
-    gap: 6,
+    gap: 5,
     gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
   },
   quickActionButton: {
@@ -8949,14 +8968,19 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: "#087f78",
     cursor: "pointer",
     display: "flex",
-    fontSize: 12,
+    flexDirection: "column",
+    fontSize: 10,
     fontWeight: 900,
-    gap: 4,
+    gap: 2,
     justifyContent: "center",
-    minHeight: 38,
-    padding: "6px 5px",
+    lineHeight: 1.05,
+    minHeight: 42,
+    minWidth: 0,
+    overflow: "hidden",
+    padding: "5px 3px",
     textAlign: "center",
     textDecoration: "none",
+    wordBreak: "normal",
   },
   queueSafeCard: {
     background: "#fff8f1",
