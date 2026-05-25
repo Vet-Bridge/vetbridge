@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 import {
@@ -208,13 +209,24 @@ type ReferralWorkflowResponse = {
   referrals: Referral[];
 };
 
+type AppView = "home" | "newPet" | "existingPet" | "referral" | "ownerUpdates" | "clinic" | "status";
+
 type ClinicDashboardView = "active" | "critical" | "approvals" | "pickup" | "discharged";
+
+type ClinicQuickFilter = "all" | "critical" | "urgent" | "stable" | "approvals" | "pickup";
 
 type ClinicSort = "newest" | "oldest" | "pet" | "status";
 
 type ClinicWorkflowView = "patients" | "referrals" | "approvals" | "messages" | "more";
 
-type CommunicationHubTab = "owner" | "internal" | "referring";
+
+type ClinicRouteMode = "embedded" | "dashboard" | "patients" | "referrals" | "approvals";
+
+type MyPawLinkAppProps = {
+  initialView?: AppView;
+  initialClinicWorkflowView?: ClinicWorkflowView;
+  clinicRouteMode?: ClinicRouteMode;
+};
 
 type OwnerUpdateMediaDraft = {
   name: string;
@@ -626,12 +638,15 @@ const resizePetPhoto = (file: File) =>
     reader.readAsDataURL(file);
   });
 
-export default function Home() {
-  const [view, setView] = useState<
-  "home" | "newPet" | "existingPet" | "referral" | "ownerUpdates" | "clinic" | "status"
->("home");
+export function MyPawLinkApp({
+  initialView = "home",
+  initialClinicWorkflowView = "patients",
+  clinicRouteMode = "embedded",
+}: MyPawLinkAppProps = {}) {
+  const router = useRouter();
+  const isClinicRoute = clinicRouteMode !== "embedded";
+  const [view, setView] = useState<AppView>(initialView);
   const [selectedVisitId, setSelectedVisitId] = useState<string | null>(null);
-  const [clinicSelectedVisitId, setClinicSelectedVisitId] = useState<string | null>(null);
   const [selectedReferralSpecies, setSelectedReferralSpecies] = useState("");
   const [searchError, setSearchError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -680,18 +695,17 @@ export default function Home() {
   const [clinicDashboardView, setClinicDashboardView] =
     useState<ClinicDashboardView>("active");
   const [clinicWorkflowView, setClinicWorkflowView] =
-    useState<ClinicWorkflowView>("patients");
+    useState<ClinicWorkflowView>(initialClinicWorkflowView);
+  const [clinicQuickFilter, setClinicQuickFilter] = useState<ClinicQuickFilter>("all");
   const [clinicSearch, setClinicSearch] = useState("");
   const [clinicStatusFilter, setClinicStatusFilter] = useState("All statuses");
   const [clinicDoctorFilter, setClinicDoctorFilter] = useState("All doctors");
   const [clinicSort, setClinicSort] = useState<ClinicSort>("newest");
   const [ownerUpdateDrafts, setOwnerUpdateDrafts] = useState<Record<string, string>>({});
   const [ownerMediaDrafts, setOwnerMediaDrafts] = useState<Record<string, OwnerUpdateMediaDraft>>({});
-  const [communicationHubTabs, setCommunicationHubTabs] = useState<
-    Record<string, CommunicationHubTab>
-  >({});
   const [authUserEmail, setAuthUserEmail] = useState("");
   const [staffProfile, setStaffProfile] = useState<StaffProfile | null>(null);
+  const [authSessionChecked, setAuthSessionChecked] = useState(false);
   const [authMessage, setAuthMessage] = useState("");
   const [staffLoginEmail, setStaffLoginEmail] = useState("");
   const [staffLoginPassword, setStaffLoginPassword] = useState("");
@@ -716,6 +730,7 @@ export default function Home() {
   const referralFormRef = useRef<HTMLFormElement | null>(null);
   const clinicLoadingRef = useRef(false);
   const pendingClinicActionsRef = useRef<Record<string, string>>({});
+  const clinicScrollRef = useRef<HTMLElement | null>(null);
   const dogBreeds = [
     "Labrador Retriever",
     "German Shepherd",
@@ -936,10 +951,10 @@ export default function Home() {
     a.localeCompare(b)
   );
   const dashboardTabs: { id: ClinicDashboardView; label: string; count: number }[] = [
-    { id: "active", label: "Active Visits", count: activeVisits.length },
-    { id: "critical", label: "Critical Cases", count: criticalVisits.length },
-    { id: "approvals", label: "Waiting Approval", count: approvalVisits.length },
-    { id: "pickup", label: "Ready Pickup", count: pickupVisits.length },
+    { id: "active", label: "Active", count: activeVisits.length },
+    { id: "critical", label: "Critical", count: criticalVisits.length },
+    { id: "approvals", label: "Approvals", count: approvalVisits.length },
+    { id: "pickup", label: "Pickup", count: pickupVisits.length },
     { id: "discharged", label: "Discharged", count: dischargedVisits.length },
   ];
   const visitsForDashboardView =
@@ -952,7 +967,23 @@ export default function Home() {
           : clinicDashboardView === "discharged"
             ? dischargedVisits
             : activeVisits;
-  const filteredClinicVisits = visitsForDashboardView
+  const quickFilteredClinicVisits = visitsForDashboardView.filter((visit) => {
+    const status = visit.status.toLowerCase();
+
+    if (clinicQuickFilter === "critical") return isCriticalVisit(visit);
+    if (clinicQuickFilter === "urgent") {
+      return status.includes("urgent") || status.includes("orange") || status.includes("yellow");
+    }
+    if (clinicQuickFilter === "stable") {
+      return status.includes("stable") || status.includes("green");
+    }
+    if (clinicQuickFilter === "approvals") return needsApprovalVisit(visit);
+    if (clinicQuickFilter === "pickup") return isReadyForPickupVisit(visit);
+
+    return true;
+  });
+
+  const filteredClinicVisits = quickFilteredClinicVisits
     .filter((visit) => {
       const query = clinicSearch.trim().toLowerCase();
       const doctorName = getAssignedDoctorName(visit);
@@ -988,10 +1019,53 @@ export default function Home() {
       }
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
-  const clinicSelectedVisit =
-    filteredClinicVisits.find((visit) => visit.id === clinicSelectedVisitId) ||
-    visits.find((visit) => visit.id === clinicSelectedVisitId) ||
-    null;
+  const clinicRouteForWorkflow = (nextView: ClinicWorkflowView) => {
+    if (nextView === "referrals") return "/clinic/referrals";
+    if (nextView === "approvals") return "/clinic/approvals";
+    if (nextView === "more") return "/clinic/dashboard";
+    return "/clinic/patients";
+  };
+  const navigateClinicWorkflowView = (nextView: ClinicWorkflowView) => {
+    setClinicWorkflowView(nextView);
+    setSelectedReferralId(null);
+    if (nextView === "approvals") {
+      setClinicDashboardView("approvals");
+      setClinicQuickFilter("approvals");
+    }
+    if (nextView === "patients") {
+      setClinicDashboardView("active");
+      setClinicQuickFilter("all");
+    }
+    if (nextView === "referrals") {
+      setReferralDashboardStatus("All referrals");
+    }
+    if (isClinicRoute || view === "clinic") {
+      router.push(clinicRouteForWorkflow(nextView));
+    }
+  };
+  const openClinicBoardCard = (card: {
+    target: ClinicWorkflowView;
+    view?: ClinicDashboardView;
+    quickFilter?: ClinicQuickFilter;
+    referralStatus?: string;
+  }) => {
+    setClinicWorkflowView(card.target);
+    setSelectedReferralId(null);
+    if (card.view) setClinicDashboardView(card.view);
+    if (card.quickFilter) setClinicQuickFilter(card.quickFilter);
+    if (card.referralStatus) setReferralDashboardStatus(card.referralStatus);
+    if (isClinicRoute || view === "clinic") {
+      router.push(clinicRouteForWorkflow(card.target));
+    }
+  };
+  const openPatientRecord = (visitId: string) => {
+    const scrollTop = clinicScrollRef.current?.scrollTop ?? window.scrollY;
+    window.sessionStorage.setItem("mypawlink:clinicPatientsScroll", String(scrollTop));
+    setClinicWorkflowView("patients");
+    setClinicDashboardView("active");
+    setSelectedReferralId(null);
+    router.push(`/clinic/patients/${visitId}`);
+  };
   const normalizeReferralStatus = (status: string) => {
     const statusMap: Record<string, string> = {
       "Referral Submitted": "New Referral",
@@ -1023,15 +1097,21 @@ export default function Home() {
     count: number;
     target: ClinicWorkflowView;
     view?: ClinicDashboardView;
+    quickFilter?: ClinicQuickFilter;
     referralStatus?: string;
   }[] = [
-    { label: "Active Patients", count: activeVisits.length, target: "patients", view: "active" },
-    { label: "Critical Patients", count: criticalVisits.length, target: "patients", view: "critical" },
-    { label: "Waiting Approval", count: approvalVisits.length, target: "approvals", view: "approvals" },
-    { label: "New Referrals", count: referralCounts.new, target: "referrals", referralStatus: "New Referral" },
-    { label: "Ready for Pickup", count: pickupVisits.length, target: "patients", view: "pickup" },
-    { label: "Hospitalized", count: hospitalizedVisits.length, target: "patients", view: "active" },
-    { label: "Pending Discharge", count: pendingDischargeVisits.length, target: "patients", view: "pickup" },
+    { label: "Active", count: activeVisits.length, target: "patients", view: "active", quickFilter: "all" },
+    { label: "Critical", count: criticalVisits.length, target: "patients", view: "critical", quickFilter: "critical" },
+    { label: "Approvals", count: approvalVisits.length, target: "approvals", view: "approvals", quickFilter: "approvals" },
+    { label: "Pickup", count: pickupVisits.length, target: "patients", view: "pickup", quickFilter: "pickup" },
+  ];
+  const clinicQuickFilters: { id: ClinicQuickFilter; label: string }[] = [
+    { id: "all", label: "All" },
+    { id: "critical", label: "Critical" },
+    { id: "urgent", label: "Urgent" },
+    { id: "stable", label: "Stable" },
+    { id: "approvals", label: "Awaiting Approval" },
+    { id: "pickup", label: "Ready Pickup" },
   ];
   const filteredReferrals = referrals.filter(
     (referral) =>
@@ -1102,14 +1182,44 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (!isClinicRoute) return;
+
+    const routeSyncTimer = window.setTimeout(() => {
+      setView("clinic");
+      setClinicWorkflowView(initialClinicWorkflowView);
+    }, 0);
+
+    return () => window.clearTimeout(routeSyncTimer);
+  }, [initialClinicWorkflowView, isClinicRoute]);
+
+  useEffect(() => {
+    if (!isClinicRoute) return;
+    const savedScroll = window.sessionStorage.getItem("mypawlink:clinicPatientsScroll");
+    if (!savedScroll) return;
+    window.requestAnimationFrame(() => {
+      const scrollTop = Number(savedScroll);
+      if (!Number.isFinite(scrollTop)) return;
+      if (clinicScrollRef.current) {
+        clinicScrollRef.current.scrollTop = scrollTop;
+      } else {
+        window.scrollTo(0, scrollTop);
+      }
+    });
+  }, [isClinicRoute, filteredClinicVisits.length]);
+
+  useEffect(() => {
     let active = true;
 
     supabase.auth.getSession().then(async ({ data }) => {
       if (!active) return;
       const profile = await syncStaffProfile(data.session);
+      if (active && profile && (isClinicRoute || view === "clinic")) {
+        await loadVisits();
+      }
       if (active && data.session && !profile) {
         await loadOwnerVisits();
       }
+      if (active) setAuthSessionChecked(true);
     });
 
     const {
@@ -1117,9 +1227,13 @@ export default function Home() {
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (!active) return;
       const profile = await syncStaffProfile(session);
+      if (active && profile && (isClinicRoute || view === "clinic")) {
+        await loadVisits();
+      }
       if (active && session && !profile) {
         await loadOwnerVisits();
       }
+      if (active) setAuthSessionChecked(true);
     });
 
     return () => {
@@ -1293,7 +1407,10 @@ export default function Home() {
         : "Signed in, but this email is not active as clinic staff yet."
     );
     setAuthLoading(false);
-    if (profile) await loadVisits();
+    if (profile) {
+      await loadVisits();
+      if (!isClinicRoute) router.push("/clinic/patients");
+    }
   };
 
   const sendOwnerAccessCode = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -1357,6 +1474,7 @@ export default function Home() {
     setOwnerVisitsError("");
     setOwnerAccessCode("");
     setOwnerCodeSent(false);
+    setAuthSessionChecked(true);
     setAuthMessage("Signed out.");
   };
 
@@ -1594,12 +1712,6 @@ export default function Home() {
     };
   };
 
-  const getCommunicationTab = (visitId: string) => communicationHubTabs[visitId] || "owner";
-
-  const setCommunicationTab = (visitId: string, tab: CommunicationHubTab) => {
-    setCommunicationHubTabs((current) => ({ ...current, [visitId]: tab }));
-  };
-
   const getActionCenterCategory = (visit: Visit) => {
     const status = visit.status.toLowerCase();
 
@@ -1695,9 +1807,7 @@ export default function Home() {
       return;
     }
 
-    setClinicWorkflowView("patients");
-    setClinicDashboardView("active");
-    setClinicSelectedVisitId(visit.id);
+    openPatientRecord(visit.id);
   };
 
   const handleOwnerUpdateMediaChange = async (
@@ -2576,10 +2686,7 @@ export default function Home() {
         result.visit,
         ...current.filter((visit) => visit.id !== result.visit.id),
       ]);
-      setClinicDashboardView("active");
-      setClinicWorkflowView("patients");
-      setSelectedReferralId(null);
-      setClinicSelectedVisitId(result.visit.id);
+      openPatientRecord(result.visit.id);
     } catch (error) {
       alert(error instanceof Error ? error.message : "Unable to convert referral");
     } finally {
@@ -2805,7 +2912,12 @@ export default function Home() {
   };
 
   return (
-    <main style={styles.page}>
+    <main style={{ ...styles.page, ...(isClinicRoute ? styles.clinicRoutePage : {}) }}>
+      <style>{`
+        @media (prefers-reduced-motion: reduce) {
+          * { animation-duration: 0.01ms !important; scroll-behavior: auto !important; }
+        }
+      `}</style>
       {view === "home" && (
         <section style={styles.hero}>
           <div style={styles.brandRow}>
@@ -2865,7 +2977,7 @@ export default function Home() {
             <button style={styles.teamTextButton} onClick={() => setView("referral")}>
               Vet Referral
             </button>
-            <button style={styles.teamTextButton} onClick={() => setView("clinic")}>
+            <button style={styles.teamTextButton} onClick={() => router.push("/clinic/patients")}>
               Staff Login
             </button>
           </div>
@@ -3970,7 +4082,10 @@ export default function Home() {
             </section>
           )}
     {view === "clinic" && (
-            <section>
+            <section
+              ref={clinicScrollRef}
+              style={isClinicRoute ? styles.clinicRouteScreen : undefined}
+            >
               {!clinicUnlocked ? (
                 <div style={styles.clinicLoginCard}>
                   <h2 style={styles.title}>Clinic Dashboard</h2>
@@ -3988,7 +4103,10 @@ export default function Home() {
                           ...styles.primaryButton,
                           ...(clinicLoading ? styles.disabledButton : {}),
                         }}
-                        onClick={() => loadVisits()}
+                        onClick={async () => {
+                          await loadVisits();
+                          router.push("/clinic/patients");
+                        }}
                         disabled={clinicLoading}
                       >
                         {clinicLoading ? "Opening..." : "Open Dashboard"}
@@ -4051,7 +4169,6 @@ export default function Home() {
                     ["patients", "Patients"],
                     ["referrals", "Referrals"],
                     ["approvals", "Approvals"],
-                    ["messages", "Messages"],
                     ["more", "More"],
                   ].map(([id, label]) => (
                     <button
@@ -4062,12 +4179,7 @@ export default function Home() {
                         ...(clinicWorkflowView === id ? styles.clinicMainNavButtonActive : {}),
                       }}
                       onClick={() => {
-                        const nextView = id as ClinicWorkflowView;
-                        setClinicWorkflowView(nextView);
-                        setClinicSelectedVisitId(null);
-                        setSelectedReferralId(null);
-                        if (nextView === "approvals") setClinicDashboardView("approvals");
-                        if (nextView === "patients") setClinicDashboardView("active");
+                        navigateClinicWorkflowView(id as ClinicWorkflowView);
                       }}
                     >
                       {label}
@@ -4102,11 +4214,7 @@ export default function Home() {
                           type="button"
                           style={styles.primaryButton}
                           onClick={() => {
-                            setClinicWorkflowView("patients");
-                            setClinicDashboardView("active");
-                            setCommunicationTab(visit.id, "owner");
-                            setSelectedReferralId(null);
-                            setClinicSelectedVisitId(visit.id);
+                            openPatientRecord(visit.id);
                           }}
                         >
                           Open Communication Hub
@@ -4118,7 +4226,7 @@ export default function Home() {
                 </>
               ) : (
                 <>
-              {!clinicSelectedVisit && (
+              {(
                 <>
                   <div style={styles.dashboardHeader}>
                     <div>
@@ -4134,12 +4242,11 @@ export default function Home() {
 
                   <nav style={styles.clinicMainNav} aria-label="Clinic workflow">
                     {[
-                      ["patients", "Patients"],
-                      ["referrals", "Referrals"],
-                      ["approvals", "Approvals"],
-                      ["messages", "Messages"],
-                      ["more", "More"],
-                    ].map(([id, label]) => (
+                    ["patients", "Patients"],
+                    ["referrals", "Referrals"],
+                    ["approvals", "Approvals"],
+                    ["more", "More"],
+                  ].map(([id, label]) => (
                       <button
                         key={id}
                         type="button"
@@ -4148,12 +4255,7 @@ export default function Home() {
                           ...(clinicWorkflowView === id ? styles.clinicMainNavButtonActive : {}),
                         }}
                         onClick={() => {
-                          const nextView = id as ClinicWorkflowView;
-                          setClinicWorkflowView(nextView);
-                          setClinicSelectedVisitId(null);
-                          setSelectedReferralId(null);
-                          if (nextView === "approvals") setClinicDashboardView("approvals");
-                          if (nextView === "patients") setClinicDashboardView("active");
+                          navigateClinicWorkflowView(id as ClinicWorkflowView);
                         }}
                       >
                         {label}
@@ -4163,7 +4265,7 @@ export default function Home() {
                 </>
               )}
 
-              {clinicWorkflowView !== "more" && !clinicSelectedVisit && !selectedReferral && (
+              {clinicWorkflowView !== "more" && !selectedReferral && (
               <div style={styles.clinicCommandCenter}>
                 <div style={styles.operationsBoardGrid}>
                   {operationsBoardCards.map((card) => (
@@ -4172,85 +4274,53 @@ export default function Home() {
                       type="button"
                       style={styles.operationsBoardCard}
                       onClick={() => {
-                        setClinicWorkflowView(card.target);
-                        setClinicSelectedVisitId(null);
-                        setSelectedReferralId(null);
-                        if (card.view) setClinicDashboardView(card.view);
-                        if (card.referralStatus) setReferralDashboardStatus(card.referralStatus);
+                        openClinicBoardCard(card);
                       }}
                     >
-                      <span>{card.label}</span>
                       <strong>{card.count}</strong>
+                      <span>{card.label}</span>
                     </button>
                   ))}
                 </div>
 
-                {clinicWorkflowView === "patients" && (
+                {(clinicWorkflowView === "patients" || clinicWorkflowView === "approvals") && (
                   <>
-                    <div style={styles.clinicViewTabs}>
-                      {dashboardTabs.map((tab) => (
-                        <button
-                          key={tab.id}
-                          type="button"
-                          style={{
-                            ...styles.clinicViewTab,
-                            ...(clinicDashboardView === tab.id ? styles.clinicViewTabActive : {}),
-                          }}
-                          onClick={() => {
-                            setClinicSelectedVisitId(null);
-                            setClinicDashboardView(tab.id);
-                          }}
-                        >
-                          <span>{tab.label}</span>
-                          <strong>{tab.count}</strong>
-                        </button>
-                      ))}
-                    </div>
-
                     <div style={styles.clinicFilterBar}>
                       <input
                         style={styles.clinicSearchInput}
                         value={clinicSearch}
                         onChange={(event) => setClinicSearch(event.target.value)}
-                        placeholder="Search pet, owner, phone, status, doctor"
+                        placeholder="Search pet, owner, doctor, phone, status"
                       />
-                      <select
-                        style={styles.clinicCompactSelect}
-                        value={clinicStatusFilter}
-                        onChange={(event) => setClinicStatusFilter(event.target.value)}
-                      >
-                        <option>All statuses</option>
-                        {clinicStatuses.map((status) => (
-                          <option key={status}>{status}</option>
+                      <div style={styles.clinicQuickFilterRow}>
+                        {clinicQuickFilters.map((filter) => (
+                          <button
+                            key={filter.id}
+                            type="button"
+                            style={{
+                              ...styles.clinicQuickFilterChip,
+                              ...(clinicQuickFilter === filter.id
+                                ? styles.clinicQuickFilterChipActive
+                                : {}),
+                            }}
+                            onClick={() => {
+                              setClinicQuickFilter(filter.id);
+                              if (filter.id === "critical") setClinicDashboardView("critical");
+                              if (filter.id === "approvals") setClinicDashboardView("approvals");
+                              if (filter.id === "pickup") setClinicDashboardView("pickup");
+                              if (["all", "urgent", "stable"].includes(filter.id)) {
+                                setClinicDashboardView("active");
+                              }
+                            }}
+                          >
+                            {filter.label}
+                          </button>
                         ))}
-                      </select>
-                      <select
-                        style={styles.clinicCompactSelect}
-                        value={clinicDoctorFilter}
-                        onChange={(event) => setClinicDoctorFilter(event.target.value)}
-                      >
-                        <option>All doctors</option>
-                        {clinicDoctors.map((doctor) => (
-                          <option key={doctor}>{doctor}</option>
-                        ))}
-                      </select>
-                      <select
-                        style={styles.clinicCompactSelect}
-                        value={clinicSort}
-                        onChange={(event) => setClinicSort(event.target.value as ClinicSort)}
-                      >
-                        <option value="newest">Newest first</option>
-                        <option value="oldest">Oldest first</option>
-                        <option value="pet">Pet name</option>
-                        <option value="status">Status</option>
-                      </select>
+                      </div>
                     </div>
 
                     <p style={styles.clinicResultText}>
-                      Showing {filteredClinicVisits.length} of {visitsForDashboardView.length}{" "}
-                      {dashboardTabs
-                        .find((tab) => tab.id === clinicDashboardView)
-                        ?.label.toLowerCase()}
+                      {filteredClinicVisits.length} of {quickFilteredClinicVisits.length} patients
                     </p>
                   </>
                 )}
@@ -4867,10 +4937,7 @@ export default function Home() {
                                   type="button"
                                   style={styles.secondaryButton}
                                   onClick={() => {
-                                    setClinicWorkflowView("patients");
-                                    setClinicDashboardView("active");
-                                    setSelectedReferralId(null);
-                                    setClinicSelectedVisitId(convertedVisit.id);
+                                    openPatientRecord(convertedVisit.id);
                                   }}
                                 >
                                   Open {convertedVisit.petName}
@@ -4953,7 +5020,6 @@ export default function Home() {
                             type="button"
                             style={styles.patientListCard}
                             onClick={() => {
-                              setClinicSelectedVisitId(null);
                               setSelectedReferralId(referral.id);
                             }}
                           >
@@ -4984,19 +5050,19 @@ export default function Home() {
                 </section>
               ) : (
                 <>
-                  {!clinicSelectedVisit && visits.length === 0 && (
+                  {visits.length === 0 && (
                     <div style={styles.emptyBox}>
                       No active patient visits yet. Submitted visits and converted referrals will
                       appear here.
                     </div>
                   )}
-                  {!clinicSelectedVisit && visits.length > 0 && filteredClinicVisits.length === 0 && (
+                  {visits.length > 0 && filteredClinicVisits.length === 0 && (
                     <div style={styles.emptyBox}>
                       No visits match this view or filter. Try Active Visits or clear the search.
                     </div>
                   )}
 
-                  {!clinicSelectedVisit && filteredClinicVisits.length > 0 && (
+                  {filteredClinicVisits.length > 0 && (
                     <section style={styles.patientListPanel}>
                       <div style={styles.patientListHeader}>
                         <div>
@@ -5019,31 +5085,16 @@ export default function Home() {
                               key={visit.id}
                               type="button"
                               style={styles.patientListCard}
-                              onClick={() => setClinicSelectedVisitId(visit.id)}
+                              onClick={() => openPatientRecord(visit.id)}
                             >
                               <span style={styles.patientListSummary}>
                                 <strong>{visit.petName}</strong>
                                 <span>{getCompactPatientMetaLine(visit)}</span>
+                                <span>Dr: {doctorName}</span>
+                                <span>Status: {workflowStatus}</span>
+                                <span>Urgency: {triageLevel}</span>
                               </span>
-                              <span style={styles.patientListMeta}>
-                                <span
-                                  style={{
-                                    ...styles.patientListTriageChip,
-                                    ...(triageLevel === "Critical" ? styles.patientStatusChipRed : {}),
-                                    ...(triageLevel === "Urgent" ? styles.patientStatusChipOrange : {}),
-                                    ...(triageLevel === "Stable" ? styles.patientStatusChipTeal : {}),
-                                  }}
-                                >
-                                  {triageLevel}
-                                </span>
-                                <span>
-                                  {doctorName === "Unassigned"
-                                    ? "Unassigned"
-                                    : `Dr. ${doctorName.split(" ").slice(-1)[0]}`}
-                                </span>
-                                <span>{workflowStatus}</span>
-                              </span>
-                              <span style={styles.patientListOpen}>Open</span>
+                              <span style={styles.patientListOpen}>›</span>
                             </button>
                           );
                         })}
@@ -5051,1098 +5102,6 @@ export default function Home() {
                     </section>
                   )}
 
-                  {clinicSelectedVisit && (
-                    <div style={styles.patientDetailScreen}>
-                      <div style={styles.patientRecordTopBar}>
-                        <button
-                          type="button"
-                          style={styles.patientDetailBackButton}
-                          onClick={() => setClinicSelectedVisitId(null)}
-                        >
-                          Back
-                        </button>
-                        <div style={styles.patientRecordTopCopy}>
-                          <strong>{clinicSelectedVisit.petName}</strong>
-                          <span>Patient record</span>
-                        </div>
-                      </div>
-
-                      <div style={styles.patientRecordContent}>
-                    {[clinicSelectedVisit].map((visit) => {
-                      const intake = getIntakeSummary(visit);
-                      const doctor = getAssignedDoctorFromNotes(visit.clinicNotes);
-                      const pendingMessage = pendingClinicActions[visit.id];
-                      const mediaDraft = ownerMediaDrafts[visit.id];
-                      const actionCategory = getActionCenterCategory(visit);
-                      const communicationTab = getCommunicationTab(visit.id);
-                      const workflowStatus = getClinicWorkflowStatusLabel(visit);
-                      const primaryClinicalAction = getPrimaryClinicalAction(visit, doctor);
-                      const compactWorkflowIndex = getCompactWorkflowIndex(visit);
-                      const statusChips = getStatusChips(visit, doctor);
-                      const isReferralPatient =
-                        (visit.visitType || "").toLowerCase().includes("referral") ||
-                        Boolean(visit.referralName);
-
-                      return (
-                        <article key={visit.id} style={styles.patientWorkflowCard}>
-                          <section style={styles.patientOverviewSticky}>
-                            <header style={styles.patientHeaderCard}>
-                              <div>
-                                <h3 style={styles.petName}>{visit.petName}</h3>
-                                <p style={styles.patientMetaLine}>{getCompactPatientMetaLine(visit)}</p>
-                              </div>
-                            </header>
-
-                            <div style={styles.patientOverviewMetaList}>
-                              <span>
-                                <strong>Owner:</strong>
-                                {getOwnerName(visit)}
-                              </span>
-                              <span>
-                                <strong>Doctor:</strong>
-                                {doctor ? `Dr. ${doctor.name}` : "Unassigned"}
-                              </span>
-                              <span>
-                                <strong>Triage:</strong>
-                                {getTriageLevel(visit)}
-                              </span>
-                              <span>
-                                <strong>Status:</strong>
-                                {workflowStatus}
-                              </span>
-                            </div>
-
-                            {statusChips.length > 0 && (
-                              <div style={styles.patientChipRow}>
-                                {statusChips.map((chip) => (
-                                  <span
-                                    key={chip.label}
-                                    style={{
-                                      ...styles.patientStatusChip,
-                                      ...(chip.tone === "teal" ? styles.patientStatusChipTeal : {}),
-                                      ...(chip.tone === "orange" ? styles.patientStatusChipOrange : {}),
-                                      ...(chip.tone === "red" ? styles.patientStatusChipRed : {}),
-                                      ...(chip.tone === "blue" ? styles.patientStatusChipBlue : {}),
-                                    }}
-                                  >
-                                    {chip.label}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-
-                            {doctor && (
-                              <a
-                                href={doctor.profileUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                style={styles.clinicDoctorLink}
-                              >
-                                View Dr. {doctor.name} profile
-                              </a>
-                            )}
-
-                            <div style={styles.primaryClinicalActionCard}>
-                              <div>
-                                <span style={styles.ownerHeroEyebrow}>Next clinical action</span>
-                                <strong>{primaryClinicalAction.label}</strong>
-                                <p style={styles.primaryClinicalHelper}>{primaryClinicalAction.helper}</p>
-                              </div>
-
-                              {primaryClinicalAction.kind === "assignDoctor" ? (
-                                <select
-                                  style={styles.primaryClinicalSelect}
-                                  defaultValue=""
-                                  onChange={(event) => {
-                                    if (!event.target.value) return;
-                                    assignDoctorToVisit(visit.id, event.target.value);
-                                    event.target.value = "";
-                                  }}
-                                >
-                                  <option value="">Assign Doctor</option>
-                                  {doctors.map((doctorOption) => (
-                                    <option key={doctorOption.name} value={doctorOption.name}>
-                                      Dr. {doctorOption.name}
-                                    </option>
-                                  ))}
-                                </select>
-                              ) : (
-                                <button
-                                  type="button"
-                                  style={styles.primaryClinicalActionButton}
-                                  onClick={() => {
-                                    if (primaryClinicalAction.kind === "startTriage") {
-                                      sendUpdate(
-                                        visit.id,
-                                        "Triage in progress",
-                                        `${visit.petName}'s triage assessment has started.`
-                                      );
-                                      return;
-                                    }
-                                    if (primaryClinicalAction.kind === "updateDiagnostics") {
-                                      sendUpdate(
-                                        visit.id,
-                                        "Diagnostics underway",
-                                        `Diagnostics are being updated for ${visit.petName}. We will share the next milestone as soon as it is ready.`
-                                      );
-                                      return;
-                                    }
-                                    if (primaryClinicalAction.kind === "sendEstimate") {
-                                      sendEstimateApproval(visit);
-                                      return;
-                                    }
-                                    if (primaryClinicalAction.kind === "sendDischarge") {
-                                      sendDischargeInstructions(visit);
-                                      return;
-                                    }
-                                    sendOwnerUpdate(
-                                      visit,
-                                      ownerUpdateDrafts[visit.id] ||
-                                        `There is a new update for ${visit.petName}.`
-                                    );
-                                  }}
-                                >
-                                  {primaryClinicalAction.label}
-                                </button>
-                              )}
-                            </div>
-
-                            <div style={styles.quickActionRow}>
-                              <a style={styles.quickActionButton} href={`tel:${visit.phone}`}>
-                                <span aria-hidden="true">📞</span> Call
-                              </a>
-                              <a style={styles.quickActionButton} href={`sms:${visit.phone}`}>
-                                <span aria-hidden="true">💬</span> Text
-                              </a>
-                              <button
-                                type="button"
-                                style={{
-                                  ...styles.quickActionButton,
-                                  ...(!visit.ownerEmail ? styles.disabledButton : {}),
-                                }}
-                                onClick={() => emailVisitLink(visit)}
-                                disabled={!visit.ownerEmail}
-                              >
-                                <span aria-hidden="true">✉️</span> Email
-                              </button>
-                              <button
-                                type="button"
-                                style={styles.quickActionButton}
-                                onClick={() => {
-                                  setSelectedVisitId(visit.id);
-                                  setOwnerPortalTab("home");
-                                  setOwnerPortalMode("owner");
-                                  setView("status");
-                                }}
-                              >
-                                <span aria-hidden="true">👁</span> Owner View
-                              </button>
-                            </div>
-                          </section>
-
-                          {pendingMessage && (
-                            <div style={styles.pendingActionNotice}>{pendingMessage}</div>
-                          )}
-
-                          <section style={styles.workflowSection}>
-                            <div style={styles.sectionHeaderRow}>
-                              <div>
-                                <h4 style={styles.workflowSectionTitle}>Workflow Timeline</h4>
-                                <p style={styles.authHelpText}>Current Status: {workflowStatus}</p>
-                              </div>
-                            </div>
-                            <div style={styles.compactWorkflowTracker}>
-                              {compactWorkflowSteps.map((step, index) => {
-                                const complete = index < compactWorkflowIndex;
-                                const current = index === compactWorkflowIndex;
-
-                                return (
-                                  <div key={step} style={styles.compactWorkflowItem}>
-                                    <span
-                                      style={{
-                                        ...styles.compactWorkflowDot,
-                                        ...(complete ? styles.compactWorkflowDotComplete : {}),
-                                        ...(current ? styles.compactWorkflowDotCurrent : {}),
-                                      }}
-                                    >
-                                      {complete ? "✓" : current ? "•" : ""}
-                                    </span>
-                                    <strong>{step}</strong>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </section>
-
-                          <section style={styles.workflowSection}>
-                            <div style={styles.sectionHeaderRow}>
-                              <div>
-                                <h4 style={styles.workflowSectionTitle}>Action Center</h4>
-                                <p style={styles.authHelpText}>
-                                  Next workflow: {getActionCenterTitle(visit)}
-                                </p>
-                              </div>
-                              <span style={styles.speciesPill}>{getActionCenterTitle(visit)}</span>
-                            </div>
-
-                            <fieldset
-                              disabled={Boolean(pendingMessage)}
-                              style={{
-                                ...styles.clinicWorkflowFieldset,
-                                ...(pendingMessage ? styles.disabledActionGrid : {}),
-                              }}
-                            >
-                              {actionCategory === "arrival" && (
-                                <div style={styles.contextActionRow}>
-                                  <button
-                                    type="button"
-                                    style={styles.greenAction}
-                                    onClick={() =>
-                                      sendUpdate(
-                                        visit.id,
-                                        "Accepted",
-                                        `Your visit request for ${visit.petName} has been received by the emergency team.`
-                                      )
-                                    }
-                                  >
-                                    Accept Visit
-                                  </button>
-                                  <button
-                                    type="button"
-                                    style={styles.blueAction}
-                                    onClick={() =>
-                                      sendUpdate(
-                                        visit.id,
-                                        "Checked in",
-                                        `${visit.petName} has arrived and check-in has started.`
-                                      )
-                                    }
-                                  >
-                                    Mark Checked In
-                                  </button>
-                                  <button
-                                    type="button"
-                                    style={styles.redAction}
-                                    onClick={() =>
-                                      sendUpdate(
-                                        visit.id,
-                                        "Critical triage",
-                                        `${visit.petName} has been triaged as critical and moved immediately to the treatment area.`
-                                      )
-                                    }
-                                  >
-                                    Critical
-                                  </button>
-                                  <button
-                                    type="button"
-                                    style={styles.orangeAction}
-                                    onClick={() =>
-                                      sendUpdate(
-                                        visit.id,
-                                        "Urgent triage",
-                                        `${visit.petName} has been triaged as urgent and is being stabilized by the medical team.`
-                                      )
-                                    }
-                                  >
-                                    Urgent
-                                  </button>
-                                  <button
-                                    type="button"
-                                    style={styles.tealAction}
-                                    onClick={() =>
-                                      sendUpdate(
-                                        visit.id,
-                                        "Stable triage",
-                                        `${visit.petName} has been triaged as stable and will be seen based on medical priority.`
-                                      )
-                                    }
-                                  >
-                                    Stable
-                                  </button>
-                                  <button
-                                    type="button"
-                                    style={styles.tealAction}
-                                    onClick={() =>
-                                      sendCustomCareUpdate(
-                                        visit,
-                                        visit.status,
-                                        "Enter a short vitals update for the owner",
-                                        `${visit.petName}'s vital signs were checked and are stable at this time.`
-                                      )
-                                    }
-                                  >
-                                    Add Vitals
-                                  </button>
-                                </div>
-                              )}
-
-                              {actionCategory === "registration" && (
-                                <div style={styles.contextActionRow}>
-                                  <button
-                                    type="button"
-                                    style={styles.blueAction}
-                                    onClick={() =>
-                                      sendUpdate(
-                                        visit.id,
-                                        visit.status,
-                                        `${visit.petName}'s registration information has been received.`
-                                      )
-                                    }
-                                  >
-                                    Registration Complete
-                                  </button>
-                                  <button
-                                    type="button"
-                                    style={styles.purpleAction}
-                                    onClick={() =>
-                                      sendFormToVisit(
-                                        visit,
-                                        "Treatment authorization",
-                                        [
-                                          "I authorize the emergency team to examine my pet and provide emergency stabilization as needed.",
-                                          "I understand I am financially responsible for care provided.",
-                                          "I authorize MyPawLink updates by SMS/email when available.",
-                                        ].join("\n\n"),
-                                        `A treatment authorization form is ready for ${visit.petName}.`
-                                      )
-                                    }
-                                  >
-                                    Send General Consent
-                                  </button>
-                                  <button
-                                    type="button"
-                                    style={styles.purpleAction}
-                                    onClick={() =>
-                                      sendFormToVisit(
-                                        visit,
-                                        "CPR / DNR preference",
-                                        [
-                                          "Please choose and sign a resuscitation preference for your pet.",
-                                          "Options include Full CPR, DNR, or Limited CPR.",
-                                          "Full CPR may include chest compressions, intubation, emergency drugs, defibrillation, and advanced life support.",
-                                        ].join("\n\n"),
-                                        `A CPR/DNR preference form is ready for ${visit.petName}.`
-                                      )
-                                    }
-                                  >
-                                    Send CPR / DNR Form
-                                  </button>
-                                  <button
-                                    type="button"
-                                    style={styles.orangeAction}
-                                    onClick={() =>
-                                      sendCustomCareUpdate(
-                                        visit,
-                                        "Deposit requested",
-                                        "Enter deposit request, for example: A $1,000 deposit is requested to continue care.",
-                                        `A deposit is requested to continue care for ${visit.petName}.`
-                                      )
-                                    }
-                                  >
-                                    Request Deposit
-                                  </button>
-                                </div>
-                              )}
-
-                              {actionCategory === "diagnostics" && (
-                                <div style={styles.contextActionRow}>
-                                  <select
-                                    style={styles.doctorSelect}
-                                    defaultValue=""
-                                    onChange={(event) => {
-                                      if (!event.target.value) return;
-                                      assignDoctorToVisit(visit.id, event.target.value);
-                                      event.target.value = "";
-                                    }}
-                                  >
-                                    <option value="">Assign Doctor</option>
-                                    {doctors.map((doctorOption) => (
-                                      <option key={doctorOption.name} value={doctorOption.name}>
-                                        Dr. {doctorOption.name}
-                                      </option>
-                                    ))}
-                                  </select>
-                                  <button
-                                    type="button"
-                                    style={styles.purpleAction}
-                                    onClick={() =>
-                                      sendUpdate(
-                                        visit.id,
-                                        "Doctor reviewing",
-                                        `The doctor is reviewing ${visit.petName}'s history, triage notes, and current symptoms.`
-                                      )
-                                    }
-                                  >
-                                    Doctor Reviewing
-                                  </button>
-                                  <button
-                                    type="button"
-                                    style={styles.blueAction}
-                                    onClick={() =>
-                                      sendUpdate(
-                                        visit.id,
-                                        "Diagnostics underway",
-                                        `Diagnostics are underway for ${visit.petName}. We will update you as results are reviewed.`
-                                      )
-                                    }
-                                  >
-                                    Diagnostics Underway
-                                  </button>
-                                  <button
-                                    type="button"
-                                    style={styles.blueAction}
-                                    onClick={() =>
-                                      sendUpdate(
-                                        visit.id,
-                                        "Diagnostics underway",
-                                        `Bloodwork is in progress for ${visit.petName}.`
-                                      )
-                                    }
-                                  >
-                                    Bloodwork Ordered
-                                  </button>
-                                  <button
-                                    type="button"
-                                    style={styles.blueAction}
-                                    onClick={() =>
-                                      sendUpdate(
-                                        visit.id,
-                                        "Awaiting test results",
-                                        `Radiographs have been completed for ${visit.petName}. The doctor is reviewing the images.`
-                                      )
-                                    }
-                                  >
-                                    X-rays Complete
-                                  </button>
-                                  <button
-                                    type="button"
-                                    style={styles.orangeAction}
-                                    onClick={() =>
-                                      sendUpdate(
-                                        visit.id,
-                                        "Awaiting test results",
-                                        `${visit.petName}'s test results are pending doctor review.`
-                                      )
-                                    }
-                                  >
-                                    Awaiting Results
-                                  </button>
-                                  <button
-                                    type="button"
-                                    style={styles.greenAction}
-                                    onClick={() => sendEstimateApproval(visit)}
-                                  >
-                                    Send Estimate
-                                  </button>
-                                </div>
-                              )}
-
-                              {actionCategory === "treatment" && (
-                                <div style={styles.contextActionStack}>
-                                  <div style={styles.contextActionRow}>
-                                    {[
-                                      ["Treatment started", "Treatment Started"],
-                                      ["In surgery", "In Surgery"],
-                                      ["Recovering from anesthesia", "Recovering"],
-                                      ["Stable", "Stable"],
-                                      ["Critical condition", "Critical"],
-                                      ["ICU monitoring", "Hospitalized / ICU"],
-                                    ].map(([status, label]) => (
-                                      <button
-                                        key={label}
-                                        type="button"
-                                        style={
-                                          status.includes("Critical") ? styles.redAction : styles.orangeAction
-                                        }
-                                        onClick={() =>
-                                          sendUpdate(
-                                            visit.id,
-                                            status,
-                                            `${visit.petName}'s status has been updated: ${label}.`
-                                          )
-                                        }
-                                      >
-                                        {label}
-                                      </button>
-                                    ))}
-                                  </div>
-                                  <div style={styles.careEventPanel}>
-                                    <strong>Care Events</strong>
-                                    <div style={styles.contextActionRow}>
-                                      <button
-                                        type="button"
-                                        style={styles.greenAction}
-                                        onClick={() =>
-                                          sendCustomCareUpdate(
-                                            visit,
-                                            visit.status,
-                                            "Enter medication/treatment update",
-                                            `${visit.petName}'s scheduled medication or treatment was completed.`
-                                          )
-                                        }
-                                      >
-                                        Medication Given
-                                      </button>
-                                      <button
-                                        type="button"
-                                        style={styles.tealAction}
-                                        onClick={() =>
-                                          sendCustomCareUpdate(
-                                            visit,
-                                            visit.status,
-                                            "Enter monitoring update",
-                                            `${visit.petName} is resting and being monitored by the care team.`
-                                          )
-                                        }
-                                      >
-                                        Monitoring Note
-                                      </button>
-                                      <button
-                                        type="button"
-                                        style={styles.blueAction}
-                                        onClick={() =>
-                                          sendCustomCareUpdate(
-                                            visit,
-                                            visit.status,
-                                            "Enter feeding/nursing update",
-                                            `${visit.petName}'s nursing care was completed.`
-                                          )
-                                        }
-                                      >
-                                        Feeding / Nursing
-                                      </button>
-                                      {["Walked", "Urinated", "Defecated"].map((label) => (
-                                        <button
-                                          key={label}
-                                          type="button"
-                                          style={styles.blueAction}
-                                          onClick={() =>
-                                            sendUpdate(
-                                              visit.id,
-                                              visit.status,
-                                              `${visit.petName} ${label.toLowerCase()} during the latest care check.`
-                                            )
-                                          }
-                                        >
-                                          {label}
-                                        </button>
-                                      ))}
-                                    </div>
-                                  </div>
-                                </div>
-                              )}
-
-                              {actionCategory === "discharge" && (
-                                <div style={styles.contextActionRow}>
-                                  <button
-                                    type="button"
-                                    style={styles.redAction}
-                                    onClick={() =>
-                                      sendUpdate(
-                                        visit.id,
-                                        "Ready for pickup",
-                                        `${visit.petName} is ready for pickup. Please check in at the front desk when you arrive.`
-                                      )
-                                    }
-                                  >
-                                    Ready for Pickup
-                                  </button>
-                                  <button
-                                    type="button"
-                                    style={styles.purpleAction}
-                                    onClick={() => sendDischargeInstructions(visit)}
-                                  >
-                                    Send Discharge Instructions
-                                  </button>
-                                  <button
-                                    type="button"
-                                    style={styles.greenAction}
-                                    onClick={() =>
-                                      sendUpdate(
-                                        visit.id,
-                                        visit.status,
-                                        `A follow-up reminder has been set for ${visit.petName}.`
-                                      )
-                                    }
-                                  >
-                                    Aftercare Reminder
-                                  </button>
-                                  <button
-                                    type="button"
-                                    style={styles.greenAction}
-                                    onClick={() =>
-                                      sendUpdate(
-                                        visit.id,
-                                        visit.status,
-                                        `Payment has been completed for ${visit.petName}'s visit.`
-                                      )
-                                    }
-                                  >
-                                    Payment Complete
-                                  </button>
-                                  <button
-                                    type="button"
-                                    style={styles.redAction}
-                                    onClick={() =>
-                                      sendUpdate(
-                                        visit.id,
-                                        "Closed",
-                                        `${visit.petName}'s visit has been completed and closed.`
-                                      )
-                                    }
-                                  >
-                                    Close Visit
-                                  </button>
-                                </div>
-                              )}
-                            </fieldset>
-                          </section>
-
-                          <section style={styles.workflowSection}>
-                            <div style={styles.sectionHeaderRow}>
-                              <div>
-                                <h4 style={styles.workflowSectionTitle}>Communication Hub</h4>
-                                <p style={styles.authHelpText}>
-                                  Owner updates, internal notes, and referral coordination.
-                                </p>
-                              </div>
-                            </div>
-
-                            <div style={styles.communicationTabRow}>
-                              {(["owner", "internal"] as CommunicationHubTab[]).map((tab) => (
-                                <button
-                                  key={tab}
-                                  type="button"
-                                  style={{
-                                    ...styles.communicationTabButton,
-                                    ...(communicationTab === tab
-                                      ? styles.communicationTabButtonActive
-                                      : {}),
-                                  }}
-                                  onClick={() => setCommunicationTab(visit.id, tab)}
-                                >
-                                  {tab === "owner" ? "Owner" : "Internal"}
-                                </button>
-                              ))}
-                              {isReferralPatient && (
-                                <button
-                                  type="button"
-                                  style={{
-                                    ...styles.communicationTabButton,
-                                    ...(communicationTab === "referring"
-                                      ? styles.communicationTabButtonActive
-                                      : {}),
-                                  }}
-                                  onClick={() => setCommunicationTab(visit.id, "referring")}
-                                >
-                                  Referring Clinic
-                                </button>
-                              )}
-                            </div>
-
-                            {communicationTab === "owner" && (
-                              <div style={styles.communicationPanel}>
-                                <details style={styles.ownerAccessDetails}>
-                                  <summary style={styles.ownerAccessSummary}>Owner Access Link</summary>
-                                  <p style={styles.secureVisitLinkText}>
-                                    Share this secure link with the pet owner so they can view updates
-                                    for this visit.
-                                  </p>
-                                  <small style={styles.trackSmallNote}>
-                                    Shared family links are view only. No forms, approvals, payments,
-                                    or owner profile editing.
-                                  </small>
-                                  <div style={styles.ownerLinkButtonRow}>
-                                    <button
-                                      type="button"
-                                      style={styles.secureVisitLinkButton}
-                                      onClick={() => copyVisitLink(visit)}
-                                    >
-                                      Copy Link
-                                    </button>
-                                    <button
-                                      type="button"
-                                      style={styles.secureVisitLinkButton}
-                                      onClick={() => textVisitLink(visit)}
-                                    >
-                                      Text Link
-                                    </button>
-                                    <button
-                                      type="button"
-                                      style={styles.secureVisitLinkButton}
-                                      onClick={() => emailVisitLink(visit)}
-                                    >
-                                      Email Link
-                                    </button>
-                                  </div>
-                                </details>
-
-                                <div style={styles.contextActionRow}>
-                                  <button
-                                    type="button"
-                                    style={styles.tealAction}
-                                    onClick={() =>
-                                      sendOwnerUpdate(
-                                        visit,
-                                        ownerUpdateDrafts[visit.id] ||
-                                          `There is a new update for ${visit.petName}.`
-                                      )
-                                    }
-                                  >
-                                    Send Message
-                                  </button>
-                                  <button
-                                    type="button"
-                                    style={styles.purpleAction}
-                                    onClick={() =>
-                                      sendFormToVisit(
-                                        visit,
-                                        "General consent form",
-                                        "Please review and sign this consent so the care team can continue the recommended visit workflow.",
-                                        `A consent form is ready for ${visit.petName}.`
-                                      )
-                                    }
-                                  >
-                                    Send Consent Form
-                                  </button>
-                                  <button
-                                    type="button"
-                                    style={styles.greenAction}
-                                    onClick={() => sendEstimateApproval(visit)}
-                                  >
-                                    Send Estimate
-                                  </button>
-                                  <button
-                                    type="button"
-                                    style={styles.blueAction}
-                                    onClick={() => sendDischargeInstructions(visit)}
-                                  >
-                                    Send Discharge Instructions
-                                  </button>
-                                </div>
-
-                                <div style={styles.mediaActionRow}>
-                                  <label style={styles.mediaUploadButton}>
-                                    Take Photo
-                                    <input
-                                      hidden
-                                      type="file"
-                                      accept="image/*"
-                                      capture="environment"
-                                      onChange={(event) =>
-                                        handleOwnerUpdateMediaChange(visit.id, event)
-                                      }
-                                    />
-                                  </label>
-                                  <label style={styles.mediaUploadButton}>
-                                    Record Video
-                                    <input
-                                      hidden
-                                      type="file"
-                                      accept="video/*"
-                                      capture="environment"
-                                      onChange={(event) =>
-                                        handleOwnerUpdateMediaChange(visit.id, event)
-                                      }
-                                    />
-                                  </label>
-                                  <label style={styles.mediaUploadButton}>
-                                    Upload Media
-                                    <input
-                                      hidden
-                                      type="file"
-                                      accept="image/*,video/*"
-                                      onChange={(event) =>
-                                        handleOwnerUpdateMediaChange(visit.id, event)
-                                      }
-                                    />
-                                  </label>
-                                </div>
-
-                                {mediaDraft && (
-                                  <div style={styles.mediaPreviewCard}>
-                                    {mediaDraft.previewUrl ? (
-                                      <img
-                                        src={mediaDraft.previewUrl}
-                                        alt={mediaDraft.name}
-                                        style={styles.mediaPreviewImage}
-                                      />
-                                    ) : (
-                                      <span style={styles.mediaPreviewIcon}>
-                                        {mediaDraft.type === "video" ? "Video" : "File"}
-                                      </span>
-                                    )}
-                                    <div>
-                                      <strong>{mediaDraft.name}</strong>
-                                      <input
-                                        style={styles.trackInput}
-                                        value={mediaDraft.caption}
-                                        onChange={(event) =>
-                                          updateOwnerMediaCaption(visit.id, event.target.value)
-                                        }
-                                        placeholder="Optional caption"
-                                      />
-                                    </div>
-                                  </div>
-                                )}
-
-                                <div style={styles.ownerUpdateTemplateGrid}>
-                                  {[
-                                    "Your pet has been checked in.",
-                                    "Your pet is waiting for triage.",
-                                    "The doctor is reviewing your pet now.",
-                                    "Diagnostics are underway.",
-                                    "We are waiting on lab results.",
-                                    "Your pet is resting comfortably.",
-                                    "Treatment has started.",
-                                    "Please review and approve the estimate.",
-                                    "Please review and sign the consent form.",
-                                    "Your pet is ready for pickup.",
-                                  ].map((template) => (
-                                    <button
-                                      key={template}
-                                      type="button"
-                                      style={styles.templateButton}
-                                      onClick={() => sendOwnerUpdate(visit, template)}
-                                    >
-                                      {template}
-                                    </button>
-                                  ))}
-                                </div>
-
-                                <textarea
-                                  style={styles.textarea}
-                                  value={ownerUpdateDrafts[visit.id] || ""}
-                                  onChange={(event) =>
-                                    setOwnerUpdateDrafts((current) => ({
-                                      ...current,
-                                      [visit.id]: event.target.value,
-                                    }))
-                                  }
-                                  placeholder="Edit or write an owner-friendly update before sending"
-                                />
-
-                                <button
-                                  type="button"
-                                  style={styles.primaryButton}
-                                  onClick={() =>
-                                    sendOwnerUpdate(
-                                      visit,
-                                      mediaDraft
-                                        ? `A new ${mediaDraft.type} update is available for ${visit.petName}.`
-                                        : ownerUpdateDrafts[visit.id] ||
-                                            `There is a new update for ${visit.petName}.`
-                                    )
-                                  }
-                                >
-                                  Send Owner Update
-                                </button>
-                              </div>
-                            )}
-
-                            {communicationTab === "internal" && (
-                              <div style={styles.communicationPanel}>
-                                <p style={styles.authHelpText}>
-                                  Internal notes are visible only to clinic staff and never appear on
-                                  the owner page.
-                                </p>
-                                <textarea
-                                  style={{
-                                    ...styles.notesBox,
-                                    ...(!canEditClinicNotes ? styles.disabledButton : {}),
-                                  }}
-                                  placeholder={
-                                    canEditClinicNotes
-                                      ? "Add internal notes visible only to clinic staff."
-                                      : "Internal notes are limited to technician, veterinarian, and admin roles."
-                                  }
-                                  value={removeAppMetadata(visit.clinicNotes)}
-                                  onChange={(event) => {
-                                    if (canEditClinicNotes) {
-                                      saveClinicNotes(visit.id, event.target.value);
-                                    }
-                                  }}
-                                  disabled={!canEditClinicNotes}
-                                />
-                              </div>
-                            )}
-
-                            {communicationTab === "referring" && isReferralPatient && (
-                              <div style={styles.communicationPanel}>
-                                <p style={styles.authHelpText}>
-                                  Coordinate records, ETA, and transfer updates with the referring
-                                  clinic.
-                                </p>
-                                <div style={styles.contextActionRow}>
-                                  {[
-                                    "Request additional records",
-                                    "Confirm ETA",
-                                    "Send referral status update",
-                                  ].map((message) => (
-                                    <button
-                                      key={message}
-                                      type="button"
-                                      style={styles.blueAction}
-                                      onClick={() =>
-                                        window.alert(`${message} queued for the referring clinic.`)
-                                      }
-                                    >
-                                      {message}
-                                    </button>
-                                  ))}
-                                </div>
-                                <textarea
-                                  style={styles.textarea}
-                                  placeholder="Message the referring doctor or clinic"
-                                />
-                              </div>
-                            )}
-                          </section>
-
-                          <details style={styles.workflowAccordion}>
-                            <summary style={styles.workflowAccordionSummary}>
-                              Clinical Details
-                            </summary>
-                            <div style={styles.workflowSectionGrid}>
-                              <section style={styles.workflowSection}>
-                                <h4 style={styles.workflowSectionTitle}>Intake Summary</h4>
-                                <div style={styles.intakeCardGrid}>
-                                  {[
-                                    [
-                                      "Chief Complaint",
-                                      `${intake.chiefComplaint} / ${intake.symptom}`,
-                                    ],
-                                    ["Symptoms Started", intake.started],
-                                    ["Breathing", intake.breathing],
-                                    ["Conscious", intake.conscious],
-                                    ["Mobility", intake.mobility],
-                                    ["Bleeding", intake.bleeding],
-                                    ["Medications", intake.medications],
-                                    ["Allergies", intake.allergies],
-                                    ["Attached Media", intake.mediaSummary],
-                                    ["Additional Notes", intake.notes],
-                                  ].map(([label, value]) => (
-                                    <div key={label} style={styles.intakeDataCard}>
-                                      <span>{label}</span>
-                                      <strong>{value}</strong>
-                                    </div>
-                                  ))}
-                                </div>
-                              </section>
-
-                              <section style={styles.workflowSection}>
-                                <h4 style={styles.workflowSectionTitle}>Documents</h4>
-                                <button type="button" style={styles.attachmentCard}>
-                                  <strong>{intake.mediaSummary}</strong>
-                                  <span>Tap media from the owner update or intake upload when present.</span>
-                                </button>
-                              </section>
-
-                              <section style={styles.workflowSection}>
-                                <h4 style={styles.workflowSectionTitle}>Forms & Approvals</h4>
-                                <div style={styles.contextActionRow}>
-                                  <button
-                                    type="button"
-                                    style={styles.purpleAction}
-                                    onClick={() =>
-                                      sendFormToVisit(
-                                        visit,
-                                        "CPR / DNR preference",
-                                        "Please review and choose a resuscitation preference for this visit.",
-                                        `A CPR/DNR form is ready for ${visit.petName}.`
-                                      )
-                                    }
-                                  >
-                                    Send CPR / DNR Form
-                                  </button>
-                                  <button
-                                    type="button"
-                                    style={styles.greenAction}
-                                    onClick={() => sendEstimateApproval(visit)}
-                                  >
-                                    Send Estimate
-                                  </button>
-                                  <button
-                                    type="button"
-                                    style={styles.blueAction}
-                                    onClick={() => {
-                                      const formType = window.prompt(
-                                        "Enter document name, for example Procedure Authorization"
-                                      );
-                                      if (!formType) return;
-                                      const formBody = window.prompt(
-                                        "Enter the details the customer needs to review"
-                                      );
-                                      if (!formBody) return;
-                                      sendFormToVisit(
-                                        visit,
-                                        formType,
-                                        formBody,
-                                        `A new ${formType} document is ready for ${visit.petName}.`
-                                      );
-                                    }}
-                                  >
-                                    Send Custom Document
-                                  </button>
-                                </div>
-                                <div style={styles.approvalStatusGrid}>
-                                  <span>Estimate: {visit.estimateStatus || "Not Sent"}</span>
-                                  {visit.forms.length > 0 ? (
-                                    visit.forms.map((form) => (
-                                      <span key={form.id}>
-                                        {form.form_type}: {form.form_status}
-                                      </span>
-                                    ))
-                                  ) : (
-                                    <span>Forms: Not Sent</span>
-                                  )}
-                                </div>
-                              </section>
-
-                              <section style={styles.workflowSection}>
-                                <h4 style={styles.workflowSectionTitle}>Care History</h4>
-                                <div style={styles.referralMessageList}>
-                                  {visit.updates.slice(-5).map((update, index) => (
-                                    <span key={`${update.time}-${index}`}>
-                                      <strong>{update.time}</strong> {update.message}
-                                    </span>
-                                  ))}
-                                </div>
-                              </section>
-
-                              <section style={styles.workflowSection}>
-                                <h4 style={styles.workflowSectionTitle}>Discharge History</h4>
-                                <div style={styles.contextActionRow}>
-                                  <button
-                                    type="button"
-                                    style={styles.purpleAction}
-                                    onClick={() => sendDischargeInstructions(visit)}
-                                  >
-                                    Send Discharge Instructions
-                                  </button>
-                                  <button
-                                    type="button"
-                                    style={styles.greenAction}
-                                    onClick={() =>
-                                      sendUpdate(
-                                        visit.id,
-                                        visit.status,
-                                        `A follow-up reminder has been set for ${visit.petName}.`
-                                      )
-                                    }
-                                  >
-                                    Send Aftercare Reminder
-                                  </button>
-                                </div>
-                              </section>
-                            </div>
-                          </details>
-                        </article>
-                      );
-                    })}
-                      </div>
-                    </div>
-                  )}
                 </>
               ))}
                 </>
@@ -6730,6 +5689,8 @@ export default function Home() {
   );
 }
 
+export default MyPawLinkApp;
+
 function MiniIcon({ type }: { type: "chat" | "check" | "heart" | "lock" | "paw" | "search" | "plus" | "referral" }) {
   const stroke = type === "search" ? "#0b62d8" : type === "referral" ? "#b45309" : "#087f78";
 
@@ -6817,6 +5778,18 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontFamily: "Arial, sans-serif",
     color: "#243447",
     padding: "8px 12px 18px",
+  },
+  clinicRoutePage: {
+    background: "#ffffff",
+    minHeight: "100dvh",
+    overflow: "hidden",
+    padding: 0,
+  },
+  clinicRouteScreen: {
+    height: "100dvh",
+    overflowY: "auto",
+    overscrollBehavior: "contain",
+    padding: "8px 10px 20px",
   },
   hero: {
     maxWidth: 480,
@@ -7938,11 +6911,11 @@ const styles: { [key: string]: React.CSSProperties } = {
     background: "#ffffff",
     border: "1px solid #dcefeb",
     borderRadius: 8,
-    padding: 14,
-    marginBottom: 18,
+    padding: 8,
+    marginBottom: 10,
     display: "grid",
-    gap: 12,
-    boxShadow: "0 8px 20px rgba(41, 64, 83, 0.06)",
+    gap: 8,
+    boxShadow: "0 8px 20px rgba(41, 64, 83, 0.05)",
   },
   clinicMainNav: {
     background: "#ffffff",
@@ -7979,20 +6952,23 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   operationsBoardGrid: {
     display: "grid",
-    gap: 8,
-    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 130px), 1fr))",
+    gap: 6,
+    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
   },
   operationsBoardCard: {
-    background: "linear-gradient(135deg, #f0fffb, #ffffff)",
-    border: "1px solid #bfe9e0",
-    borderRadius: 8,
+    alignItems: "center",
+    background: "#f8fbff",
+    border: "1px solid #dcefeb",
+    borderRadius: 999,
     color: "#102a3a",
     cursor: "pointer",
-    display: "grid",
-    gap: 6,
-    minHeight: 76,
-    padding: 12,
-    textAlign: "left",
+    display: "flex",
+    gap: 4,
+    justifyContent: "center",
+    minHeight: 38,
+    padding: "6px 7px",
+    textAlign: "center",
+    whiteSpace: "nowrap",
   },
   clinicWorkflowTabs: {
     display: "grid",
@@ -8058,9 +7034,39 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: "#ffffff",
   },
   clinicFilterBar: {
+    background: "rgba(255, 255, 255, 0.96)",
+    border: "1px solid #edf3f4",
+    borderRadius: 8,
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 160px), 1fr))",
-    gap: 8,
+    gap: 7,
+    padding: 7,
+    position: "sticky",
+    top: 56,
+    zIndex: 11,
+  },
+  clinicQuickFilterRow: {
+    display: "flex",
+    gap: 6,
+    overflowX: "auto",
+    WebkitOverflowScrolling: "touch",
+  },
+  clinicQuickFilterChip: {
+    background: "#f8fbff",
+    border: "1px solid #dcefeb",
+    borderRadius: 999,
+    color: "#52606d",
+    cursor: "pointer",
+    flex: "0 0 auto",
+    fontSize: 12,
+    fontWeight: 900,
+    minHeight: 32,
+    padding: "0 10px",
+    whiteSpace: "nowrap",
+  },
+  clinicQuickFilterChipActive: {
+    background: "#102a3a",
+    borderColor: "#102a3a",
+    color: "#ffffff",
   },
   clinicSearchInput: {
     minHeight: 42,
@@ -8714,11 +7720,11 @@ const styles: { [key: string]: React.CSSProperties } = {
     background: "#ffffff",
     border: "1px solid #dcefeb",
     borderRadius: 8,
-    boxShadow: "0 10px 24px rgba(41, 64, 83, 0.07)",
+    boxShadow: "0 8px 18px rgba(41, 64, 83, 0.05)",
     display: "grid",
-    gap: 12,
-    marginTop: 14,
-    padding: 12,
+    gap: 8,
+    marginTop: 8,
+    padding: 8,
   },
   patientListHeader: {
     alignItems: "flex-start",
@@ -8732,21 +7738,25 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   patientListCard: {
     alignItems: "center",
-    background: "#f8fbff",
+    background: "#ffffff",
     border: "1px solid #dcefeb",
     borderRadius: 8,
     color: "#102a3a",
     cursor: "pointer",
     display: "grid",
-    gap: 8,
+    gap: 6,
     gridTemplateColumns: "minmax(0, 1fr) auto",
-    minHeight: 72,
-    padding: 12,
+    minHeight: 62,
+    padding: "9px 10px",
     textAlign: "left",
   },
   patientListSummary: {
+    color: "#52606d",
     display: "grid",
-    gap: 3,
+    fontSize: 12,
+    fontWeight: 800,
+    gap: 2,
+    lineHeight: 1.22,
     minWidth: 0,
   },
   patientListMeta: {
@@ -8776,38 +7786,28 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontWeight: 900,
     padding: "7px 10px",
   },
-  patientDetailScreen: {
-    background: "#f7fcfc",
-    display: "grid",
-    gap: 10,
-    gridTemplateRows: "auto 1fr",
-    inset: 0,
-    minHeight: "100dvh",
-    overflowY: "auto",
-    overscrollBehavior: "contain",
-    padding: "8px 10px 22px",
-    position: "fixed",
-    zIndex: 999,
-  },
   patientRecordTopBar: {
     alignItems: "center",
-    background: "#f7fcfc",
-    borderBottom: "1px solid #dcefeb",
+    background: "#ffffff",
+    borderBottom: "1px solid #e6eef0",
+    boxSizing: "border-box",
     display: "flex",
     gap: 10,
     margin: "0 auto",
-    maxWidth: 560,
-    padding: "4px 0 10px",
+    maxWidth: 680,
+    padding: "10px 12px",
     position: "sticky",
     top: 0,
     width: "100%",
     zIndex: 35,
   },
-  patientRecordContent: {
+  patientRouteContent: {
+    boxSizing: "border-box",
     display: "grid",
-    gap: 12,
+    gap: 8,
     margin: "0 auto",
-    maxWidth: 560,
+    maxWidth: 680,
+    padding: "0 0 96px",
     width: "100%",
   },
   patientRecordTopCopy: {
@@ -8817,17 +7817,6 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: 1,
     lineHeight: 1.2,
   },
-  patientDetailBackButton: {
-    alignSelf: "start",
-    background: "#ffffff",
-    border: "1px solid #dcefeb",
-    borderRadius: 999,
-    color: "#087f78",
-    cursor: "pointer",
-    fontSize: 13,
-    fontWeight: 900,
-    padding: "9px 12px",
-  },
   patientWorkflowCard: {
     background: "#ffffff",
     border: "1px solid #dcefeb",
@@ -8836,6 +7825,20 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: "grid",
     gap: 10,
     padding: 10,
+  },
+  patientRouteStack: {
+    background: "#ffffff",
+    display: "grid",
+    gap: 8,
+    minHeight: "100%",
+    padding: 0,
+  },
+  patientRouteOverviewCard: {
+    background: "#ffffff",
+    borderBottom: "1px solid #e6eef0",
+    display: "grid",
+    gap: 10,
+    padding: "12px",
   },
   patientOverviewSticky: {
     background: "#ffffff",
@@ -9170,18 +8173,164 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: 10,
     justifyContent: "space-between",
   },
+  workflowContinuePanel: {
+    background: "#f8fbff",
+    borderBottom: "1px solid #e6eef0",
+    borderTop: "1px solid #e6eef0",
+    display: "grid",
+    gap: 10,
+    padding: "12px",
+  },
+  workflowContinueHeader: {
+    alignItems: "center",
+    display: "flex",
+    gap: 10,
+    justifyContent: "space-between",
+  },
   workflowAccordion: {
     background: "#ffffff",
-    border: "1px solid #dcefeb",
-    borderRadius: 8,
+    borderBottom: "1px solid #e6eef0",
+    borderLeft: "none",
+    borderRadius: 0,
+    borderRight: "none",
+    borderTop: "none",
     overflow: "hidden",
   },
   workflowAccordionSummary: {
     color: "#102a3a",
     cursor: "pointer",
-    fontSize: 17,
+    fontSize: 15,
     fontWeight: 900,
-    padding: 14,
+    padding: "11px 12px",
+  },
+  workflowAccordionBody: {
+    display: "grid",
+    gap: 10,
+    padding: "0 10px 10px",
+  },
+  workflowSectionFlat: {
+    display: "grid",
+    gap: 9,
+  },
+  workflowActionGrid: {
+    display: "grid",
+    gap: 7,
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 118px), 1fr))",
+  },
+  clinicalActionChip: {
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    cursor: "pointer",
+    fontSize: 12,
+    fontWeight: 900,
+    minHeight: 38,
+    padding: "8px 9px",
+    textAlign: "center",
+  },
+  clinicalActionChipBlue: { background: "#eff6ff", borderColor: "#bfdbfe", color: "#1d4ed8" },
+  clinicalActionChipPurple: { background: "#faf5ff", borderColor: "#e9d5ff", color: "#7e22ce" },
+  clinicalActionChipOrange: { background: "#fff7ed", borderColor: "#fed7aa", color: "#c2410c" },
+  clinicalActionChipRed: { background: "#fff1f2", borderColor: "#fecdd3", color: "#be123c" },
+  clinicalActionChipTeal: { background: "#ecfdf5", borderColor: "#bbf7d0", color: "#047857" },
+  compactDoctorSelect: {
+    background: "#faf5ff",
+    border: "1px solid #e9d5ff",
+    borderRadius: 8,
+    color: "#7e22ce",
+    cursor: "pointer",
+    fontSize: 12,
+    fontWeight: 900,
+    minHeight: 38,
+    padding: "0 9px",
+  },
+  quickUpdateGrid: {
+    display: "grid",
+    gap: 7,
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 118px), 1fr))",
+  },
+  quickUpdateChip: {
+    background: "#f8fbff",
+    border: "1px solid #dcefeb",
+    borderRadius: 999,
+    color: "#102a3a",
+    cursor: "pointer",
+    fontSize: 12,
+    fontWeight: 900,
+    minHeight: 36,
+    padding: "7px 10px",
+  },
+  mediaActionRowCompact: {
+    display: "grid",
+    gap: 7,
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+  },
+  mediaUploadButtonCompact: {
+    alignItems: "center",
+    background: "#ecfeff",
+    border: "1px solid #a5f3fc",
+    borderRadius: 8,
+    color: "#0f766e",
+    cursor: "pointer",
+    display: "flex",
+    fontSize: 12,
+    fontWeight: 900,
+    justifyContent: "center",
+    minHeight: 38,
+    padding: "8px",
+    textAlign: "center",
+  },
+  compactTextarea: {
+    border: "1px solid #cfe0df",
+    borderRadius: 8,
+    fontSize: 14,
+    minHeight: 76,
+    outline: "none",
+    padding: 11,
+    width: "100%",
+  },
+  compactIntakeLayout: {
+    alignItems: "start",
+    display: "grid",
+    gap: 10,
+    gridTemplateColumns: "72px minmax(0, 1fr)",
+  },
+  compactIntakePhoto: {
+    borderRadius: 8,
+    height: 72,
+    objectFit: "cover",
+    width: 72,
+  },
+  compactIntakeGrid: {
+    display: "grid",
+    gap: 6,
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 120px), 1fr))",
+  },
+  compactIntakeItem: {
+    background: "#f8fbff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    color: "#64717d",
+    display: "grid",
+    fontSize: 11,
+    fontWeight: 800,
+    gap: 2,
+    padding: "7px 8px",
+  },
+  careEventChipGrid: {
+    display: "grid",
+    gap: 7,
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 104px), 1fr))",
+  },
+  careEventChip: {
+    background: "#f8fbff",
+    border: "1px solid #dcefeb",
+    borderRadius: 999,
+    color: "#102a3a",
+    cursor: "pointer",
+    fontSize: 12,
+    fontWeight: 900,
+    minHeight: 35,
+    padding: "7px 10px",
   },
   contextActionStack: {
     display: "grid",
