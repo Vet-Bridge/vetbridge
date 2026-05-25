@@ -279,22 +279,30 @@ const getEmergencyConsentForm = (visit: Visit) =>
 
 const getEmergencyConsentStatus = (visit: Visit) => {
   const form = getEmergencyConsentForm(visit);
-  if (!form) return { label: "Pending", detail: "Consent pending - send reminder", form };
+  if (!form) return { label: "Pending", detail: "Emergency Care Consent: Pending", form };
   if (form.form_status === "Signed") {
     return {
       label: "Signed",
-      detail: "Emergency Care Consent signed at " + (form.signed_at ? new Date(form.signed_at).toLocaleString() : "unknown time"),
+      detail:
+        "Signed by " +
+        (form.signed_name || "owner") +
+        ". Signed at " +
+        (form.signed_at ? new Date(form.signed_at).toLocaleString() : "unknown time"),
       form,
     };
   }
   if (form.form_status === "Declined") {
     return {
       label: "Declined",
-      detail: "Owner declined consent. The veterinary team may need to contact them before care can continue.",
+      detail:
+        "Declined by " +
+        (form.signed_name || "owner") +
+        ". Declined at " +
+        (form.declined_at ? new Date(form.declined_at).toLocaleString() : "unknown time"),
       form,
     };
   }
-  return { label: "Pending", detail: "Consent pending - send reminder", form };
+  return { label: "Pending", detail: "Emergency Care Consent: Pending", form };
 };
 
 const getStatusChips = (visit: Visit, doctor: DoctorOption | null) => {
@@ -908,9 +916,12 @@ export default function ClinicPatientDetailClient({ patientId }: { patientId: st
 
       <section style={styles.consentPanel}>
         <div>
-          <span style={styles.eyebrow}>Consent</span>
+          <span style={styles.eyebrow}>Emergency Care Consent</span>
           <strong>{consentStatus.label}</strong>
           <p>{consentStatus.detail}</p>
+          {consentStatus.label === "Declined" && consentStatus.form?.decline_reason && (
+            <p>Reason: {consentStatus.form.decline_reason}</p>
+          )}
         </div>
         {consentStatus.label === "Pending" && (
           <button

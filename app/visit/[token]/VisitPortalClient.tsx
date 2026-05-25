@@ -1,9 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import type {
+  CSSProperties,
+  PointerEvent as ReactPointerEvent,
+  TouchEvent as ReactTouchEvent,
+} from "react";
 import Link from "next/link";
-import SignatureCanvas from "react-signature-canvas";
 import { supabase } from "../../../lib/supabase";
 
 export type OwnerPortalUpdate = {
@@ -98,8 +101,24 @@ type ClinicFormDraft = {
   ownerName: string;
   relationship: string;
   authorized: boolean;
+  chargesAcknowledged: boolean;
+  paymentDueAcknowledged: boolean;
+  separateEstimateAcknowledged: boolean;
   signatureData: string;
+  typedSignature: string;
+  typedSignatureAccepted: boolean;
   declineReason: string;
+};
+
+type SignaturePoint = {
+  x: number;
+  y: number;
+};
+
+type MobileSignaturePadProps = {
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
 };
 
 type VisitPortalClientProps = {
@@ -169,9 +188,166 @@ const emptyClinicFormDraft = (): ClinicFormDraft => ({
   ownerName: "",
   relationship: "",
   authorized: false,
+  chargesAcknowledged: false,
+  paymentDueAcknowledged: false,
+  separateEstimateAcknowledged: false,
   signatureData: "",
+  typedSignature: "",
+  typedSignatureAccepted: false,
   declineReason: "",
 });
+
+function MobileSignaturePad({ value, onChange, disabled = false }: MobileSignaturePadProps) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const drawingRef = useRef(false);
+  const lastPointRef = useRef<SignaturePoint | null>(null);
+
+  const configureCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const width = Math.max(1, Math.round(rect.width * dpr));
+    const height = Math.max(1, Math.round(rect.height * dpr));
+
+    if (canvas.width !== width || canvas.height !== height) {
+      canvas.width = width;
+      canvas.height = height;
+    }
+
+    const context = canvas.getContext("2d");
+    if (!context) return;
+
+    context.setTransform(dpr, 0, 0, dpr, 0, 0);
+    context.clearRect(0, 0, rect.width, rect.height);
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.lineWidth = 2.4;
+    context.strokeStyle = "#102a3a";
+
+    if (value && value.startsWith("data:image")) {
+      const image = new Image();
+      image.onload = () => {
+        context.drawImage(image, 0, 0, rect.width, rect.height);
+      };
+      image.src = value;
+    }
+  }, [value]);
+
+  useEffect(() => {
+    configureCanvas();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const resizeObserver =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => configureCanvas())
+        : null;
+    resizeObserver?.observe(canvas);
+    window.addEventListener("resize", configureCanvas);
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", configureCanvas);
+    };
+  }, [configureCanvas]);
+
+  const getPoint = (clientX: number, clientY: number): SignaturePoint => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: clientX - rect.left,
+      y: clientY - rect.top,
+    };
+  };
+
+  const drawTo = (point: SignaturePoint) => {
+    const canvas = canvasRef.current;
+    const previousPoint = lastPointRef.current;
+    if (!canvas || !previousPoint) return;
+
+    const context = canvas.getContext("2d");
+    if (!context) return;
+
+    context.beginPath();
+    context.moveTo(previousPoint.x, previousPoint.y);
+    context.lineTo(point.x, point.y);
+    context.stroke();
+    lastPointRef.current = point;
+  };
+
+  const beginStroke = (point: SignaturePoint) => {
+    if (disabled) return;
+    drawingRef.current = true;
+    lastPointRef.current = point;
+    drawTo({ x: point.x + 0.01, y: point.y + 0.01 });
+  };
+
+  const finishStroke = () => {
+    if (!drawingRef.current) return;
+    drawingRef.current = false;
+    lastPointRef.current = null;
+    const canvas = canvasRef.current;
+    if (canvas) onChange(canvas.toDataURL("image/png"));
+  };
+
+  const handlePointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    beginStroke(getPoint(event.clientX, event.clientY));
+  };
+
+  const handlePointerMove = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (!drawingRef.current) return;
+    event.preventDefault();
+    drawTo(getPoint(event.clientX, event.clientY));
+  };
+
+  const handlePointerUp = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    event.preventDefault();
+    finishStroke();
+  };
+
+  const handleTouchStart = (event: ReactTouchEvent<HTMLCanvasElement>) => {
+    if ("PointerEvent" in window) return;
+    const touch = event.touches[0];
+    if (!touch) return;
+    event.preventDefault();
+    beginStroke(getPoint(touch.clientX, touch.clientY));
+  };
+
+  const handleTouchMove = (event: ReactTouchEvent<HTMLCanvasElement>) => {
+    if ("PointerEvent" in window || !drawingRef.current) return;
+    const touch = event.touches[0];
+    if (!touch) return;
+    event.preventDefault();
+    drawTo(getPoint(touch.clientX, touch.clientY));
+  };
+
+  const handleTouchEnd = (event: ReactTouchEvent<HTMLCanvasElement>) => {
+    if ("PointerEvent" in window) return;
+    event.preventDefault();
+    finishStroke();
+  };
+
+  return (
+    <canvas
+      ref={canvasRef}
+      aria-label="Signature pad"
+      style={styles.signatureCanvas}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      onPointerLeave={finishStroke}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    />
+  );
+}
 
 export default function VisitPortalClient({ token, initialVisit }: VisitPortalClientProps) {
   const [visit, setVisit] = useState(initialVisit);
@@ -187,7 +363,6 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
   const [respondingFormId, setRespondingFormId] = useState("");
   const [formActionMessage, setFormActionMessage] = useState("");
   const [respondingEstimateId, setRespondingEstimateId] = useState("");
-  const clinicSignaturePadRef = useRef<SignatureCanvas | null>(null);
 
   const latestUpdate = useMemo(
     () => visit.updates[visit.updates.length - 1],
@@ -411,20 +586,9 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
       [formId]: current[formId] || emptyClinicFormDraft(),
     }));
     setFormActionMessage("");
-    window.setTimeout(() => {
-      clinicSignaturePadRef.current?.clear();
-    }, 0);
-  };
-
-  const captureClinicSignature = (formId: string) => {
-    const signatureData = clinicSignaturePadRef.current?.isEmpty()
-      ? ""
-      : clinicSignaturePadRef.current?.toDataURL("image/png") || "";
-    updateClinicFormDraft(formId, "signatureData", signatureData);
   };
 
   const clearClinicSignature = (formId: string) => {
-    clinicSignaturePadRef.current?.clear();
     updateClinicFormDraft(formId, "signatureData", "");
   };
 
@@ -435,25 +599,43 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
     const draft = clinicFormDrafts[form.id] || emptyClinicFormDraft();
 
     if (formStatus === "Signed") {
-      const signatureData = clinicSignaturePadRef.current?.isEmpty()
-        ? draft.signatureData
-        : clinicSignaturePadRef.current?.toDataURL("image/png") || draft.signatureData;
+      const signatureData = draft.signatureData.trim();
+      const typedSignatureData = draft.typedSignature.trim()
+        ? "typed-signature:" + draft.typedSignature.trim()
+        : "";
+      const finalSignatureData = signatureData || (draft.typedSignatureAccepted ? typedSignatureData : "");
 
-      if (!draft.ownerName.trim() || !draft.relationship.trim() || !signatureData.trim()) {
+      if (!draft.ownerName.trim() || !draft.relationship.trim() || !finalSignatureData) {
         setFormActionMessage("Please complete owner name, relationship, and signature.");
         return;
       }
-      if (isEmergencyCareConsentForm(form) && !draft.authorized) {
-        setFormActionMessage("Please check the authorization box before signing.");
+      if (!signatureData && typedSignatureData && !draft.typedSignatureAccepted) {
+        setFormActionMessage("Please confirm that your typed name represents your electronic signature.");
+        return;
+      }
+      if (
+        isEmergencyCareConsentForm(form) &&
+        (!draft.authorized ||
+          !draft.chargesAcknowledged ||
+          !draft.paymentDueAcknowledged ||
+          !draft.separateEstimateAcknowledged)
+      ) {
+        setFormActionMessage("Please complete all required Emergency Care Consent acknowledgments.");
         return;
       }
 
-      updateClinicFormDraft(form.id, "signatureData", signatureData);
+      updateClinicFormDraft(form.id, "signatureData", finalSignatureData);
     }
 
-    if (formStatus === "Declined" && !draft.declineReason.trim()) {
-      setFormActionMessage("Please enter a brief reason before declining.");
-      return;
+    if (formStatus === "Declined") {
+      if (!draft.ownerName.trim()) {
+        setFormActionMessage("Please enter your full name before declining.");
+        return;
+      }
+      if (!draft.declineReason.trim()) {
+        setFormActionMessage("Please enter a brief reason before declining.");
+        return;
+      }
     }
 
     setRespondingFormId(form.id);
@@ -471,16 +653,20 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
           formId: form.id,
           formStatus,
           signedName:
-            formStatus === "Signed"
-              ? draft.ownerName.trim() + " (" + draft.relationship.trim() + ")"
-              : "",
-          relationshipToPet: formStatus === "Signed" ? draft.relationship.trim() : "",
+            draft.ownerName.trim() +
+            (draft.relationship.trim() ? " (" + draft.relationship.trim() + ")" : ""),
+          relationshipToPet: draft.relationship.trim(),
           authorizationConfirmed: formStatus === "Signed" ? draft.authorized : false,
+          chargesAcknowledged: formStatus === "Signed" ? draft.chargesAcknowledged : false,
+          paymentDueAcknowledged: formStatus === "Signed" ? draft.paymentDueAcknowledged : false,
+          separateEstimateAcknowledged:
+            formStatus === "Signed" ? draft.separateEstimateAcknowledged : false,
           signatureData:
             formStatus === "Signed"
-              ? clinicSignaturePadRef.current?.isEmpty()
-                ? draft.signatureData
-                : clinicSignaturePadRef.current?.toDataURL("image/png") || draft.signatureData
+              ? draft.signatureData ||
+                (draft.typedSignatureAccepted && draft.typedSignature.trim()
+                  ? "typed-signature:" + draft.typedSignature.trim()
+                  : "")
               : "",
           declineReason: draft.declineReason.trim(),
         }),
@@ -503,7 +689,7 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
       setFormActionMessage(
         formStatus === "Signed"
           ? form.form_type + " signed. The clinic has been notified."
-          : "The veterinary team may contact you before care can continue."
+          : "Declining this consent may delay care. The veterinary team may contact you before care can continue."
       );
       void refreshVisit("background");
     } catch (error) {
@@ -769,7 +955,7 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
                   <div style={styles.actionNeededCard}>
                     <span style={styles.actionEyebrow}>Action Needed</span>
                     <strong>Emergency Care Consent</strong>
-                    <p>Please review and sign so the veterinary team can begin care.</p>
+                    <p>Please review and sign so the veterinary team can begin evaluation and stabilizing care.</p>
                     <button
                       type="button"
                       style={styles.signButton}
@@ -817,6 +1003,25 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
                     <span>We will let you know here when something needs your review.</span>
                   </div>
                 )}
+
+                {completedClinicForms.length > 0 && (
+                  <div style={styles.completedActionBox}>
+                    <span style={styles.actionEyebrow}>Completed Actions</span>
+                    {completedClinicForms.map((form) => (
+                      <div key={form.id} style={styles.completedActionItem}>
+                        <strong>{form.form_type || "Form"}</strong>
+                        <span>
+                          {form.form_status}
+                          {form.signed_at
+                            ? " at " + new Date(form.signed_at).toLocaleString()
+                            : form.declined_at
+                              ? " at " + new Date(form.declined_at).toLocaleString()
+                              : ""}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -852,14 +1057,40 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
                     placeholder="Relationship to pet"
                   />
                   {isEmergencyCareConsentForm(selectedClinicForm) && (
-                    <label style={styles.checkRow}>
-                      <input
-                        type="checkbox"
-                        checked={(clinicFormDrafts[selectedClinicForm.id] || emptyClinicFormDraft()).authorized}
-                        onChange={(event) => updateClinicFormDraft(selectedClinicForm.id, "authorized", event.target.checked)}
-                      />
-                      I authorize initial emergency evaluation and care.
-                    </label>
+                    <div style={styles.checkboxStack}>
+                      <label style={styles.checkRow}>
+                        <input
+                          type="checkbox"
+                          checked={(clinicFormDrafts[selectedClinicForm.id] || emptyClinicFormDraft()).authorized}
+                          onChange={(event) => updateClinicFormDraft(selectedClinicForm.id, "authorized", event.target.checked)}
+                        />
+                        I authorize initial emergency evaluation and stabilizing care for my pet.
+                      </label>
+                      <label style={styles.checkRow}>
+                        <input
+                          type="checkbox"
+                          checked={(clinicFormDrafts[selectedClinicForm.id] || emptyClinicFormDraft()).chargesAcknowledged}
+                          onChange={(event) => updateClinicFormDraft(selectedClinicForm.id, "chargesAcknowledged", event.target.checked)}
+                        />
+                        I understand that charges may apply for emergency evaluation and stabilizing care.
+                      </label>
+                      <label style={styles.checkRow}>
+                        <input
+                          type="checkbox"
+                          checked={(clinicFormDrafts[selectedClinicForm.id] || emptyClinicFormDraft()).paymentDueAcknowledged}
+                          onChange={(event) => updateClinicFormDraft(selectedClinicForm.id, "paymentDueAcknowledged", event.target.checked)}
+                        />
+                        I understand that payment is due at the time of service.
+                      </label>
+                      <label style={styles.checkRow}>
+                        <input
+                          type="checkbox"
+                          checked={(clinicFormDrafts[selectedClinicForm.id] || emptyClinicFormDraft()).separateEstimateAcknowledged}
+                          onChange={(event) => updateClinicFormDraft(selectedClinicForm.id, "separateEstimateAcknowledged", event.target.checked)}
+                        />
+                        I understand that additional diagnostics, treatment, hospitalization, procedures, or surgery may require a separate estimate and approval.
+                      </label>
+                    </div>
                   )}
                   <div style={styles.signaturePadShell}>
                     <div style={styles.signatureHintRow}>
@@ -869,27 +1100,35 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
                         style={styles.clearSignatureButton}
                         onClick={() => clearClinicSignature(selectedClinicForm.id)}
                       >
-                        Clear
+                        Clear Signature
                       </button>
                     </div>
-                    <SignatureCanvas
-                      ref={clinicSignaturePadRef}
-                      penColor="#102a3a"
-                      minWidth={1.2}
-                      maxWidth={2.8}
-                      onEnd={() => captureClinicSignature(selectedClinicForm.id)}
-                      canvasProps={{
-                        width: 620,
-                        height: 220,
-                        style: styles.signatureCanvas,
-                        "aria-label": "Signature pad",
-                      }}
+                    <MobileSignaturePad
+                      value={(clinicFormDrafts[selectedClinicForm.id] || emptyClinicFormDraft()).signatureData}
+                      onChange={(value) => updateClinicFormDraft(selectedClinicForm.id, "signatureData", value)}
                     />
                     <span style={styles.signatureHelper}>
                       Use your finger or stylus to sign inside the box.
                     </span>
                   </div>
-                  <div style={styles.timestampBox}>Date/time: {new Date().toLocaleString()}</div>
+                  <div style={styles.typedSignatureBox}>
+                    <input
+                      style={styles.input}
+                      value={(clinicFormDrafts[selectedClinicForm.id] || emptyClinicFormDraft()).typedSignature}
+                      onChange={(event) => updateClinicFormDraft(selectedClinicForm.id, "typedSignature", event.target.value)}
+                      placeholder="Typed signature fallback"
+                      autoComplete="name"
+                    />
+                    <label style={styles.checkRow}>
+                      <input
+                        type="checkbox"
+                        checked={(clinicFormDrafts[selectedClinicForm.id] || emptyClinicFormDraft()).typedSignatureAccepted}
+                        onChange={(event) => updateClinicFormDraft(selectedClinicForm.id, "typedSignatureAccepted", event.target.checked)}
+                      />
+                      I agree that my typed name represents my electronic signature.
+                    </label>
+                  </div>
+                  <div style={styles.timestampBox}>Date/time signed: {new Date().toLocaleString()}</div>
                   <button
                     type="button"
                     style={{ ...styles.signButton, ...(respondingFormId ? styles.disabledButton : {}) }}
@@ -904,7 +1143,7 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
                     onChange={(event) => updateClinicFormDraft(selectedClinicForm.id, "declineReason", event.target.value)}
                     placeholder="Reason for declining"
                   />
-                  <div style={styles.warningBox}>The veterinary team may contact you before care can continue.</div>
+                  <div style={styles.warningBox}>Declining this consent may delay care. The veterinary team may contact you before care can continue.</div>
                   <button
                     type="button"
                     style={styles.declineButton}
@@ -1450,6 +1689,24 @@ const styles: Record<string, CSSProperties> = {
     gap: 8,
     padding: 12,
   },
+  completedActionBox: {
+    background: "#f0fbf8",
+    border: "1px solid #bfe9e0",
+    borderRadius: 8,
+    display: "grid",
+    gap: 8,
+    padding: 12,
+  },
+  completedActionItem: {
+    background: "#ffffff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    color: "#52606d",
+    display: "grid",
+    fontSize: 13,
+    gap: 3,
+    padding: 10,
+  },
   actionEyebrow: {
     color: "#c2410c",
     fontSize: 11,
@@ -1638,6 +1895,10 @@ const styles: Record<string, CSSProperties> = {
     lineHeight: 1.35,
     padding: 12,
   },
+  checkboxStack: {
+    display: "grid",
+    gap: 8,
+  },
   signaturePadShell: {
     background: "#ffffff",
     border: "1px solid #bfe9e0",
@@ -1669,7 +1930,7 @@ const styles: Record<string, CSSProperties> = {
     border: "1px dashed #9ccbc6",
     borderRadius: 8,
     display: "block",
-    height: 170,
+    height: 190,
     touchAction: "none",
     width: "100%",
   },
@@ -1677,6 +1938,14 @@ const styles: Record<string, CSSProperties> = {
     color: "#64717d",
     fontSize: 12,
     fontWeight: 800,
+  },
+  typedSignatureBox: {
+    background: "#ffffff",
+    border: "1px solid #e1ecec",
+    borderRadius: 8,
+    display: "grid",
+    gap: 8,
+    padding: 10,
   },
   timestampBox: {
     background: "#f8fbff",

@@ -173,7 +173,7 @@ const createVisitToken = () => randomBytes(18).toString("base64url");
 
 const emergencyCareConsentTitle = "Emergency Care Consent";
 const emergencyCareConsentBody =
-  "I authorize the veterinary team to evaluate my pet and provide initial emergency care as medically necessary. I understand that additional treatments, diagnostics, estimates, or procedures may require separate approval.";
+  "Please review and sign this consent so the veterinary team can begin evaluating and stabilizing your pet.\n\nI authorize the veterinary team to examine my pet and provide initial emergency evaluation and stabilizing care as medically necessary. I understand that stabilization may include, but is not limited to, triage, physical examination, basic nursing care, oxygen support, pain management, IV catheter placement, fluids, emergency medications, or other immediate care needed to help stabilize my pet.\n\nI understand that emergency evaluation and stabilizing care may result in charges. I understand that additional diagnostics, treatments, hospitalization, procedures, or surgery may require a separate estimate and approval. I also understand that payment is due at the time services are provided, unless other arrangements are approved by the hospital.";
 
 const getCheckedInMessage = (petName: string) =>
   petName + " has been checked in. The veterinary team has received your request and will update you here.";
@@ -2123,7 +2123,7 @@ const ensureEmergencyCareConsentForm = async (visitId: string) => {
   const supabase = getSupabaseAdmin();
   const { data: existingForms, error: existingError } = await supabase
     .from("forms")
-    .select("id, form_status")
+    .select("id, form_status, form_body")
     .eq("visit_id", visitId)
     .eq("form_type", emergencyCareConsentTitle)
     .limit(1);
@@ -2131,7 +2131,18 @@ const ensureEmergencyCareConsentForm = async (visitId: string) => {
   if (existingError) throw existingError;
 
   const existingForm = ((existingForms || []) as DbRecord[])[0];
-  if (existingForm?.id) return existingForm;
+  if (existingForm?.id) {
+    if (
+      stringValue(existingForm.form_status) === "Sent" &&
+      stringValue(existingForm.form_body) !== emergencyCareConsentBody
+    ) {
+      await supabase
+        .from("forms")
+        .update({ form_body: emergencyCareConsentBody })
+        .eq("id", stringValue(existingForm.id));
+    }
+    return existingForm;
+  }
 
   const { data, error } = await supabase
     .from("forms")
@@ -2771,6 +2782,9 @@ export async function POST(request: Request) {
       const signatureData = stringValue(body.signatureData).trim();
       const relationshipToPet = stringValue(body.relationshipToPet).trim();
       const authorizationConfirmed = booleanValue(body.authorizationConfirmed);
+      const chargesAcknowledged = booleanValue(body.chargesAcknowledged);
+      const paymentDueAcknowledged = booleanValue(body.paymentDueAcknowledged);
+      const separateEstimateAcknowledged = booleanValue(body.separateEstimateAcknowledged);
 
       if (!formId || !["Signed", "Declined"].includes(formStatus)) {
         return NextResponse.json({ error: "A valid form response is required." }, { status: 400 });
@@ -2799,9 +2813,22 @@ export async function POST(request: Request) {
       if (formError) throw formError;
       const formRecord = (formRow || {}) as DbRecord;
       const visitId = stringValue(formRecord.visit_id);
+      const isEmergencyConsent =
+        stringValue(formRecord.form_type).toLowerCase() === emergencyCareConsentTitle.toLowerCase();
 
       if (!visitId || (tokenVisitId && visitId !== tokenVisitId)) {
         return NextResponse.json({ error: "This form is not available for this visit." }, { status: 403 });
+      }
+
+      if (
+        formStatus === "Signed" &&
+        isEmergencyConsent &&
+        (!authorizationConfirmed || !chargesAcknowledged || !paymentDueAcknowledged || !separateEstimateAcknowledged)
+      ) {
+        return NextResponse.json(
+          { error: "All Emergency Care Consent acknowledgments are required." },
+          { status: 400 }
+        );
       }
 
       const baseUpdate =
@@ -2813,6 +2840,7 @@ export async function POST(request: Request) {
             }
           : {
               form_status: "Declined",
+              signed_name: signedName,
               decline_reason: stringValue(body.declineReason),
               declined_at: new Date().toISOString(),
             };
