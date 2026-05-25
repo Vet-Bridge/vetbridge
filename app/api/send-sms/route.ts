@@ -1,17 +1,7 @@
 import { NextResponse } from "next/server";
+import { sendSmsNotification } from "../../../lib/sms";
 
 export const runtime = "nodejs";
-
-const normalizePhone = (phone: string) => {
-  const trimmed = phone.trim();
-  if (trimmed.startsWith("+")) return trimmed;
-
-  const digits = trimmed.replace(/\D/g, "");
-  if (digits.length === 10) return `+1${digits}`;
-  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
-
-  return "";
-};
 
 export async function POST(request: Request) {
   const internalSecret = process.env.SMS_INTERNAL_SECRET;
@@ -33,49 +23,31 @@ export async function POST(request: Request) {
     link?: string;
   } = await request.json();
 
-  const accountSid = process.env.TWILIO_ACCOUNT_SID;
-  const authToken = process.env.TWILIO_AUTH_TOKEN;
-  const fromNumber = process.env.TWILIO_PHONE_NUMBER;
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || link || "https://mypawlink.com";
-  const toNumber = normalizePhone(phone || "");
-
-  if (!toNumber || !petName || !message) {
+  if (!phone || !petName || !message) {
     return NextResponse.json(
       { error: "Missing phone, pet name, or message." },
       { status: 400 }
     );
   }
 
-  if (!accountSid || !authToken || !fromNumber) {
-    console.info("SMS skipped because Twilio environment variables are not configured.");
-    return NextResponse.json({ sent: false, configured: false });
-  }
+  const result = await sendSmsNotification({
+    phone,
+    petName,
+    message,
+    link,
+  });
 
-  const body = `MyPawLink update for ${petName}: ${message} View visit: ${siteUrl}`;
-  const twilioResponse = await fetch(
-    `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString("base64")}`,
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({
-        To: toNumber,
-        From: fromNumber,
-        Body: body,
-      }),
-    }
-  );
-
-  if (!twilioResponse.ok) {
-    const errorText = await twilioResponse.text();
-    console.error("Twilio SMS failed:", errorText);
+  if (!result.sent && result.reason !== "not-configured") {
     return NextResponse.json(
-      { error: "Unable to send SMS." },
+      { error: result.error || "Unable to send SMS.", provider: result.provider || "" },
       { status: 502 }
     );
   }
 
-  return NextResponse.json({ sent: true, configured: true });
+  return NextResponse.json({
+    sent: result.sent,
+    configured: result.reason !== "not-configured",
+    provider: result.provider || "",
+    providerMessageId: result.providerMessageId || "",
+  });
 }

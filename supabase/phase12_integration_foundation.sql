@@ -1,8 +1,9 @@
 -- MyPawLink Phase 12 integration foundation.
 --
 -- Run this in Supabase SQL Editor.
--- This does not connect to ezyVet, Cornerstone, Instinct, or AVImark yet.
+-- This does not connect to ezyVet, SmartFlow, Cornerstone, or other PMS/workflow systems yet.
 -- It creates the future-ready event queue and external ID mapping layer.
+-- Integrations are non-billing only: no invoices, billing, payments, or payment processing.
 
 create table if not exists public.integration_providers (
   id uuid primary key default gen_random_uuid(),
@@ -91,44 +92,44 @@ values
     'MyPawLink Integration API',
     'Internal API',
     'Two-way',
-    'Internal event gateway that queues updates for future partner systems.',
-    jsonb_build_array('Visit events', 'Owner links', 'Forms', 'Estimates'),
+    'Internal event gateway for visit, document, form, owner communication, and review workflows.',
+    jsonb_build_array('Visit events', 'Owner links', 'Forms', 'Documents', 'Notifications'),
     1
   ),
   (
     'ezyvet',
     'ezyVet',
-    'PIMS',
-    'Two-way',
-    'Future connection for patient, client, visit, invoice, and treatment data.',
-    jsonb_build_array('Client records', 'Patients', 'Appointments', 'Invoices'),
+    'PMS',
+    'Outbound',
+    'Future non-billing sync for completed check-ins, client/patient details, referrals, signed forms, and documents.',
+    jsonb_build_array('Client records', 'Patients', 'Appointments', 'Signed forms', 'Documents', 'Referral details'),
     2
+  ),
+  (
+    'smartflow',
+    'SmartFlow',
+    'Clinical workflow',
+    'Inbound',
+    'Future inbound workflow feed for reviewed client-facing status updates derived from clinical workflow data.',
+    jsonb_build_array('Treatment milestones', 'Vitals review queue', 'Medication review queue', 'Care plan review queue'),
+    3
   ),
   (
     'cornerstone',
     'IDEXX Cornerstone',
-    'PIMS',
-    'Two-way',
-    'Future connection for established hospital client and patient records.',
-    jsonb_build_array('Clients', 'Patients', 'Medical notes', 'Invoices'),
-    3
-  ),
-  (
-    'instinct',
-    'Instinct',
-    'Patient care workflow',
-    'Inbound',
-    'Future treatment-board connection for milestones, orders, and ICU updates.',
-    jsonb_build_array('Treatment events', 'Vitals', 'Orders', 'Hospitalization updates'),
+    'PMS',
+    'Outbound',
+    'Future non-billing sync for check-in summaries, client/patient details, signed forms, and documents.',
+    jsonb_build_array('Client records', 'Patients', 'Appointments', 'Signed forms', 'Documents'),
     4
   ),
   (
-    'avimark',
-    'AVImark',
-    'PIMS',
-    'Two-way',
-    'Future connection for clinics using AVImark patient and client records.',
-    jsonb_build_array('Client records', 'Patients', 'Charges', 'Medical notes'),
+    'other_future_pms',
+    'Other PMS',
+    'PMS',
+    'Outbound',
+    'Future connector slot for additional non-billing PMS record sync.',
+    jsonb_build_array('Client records', 'Patients', 'Visit summaries', 'Signed forms', 'Documents'),
     5
   )
 on conflict (provider_key) do update

@@ -106,7 +106,7 @@ I understand that emergency care costs may change as my pet''s condition changes
 I agree to ask questions before authorizing care if I need clarification about fees or payment expectations.', true, true, 'financial', 1, true),
   ((select id from public.care_hub_form_categories where slug = 'financial-forms'), 'deposit-authorization-form', 'Deposit Authorization Form', 'Approves an initial deposit toward recommended care.', 'I authorize the hospital to collect or apply the discussed deposit toward my pet''s emergency care.
 
-I understand that the deposit is not a final invoice and that additional charges may apply depending on diagnostics, treatment, hospitalization, or procedures.
+I understand that the deposit is not a final total and that additional charges may apply depending on diagnostics, treatment, hospitalization, or procedures.
 
 Any remaining balance or credit will be reviewed at checkout or discharge.', true, true, 'financial', 2, true),
   ((select id from public.care_hub_form_categories where slug = 'financial-forms'), 'treatment-estimate-approval', 'Treatment Estimate Approval', 'Approves a treatment estimate or requests discussion.', 'I have reviewed the treatment estimate provided for my pet.

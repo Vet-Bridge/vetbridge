@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { getSupabaseAdmin } from "../../../lib/supabase-admin";
 import { sendSmsNotification } from "../../../lib/sms";
+import { recordAuditLog } from "../../../lib/audit/audit-service";
 import {
   buildFallbackIntegrationReadiness,
+  integrationProviderKeys,
   integrationSupportedEvents,
   type IntegrationProviderReadiness,
 } from "../../../lib/integration-catalog";
@@ -234,7 +236,7 @@ const careHubSeedCategories: CareHubSeedCategory[] = [
         title: "Deposit Authorization Form",
         description: "Approves an initial deposit toward recommended care.",
         htmlContent:
-          "I authorize the hospital to collect or apply the discussed deposit toward my pet's emergency care.\n\nI understand that the deposit is not a final invoice and that additional charges may apply depending on diagnostics, treatment, hospitalization, or procedures.\n\nAny remaining balance or credit will be reviewed at checkout or discharge.",
+          "I authorize the hospital to collect or apply the discussed deposit toward my pet's emergency care.\n\nI understand that the deposit is not a final total and that additional charges may apply depending on diagnostics, treatment, hospitalization, or procedures.\n\nAny remaining balance or credit will be reviewed at checkout or discharge.",
         formType: "financial",
         displayOrder: 2,
       },
@@ -703,12 +705,86 @@ const isMissingFormSignatureColumnError = (error: unknown) => {
   );
 };
 
+const isMissingIntegrationReadyModelError = (error: unknown) => {
+  const dbError = error as { code?: string; message?: string } | null;
+  const message = dbError?.message?.toLowerCase() || "";
+  return (
+    dbError?.code === "42P01" ||
+    dbError?.code === "42703" ||
+    message.includes("clients") ||
+    message.includes("notification_messages") ||
+    message.includes("secondary_contacts") ||
+    message.includes("client_id") ||
+    message.includes("reason_for_visit")
+  );
+};
+
 const formatMoney = (amount: number) =>
   new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
     maximumFractionDigits: amount % 1 === 0 ? 0 : 2,
   }).format(amount);
+
+const logNotificationMessage = async ({
+  visitId,
+  channel,
+  recipientPhone = "",
+  recipientEmail = "",
+  message,
+  status,
+  provider = "",
+  providerMessageId = "",
+  errorMessage = "",
+}: {
+  visitId: string;
+  channel: "sms" | "email" | "portal";
+  recipientPhone?: string;
+  recipientEmail?: string;
+  message: string;
+  status: "pending" | "sent" | "skipped" | "failed";
+  provider?: string;
+  providerMessageId?: string;
+  errorMessage?: string;
+}) => {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data: visitData, error: visitError } = await supabase
+      .from("visits")
+      .select("clinic_id, client_id")
+      .eq("id", visitId)
+      .maybeSingle();
+
+    if (visitError) throw visitError;
+
+    const visit = (visitData || {}) as DbRecord;
+    const clinicId = stringValue(visit.clinic_id);
+    if (!clinicId) return;
+
+    const { error } = await supabase.from("notification_messages").insert([
+      {
+        clinic_id: clinicId,
+        visit_id: visitId,
+        client_id: stringValue(visit.client_id) || null,
+        recipient_phone: recipientPhone || null,
+        recipient_email: recipientEmail || null,
+        channel: channel === "portal" ? "in_app" : channel,
+        message_body: message,
+        status,
+        provider: provider || null,
+        provider_message_id: providerMessageId || null,
+        error_message: errorMessage || null,
+        sent_at: status === "sent" ? new Date().toISOString() : null,
+      },
+    ]);
+
+    if (error) throw error;
+
+  } catch (error) {
+    if (isMissingIntegrationReadyModelError(error)) return;
+    console.error("Unable to log notification message:", error);
+  }
+};
 
 const logNotificationEvent = async ({
   visitId,
@@ -757,6 +833,18 @@ const logNotificationEvent = async ({
     ]);
 
     if (error) throw error;
+
+    await logNotificationMessage({
+      visitId,
+      channel,
+      recipientPhone,
+      recipientEmail,
+      message,
+      status,
+      provider,
+      providerMessageId: stringValue(providerResponse.providerMessageId),
+      errorMessage,
+    });
   } catch (error) {
     if (isMissingNotificationTableError(error)) {
       console.info("Notification log skipped. Run the Phase 8 SQL to enable notification history.");
@@ -1004,7 +1092,9 @@ const getDemoClinicId = async () => {
 };
 
 const getIntegrationQueueSummary = (events: DbRecord[]) => ({
-  queued: events.filter((event) => stringValue(event.status, "queued") === "queued").length,
+  queued: events.filter((event) =>
+    ["queued", "received", "pending_review"].includes(stringValue(event.status, "received"))
+  ).length,
   processed: events.filter((event) => stringValue(event.status) === "processed").length,
   failed: events.filter((event) => stringValue(event.status) === "failed").length,
   lastEventAt: stringValue(events[0]?.created_at),
@@ -1020,6 +1110,7 @@ const loadIntegrationReadiness = async () => {
     const { data: providerData, error: providerError } = await supabase
       .from("integration_providers")
       .select("provider_key, name, category, direction, description, capabilities, display_order")
+      .in("provider_key", integrationProviderKeys)
       .order("display_order", { ascending: true });
 
     if (providerError) throw providerError;
@@ -1027,6 +1118,7 @@ const loadIntegrationReadiness = async () => {
     const { data: integrationData, error: integrationError } = await supabase
       .from("clinic_integrations")
       .select("provider_key, enabled, status, sync_mode, external_clinic_id, last_sync_at")
+      .in("provider_key", integrationProviderKeys)
       .eq("clinic_id", clinicId);
 
     if (integrationError) throw integrationError;
@@ -1086,13 +1178,13 @@ const logIntegrationEvent = async ({
   visitId = "",
   eventType,
   direction = "outbound",
-  status = "queued",
+  status = "received",
   payload = {},
 }: {
   visitId?: string;
   eventType: string;
   direction?: "inbound" | "outbound";
-  status?: "queued" | "processed" | "failed";
+  status?: "received" | "pending_review" | "processed" | "failed" | "ignored";
   payload?: DbRecord;
 }) => {
   try {
@@ -1100,19 +1192,50 @@ const logIntegrationEvent = async ({
     if (!clinicId) return;
 
     const supabase = getSupabaseAdmin();
-    const { error } = await supabase.from("integration_events").insert([
+    let { error } = await supabase.from("integration_events").insert([
       {
         clinic_id: clinicId,
         visit_id: visitId || null,
         provider_key: "mypawlink-api",
+        external_system: "MyPawLink",
         direction,
         event_type: eventType,
         status,
         payload,
+        payload_json: payload,
+        normalized_payload_json: payload,
       },
     ]);
 
+    if (error && isMissingIntegrationTableError(error)) {
+      const fallbackResult = await supabase.from("integration_events").insert([
+        {
+          clinic_id: clinicId,
+          visit_id: visitId || null,
+          provider_key: "mypawlink-api",
+          direction,
+          event_type: eventType,
+          status,
+          payload,
+        },
+      ]);
+      error = fallbackResult.error;
+    }
+
     if (error) throw error;
+
+    await recordAuditLog({
+      clinicId,
+      visitId,
+      action: direction === "inbound" ? "integration_event_received" : "integration_sync_attempted",
+      entityType: "integration_event",
+      metadata: {
+        eventType,
+        direction,
+        status,
+        externalSystem: "MyPawLink",
+      },
+    });
   } catch (error) {
     if (isMissingIntegrationTableError(error) || isMissingClinicTableError(error)) {
       console.info("Integration event skipped. Run the Phase 12 SQL to enable integration history.");
@@ -1538,12 +1661,28 @@ const sendOwnerNotification = async ({
     message,
     link,
     status: smsStatus,
-    provider: "twilio",
+    provider: smsResult.provider || "twilio",
     providerResponse: {
       reason: smsResult.reason || "",
       providerMessageId: smsResult.providerMessageId || "",
     },
     errorMessage: smsResult.error || "",
+  });
+
+  await recordAuditLog({
+    clinicId: stringValue(visit.clinic_id),
+    visitId: mappedVisit.id,
+    action: smsStatus === "sent" ? "text_message_sent" : "text_message_failed",
+    entityType: "notification_message",
+    metadata: {
+      channel: "sms",
+      triggerType,
+      recipientPhone: ownerPhone,
+      status: smsStatus,
+      provider: smsResult.provider || "twilio",
+      providerMessageId: smsResult.providerMessageId || "",
+      error: smsResult.error || "",
+    },
   });
 
   if (ownerEmail) {
@@ -2087,6 +2226,18 @@ const addVisitUpdate = async ({
 
   if (updateError) throw updateError;
 
+  await recordAuditLog({
+    clinicId: stringValue((visit as DbRecord).clinic_id),
+    visitId,
+    action: "client_update_created",
+    entityType: "visit_update",
+    metadata: {
+      status,
+      triggerType,
+      approvedForClient: sendText,
+    },
+  });
+
   await logIntegrationEvent({
     visitId,
     eventType:
@@ -2159,6 +2310,128 @@ const ensureEmergencyCareConsentForm = async (visitId: string) => {
 
   if (error) throw error;
   return (data || {}) as DbRecord;
+};
+
+const splitContactName = (name: string) => {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return {
+    firstName: parts[0] || "",
+    lastName: parts.slice(1).join(" "),
+  };
+};
+
+const getPetAgeColumnsFromReason = (reason: string) => {
+  const petAge = getPetAgeFromReason(reason);
+  const ageMatch = petAge.display.match(/^(\d+)\s*(year|years|month|months|week|weeks)/i);
+  const value = ageMatch ? Number(ageMatch[1]) : null;
+  const unit = ageMatch?.[2]?.toLowerCase() || "";
+
+  return {
+    age_years: value && unit.startsWith("year") ? value : null,
+    age_months: value && unit.startsWith("month") ? value : null,
+    age_unknown: petAge.ageUnknown || petAge.display.toLowerCase() === "unknown",
+  };
+};
+
+const persistIntegrationReadyIntake = async ({
+  clinicId,
+  createdPet,
+  createdVisit,
+  owner,
+  pet,
+  visit,
+}: {
+  clinicId: string;
+  createdPet: DbRecord;
+  createdVisit: DbRecord;
+  owner: DbRecord;
+  pet: DbRecord;
+  visit: DbRecord;
+}) => {
+  if (!clinicId) return;
+
+  try {
+    const supabase = getSupabaseAdmin();
+    const reason = stringValue(visit.reason);
+    const ownerEmail = normalizeEmail(stringValue(owner.email));
+    const { data: clientData, error: clientError } = await supabase
+      .from("clients")
+      .insert([
+        {
+          clinic_id: clinicId,
+          first_name: stringValue(owner.first_name),
+          last_name: stringValue(owner.last_name),
+          phone: stringValue(owner.phone) || null,
+          email: ownerEmail || stringValue(owner.email) || null,
+          preferred_contact_method: stringValue(owner.phone) ? "sms" : "email",
+        },
+      ])
+      .select("id")
+      .single();
+
+    if (clientError) throw clientError;
+
+    const clientId = stringValue((clientData as DbRecord | null)?.id);
+    const ageColumns = getPetAgeColumnsFromReason(reason);
+
+    const { error: petUpdateError } = await supabase
+      .from("pets")
+      .update({
+        clinic_id: clinicId,
+        client_id: clientId || null,
+        name: stringValue(pet.pet_name),
+        sex: getIntakeFieldFromReason(reason, "Sex") || null,
+        ...ageColumns,
+      })
+      .eq("id", stringValue(createdPet.id));
+
+    if (petUpdateError) throw petUpdateError;
+
+    const { error: visitUpdateError } = await supabase
+      .from("visits")
+      .update({
+        client_id: clientId || null,
+        reason_for_visit: stringValue(visit.reason),
+        referral_source: stringValue(visit.referral_name) || null,
+        referral_clinic_name: stringValue(visit.referral_name) || null,
+        client_visible_status: stringValue(visit.status, "Request submitted"),
+        check_in_completed_at: new Date().toISOString(),
+        sync_status: "not_synced",
+      })
+      .eq("id", stringValue(createdVisit.id));
+
+    if (visitUpdateError) throw visitUpdateError;
+
+    const secondaryContacts = getSecondaryContactsFromReason(reason);
+    if (secondaryContacts.length) {
+      const { error: contactError } = await supabase.from("secondary_contacts").insert(
+        secondaryContacts.map((contact) => {
+          const name = splitContactName(contact.name);
+          return {
+            clinic_id: clinicId,
+            client_id: clientId || null,
+            visit_id: stringValue(createdVisit.id),
+            first_name: name.firstName,
+            last_name: name.lastName,
+            relationship: contact.relationship,
+            phone: contact.phone || null,
+            email: contact.email || null,
+            can_receive_updates: true,
+            can_authorize_care: contact.permissionLevel === "Can approve estimates/forms",
+          };
+        })
+      );
+
+      if (contactError) throw contactError;
+    }
+  } catch (error) {
+    if (isMissingIntegrationReadyModelError(error)) {
+      console.info("Integration-ready intake mirror skipped. Run Phase 15 SQL to enable it.");
+      return;
+    }
+
+    console.error("Unable to persist integration-ready intake mirror:", error);
+  }
 };
 
 const sendCheckInConfirmationEmail = async ({
@@ -2246,6 +2519,14 @@ const createOwnerPetVisit = async ({
 
   const visitId = String(createdVisit.id);
   const petName = stringValue(pet.pet_name, "Your pet");
+  await persistIntegrationReadyIntake({
+    clinicId,
+    createdPet: createdPet as DbRecord,
+    createdVisit: createdVisit as DbRecord,
+    owner,
+    pet,
+    visit,
+  });
   await ensureEmergencyCareConsentForm(visitId);
   const accessToken = await ensureVisitAccessToken(visitId, ownerEmail);
   await sendCheckInConfirmationEmail({
@@ -2266,6 +2547,19 @@ const createOwnerPetVisit = async ({
       ownerEmail,
       petName: stringValue(pet.pet_name),
       source: "mypawlink_intake",
+    },
+  });
+
+  await recordAuditLog({
+    clinicId,
+    visitId,
+    action: "visit_created",
+    entityType: "visit",
+    entityId: visitId,
+    metadata: {
+      source: "owner_check_in",
+      visitType: stringValue(visit.visit_type),
+      petName,
     },
   });
 
@@ -2874,6 +3168,20 @@ export async function POST(request: Request) {
             (formStatus === "Signed" ? " signed by owner." : " declined by owner."),
         },
       ]);
+
+      await recordAuditLog({
+        clinicId: await getDemoClinicId(),
+        visitId,
+        action: formStatus === "Signed" ? "form_signed" : "form_declined",
+        entityType: "form",
+        entityId: formId,
+        metadata: {
+          formType: stringValue(formRecord.form_type),
+          signerName: signedName,
+          relationshipToPet,
+          signatureMethod: signatureData.startsWith("typed-signature:") ? "typed" : "drawn",
+        },
+      });
 
       await notifyVisitAccessChannels(visitId);
 
