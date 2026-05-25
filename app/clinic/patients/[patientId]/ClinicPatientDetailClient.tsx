@@ -77,7 +77,7 @@ type OwnerNotificationSummary = {
 
 type ClinicActionResult = {
   visit: Visit;
-  notification: OwnerNotificationSummary;
+  notification: OwnerNotificationSummary | null;
 };
 
 type PrimaryClinicalAction =
@@ -87,7 +87,7 @@ type PrimaryClinicalAction =
       helper: string;
     }
   | {
-      kind: "startTriage" | "updateDiagnostics" | "sendEstimate" | "sendDischarge" | "sendOwnerUpdate";
+      kind: "acceptVisit" | "startTriage" | "updateDiagnostics" | "sendEstimate" | "sendDischarge" | "sendOwnerUpdate";
       label: string;
       helper: string;
     };
@@ -108,6 +108,7 @@ const petPhotoMetaEnd = "[[/MPL_PET_PHOTO]]";
 const petPhotoMetaPattern = /\n?\[\[MPL_PET_PHOTO\]\]([\s\S]*?)\[\[\/MPL_PET_PHOTO\]\]/;
 
 const compactWorkflowSteps = ["Request", "Check-In", "Triage", "Doctor", "Diagnostics", "Treatment", "Discharge"];
+const emergencyCareConsentTitle = "Emergency Care Consent";
 
 const getAssignedDoctorFromNotes = (notes: string): DoctorOption | null => {
   const match = notes.match(doctorMetaPattern);
@@ -212,6 +213,29 @@ const isCriticalVisit = (visit: Visit) => {
   return status.includes("critical") || status.includes("red");
 };
 
+const getEmergencyConsentForm = (visit: Visit) =>
+  visit.forms.find((form) => form.form_type.toLowerCase() === emergencyCareConsentTitle.toLowerCase()) || null;
+
+const getEmergencyConsentStatus = (visit: Visit) => {
+  const form = getEmergencyConsentForm(visit);
+  if (!form) return { label: "Pending", detail: "Consent pending - send reminder", form };
+  if (form.form_status === "Signed") {
+    return {
+      label: "Signed",
+      detail: "Emergency Care Consent signed at " + (form.signed_at ? new Date(form.signed_at).toLocaleString() : "unknown time"),
+      form,
+    };
+  }
+  if (form.form_status === "Declined") {
+    return {
+      label: "Declined",
+      detail: "Owner declined consent. The veterinary team may need to contact them before care can continue.",
+      form,
+    };
+  }
+  return { label: "Pending", detail: "Consent pending - send reminder", form };
+};
+
 const getStatusChips = (visit: Visit, doctor: DoctorOption | null) => {
   const chips: { label: string; tone: "neutral" | "teal" | "orange" | "red" | "blue" }[] = [];
   const status = visit.status.toLowerCase();
@@ -222,6 +246,9 @@ const getStatusChips = (visit: Visit, doctor: DoctorOption | null) => {
   }
   if (status.includes("converted")) chips.push({ label: "Converted", tone: "teal" });
   if (getTriageLevel(visit) === "Pending") chips.push({ label: "Needs Triage", tone: "orange" });
+  if (getEmergencyConsentStatus(visit).label === "Pending") {
+    chips.push({ label: "Consent Pending", tone: "orange" });
+  }
   if (!doctor) chips.push({ label: "Doctor Needed", tone: "neutral" });
   if (isCriticalVisit(visit)) chips.push({ label: "Critical", tone: "red" });
 
@@ -271,7 +298,10 @@ const getPrimaryClinicalAction = (visit: Visit, doctor: DoctorOption | null): Pr
   if (status.includes("diagnostic") || status.includes("result") || status.includes("bloodwork")) {
     return { kind: "updateDiagnostics", label: "Update Diagnostics", helper: "Send a diagnostics milestone or results-waiting update." };
   }
-  if (triage === "Pending" || status.includes("request") || status.includes("accepted") || status.includes("checked")) {
+  if (status.includes("request") || status.includes("waiting")) {
+    return { kind: "acceptVisit", label: "Accept Visit", helper: "Accept the request or start triage immediately if the case is urgent." };
+  }
+  if (triage === "Pending" || status.includes("accepted") || status.includes("checked")) {
     return { kind: "startTriage", label: "Start Triage", helper: "Begin triage and assign a medical urgency level." };
   }
   if (!doctor) {
@@ -491,6 +521,19 @@ export default function ClinicPatientDetailClient({ patientId }: { patientId: st
     });
   };
 
+  const sendEmergencyConsentReminder = async () => {
+    if (!visit) return;
+
+    await runAction("Sending consent reminder...", async () => {
+      const result = await apiRequest<ClinicActionResult>({
+        action: "sendEmergencyConsent",
+        visitId: visit.id,
+        status: visit.status,
+      });
+      setVisit(result.visit);
+    });
+  };
+
   const sendEstimateApproval = async () => {
     if (!visit) return;
     const estimateTitle = window.prompt("Estimate title", "Emergency treatment estimate") || "Emergency treatment estimate";
@@ -540,6 +583,10 @@ export default function ClinicPatientDetailClient({ patientId }: { patientId: st
 
   const runPrimaryClinicalAction = async (primaryClinicalAction: PrimaryClinicalAction) => {
     if (!visit) return;
+    if (primaryClinicalAction.kind === "acceptVisit") {
+      await sendUpdate("Visit accepted", visit.petName + " has been accepted by the emergency team and is waiting for triage.");
+      return;
+    }
     if (primaryClinicalAction.kind === "startTriage") {
       await sendUpdate("Triage in progress", visit.petName + "'s triage assessment has started.");
       return;
@@ -565,6 +612,7 @@ export default function ClinicPatientDetailClient({ patientId }: { patientId: st
     if (actionCategory === "arrival") {
       return (
         <div style={styles.actionGrid}>
+          <button style={styles.actionButtonTeal} onClick={() => sendUpdate("Visit accepted", visit.petName + " has been accepted by the emergency team and is waiting for triage.")}>Accept Visit</button>
           <button style={styles.actionButtonBlue} onClick={() => sendUpdate("Triage in progress", visit.petName + "'s triage assessment has started.")}>Start Triage</button>
           <button style={styles.actionButtonRed} onClick={() => sendUpdate("Critical triage", visit.petName + " has been triaged as critical and moved immediately to treatment.")}>Critical</button>
           <button style={styles.actionButtonOrange} onClick={() => sendUpdate("Urgent triage", visit.petName + " has been triaged as urgent and is being stabilized.")}>Urgent</button>
@@ -577,7 +625,7 @@ export default function ClinicPatientDetailClient({ patientId }: { patientId: st
       return (
         <div style={styles.actionGrid}>
           <button style={styles.actionButtonBlue} onClick={() => sendUpdate(visit.status, visit.petName + "'s registration information has been received.")}>Registration Complete</button>
-          <button style={styles.actionButtonPurple} onClick={() => sendFormToVisit("Treatment authorization", "I authorize the emergency team to examine my pet and provide emergency stabilization as needed.\n\nI understand I am financially responsible for care provided.", "A treatment authorization form is ready for " + visit.petName + ".")}>Send Consent</button>
+          <button style={styles.actionButtonPurple} onClick={sendEmergencyConsentReminder}>Send Consent Reminder</button>
           <button style={styles.actionButtonOrange} onClick={() => sendOwnerUpdate("A deposit is requested to continue care for " + visit.petName + ".", "Deposit requested")}>Request Deposit</button>
         </div>
       );
@@ -692,6 +740,7 @@ export default function ClinicPatientDetailClient({ patientId }: { patientId: st
   const primaryClinicalAction = getPrimaryClinicalAction(visit, doctor);
   const compactWorkflowIndex = getCompactWorkflowIndex(visit);
   const statusChips = getStatusChips(visit, doctor);
+  const consentStatus = getEmergencyConsentStatus(visit);
 
   return (
     <main style={styles.screen}>
@@ -749,6 +798,24 @@ export default function ClinicPatientDetailClient({ patientId }: { patientId: st
         <a style={styles.quickAction} href={"sms:" + visit.phone}>Text</a>
         <a style={styles.quickAction} href={visit.ownerEmail ? "mailto:" + visit.ownerEmail : undefined}>Email</a>
         <a style={styles.quickAction} href={visit.accessUrl || "#"} target="_blank" rel="noreferrer">Owner View</a>
+      </section>
+
+      <section style={styles.consentPanel}>
+        <div>
+          <span style={styles.eyebrow}>Consent</span>
+          <strong>{consentStatus.label}</strong>
+          <p>{consentStatus.detail}</p>
+        </div>
+        {consentStatus.label === "Pending" && (
+          <button
+            type="button"
+            style={styles.consentReminderButton}
+            onClick={sendEmergencyConsentReminder}
+            disabled={Boolean(pendingAction)}
+          >
+            Send Consent Reminder
+          </button>
+        )}
       </section>
 
       {pendingAction && <div style={styles.pendingNotice}>{pendingAction}</div>}
@@ -840,7 +907,7 @@ export default function ClinicPatientDetailClient({ patientId }: { patientId: st
         <summary style={styles.summary}>Forms / Approvals</summary>
         <div style={styles.sectionBody}>
           <div style={styles.actionGrid}>
-            <button style={styles.actionButtonPurple} onClick={() => sendFormToVisit("CPR / DNR preference", "Please review and choose a resuscitation preference for this visit.", "A CPR/DNR form is ready for " + visit.petName + ".")}>Consent</button>
+            <button style={styles.actionButtonPurple} onClick={sendEmergencyConsentReminder}>Consent Reminder</button>
             <button style={styles.actionButtonTeal} onClick={sendEstimateApproval}>Estimate</button>
             <button style={styles.actionButtonBlue} onClick={sendDischargeInstructions}>Discharge</button>
           </div>
@@ -1028,6 +1095,27 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "center",
     minHeight: 38,
     textDecoration: "none",
+  },
+  consentPanel: {
+    alignItems: "center",
+    background: "#fff7ed",
+    borderBottom: "1px solid #fed7aa",
+    color: "#102a3a",
+    display: "grid",
+    gap: 10,
+    gridTemplateColumns: "minmax(0, 1fr) auto",
+    padding: "10px 12px",
+  },
+  consentReminderButton: {
+    background: "#ffffff",
+    border: "1px solid #fed7aa",
+    borderRadius: 8,
+    color: "#c2410c",
+    cursor: "pointer",
+    fontSize: 12,
+    fontWeight: 900,
+    minHeight: 38,
+    padding: "0 10px",
   },
   workflowPanel: {
     background: "#f8fbff",

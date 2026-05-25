@@ -2414,9 +2414,12 @@ export function MyPawLinkApp({
     `Additional details: ${additionalDetails || "None provided"}`,
   ].join("\n");
 
+  const submittedPetName = String(form.get("petName") || "Your pet").trim() || "Your pet";
   const firstUpdate = {
-    message: "Visit request submitted. The clinic will review it shortly.",
-    status: "Request submitted",
+    message:
+      submittedPetName +
+      " has been checked in. The veterinary team has received your request and will update you here.",
+    status: "Request Submitted / Waiting for Team Review",
   };
 
   let visit: Visit;
@@ -2442,7 +2445,7 @@ export function MyPawLinkApp({
         been_here_before: String(form.get("beenHereBefore")),
         reason: intakeSummary,
         clinic_notes: petPhotoPreview ? withPetPhotoMetadata("", petPhotoPreview) : "",
-        status: "Request submitted",
+        status: firstUpdate.status,
       },
       firstUpdateMessage: firstUpdate.message,
       firstUpdateStatus: firstUpdate.status,
@@ -2471,11 +2474,25 @@ export function MyPawLinkApp({
   setPetMediaName("");
   setPetMediaType("");
   setPetPhotoPreview("");
-  setVisitSubmitMessage("Visit request submitted. Opening your pet's status page...");
-  setOwnerPortalTab("home");
-  setView("status");
+  setVisitSubmitMessage(
+    visit.petName +
+      " has been checked in. Opening the live visit page with your Emergency Care Consent."
+  );
   submittingVisitRef.current = false;
   setSubmittingVisit(false);
+
+  if (visit.accessToken) {
+    router.push("/visit/" + visit.accessToken);
+    return;
+  }
+
+  if (visit.accessUrl) {
+    window.location.href = visit.accessUrl;
+    return;
+  }
+
+  setOwnerPortalTab("actions");
+  setView("status");
 };
 
   const createReferralVisit = async (e: React.FormEvent<HTMLFormElement>) => {

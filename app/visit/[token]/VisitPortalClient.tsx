@@ -1,9 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { CSSProperties } from "react";
 import Link from "next/link";
-import SignatureCanvas from "react-signature-canvas";
 import { supabase } from "../../../lib/supabase";
 
 export type OwnerPortalUpdate = {
@@ -37,37 +36,6 @@ export type OwnerPortalVisit = {
   petPhotoUrl: string;
 };
 
-type CareHubForm = {
-  id: string;
-  slug: string;
-  title: string;
-  description: string;
-  htmlContent: string;
-  requiresSignature: boolean;
-  requiresCheckbox: boolean;
-  formType: string;
-  displayOrder: number;
-  status: string;
-  signedName: string;
-  signedAt: string;
-};
-
-type CareHubCategory = {
-  id: string;
-  slug: string;
-  name: string;
-  description: string;
-  displayOrder: number;
-  forms: CareHubForm[];
-};
-
-type CareHubResponse = {
-  careHub: {
-    setupRequired?: boolean;
-    categories: CareHubCategory[];
-  };
-};
-
 type OwnerEstimate = {
   id: string;
   visitId: string;
@@ -94,6 +62,14 @@ type EstimateWorkflowResponse = {
 type EstimateResponseDraft = {
   ownerName: string;
   notes: string;
+};
+
+type ClinicFormDraft = {
+  ownerName: string;
+  relationship: string;
+  authorized: boolean;
+  signature: string;
+  declineReason: string;
 };
 
 type VisitPortalClientProps = {
@@ -155,73 +131,56 @@ const isDischargeRelated = (value: string) =>
   value.toLowerCase().includes("medication") ||
   value.toLowerCase().includes("follow-up");
 
+const isEmergencyCareConsentForm = (form: OwnerPortalForm) =>
+  form.form_type.toLowerCase() === "emergency care consent";
+
+const emptyClinicFormDraft = (): ClinicFormDraft => ({
+  ownerName: "",
+  relationship: "",
+  authorized: false,
+  signature: "",
+  declineReason: "",
+});
+
 export default function VisitPortalClient({ token, initialVisit }: VisitPortalClientProps) {
   const [visit, setVisit] = useState(initialVisit);
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>("Connecting");
   const [syncStatus, setSyncStatus] = useState("Live updates are connecting.");
   const [lastSynced, setLastSynced] = useState("");
-  const [careHubCategories, setCareHubCategories] = useState<CareHubCategory[]>([]);
-  const [careHubLoading, setCareHubLoading] = useState(false);
-  const [careHubMessage, setCareHubMessage] = useState("");
-  const [selectedCareHubCategoryId, setSelectedCareHubCategoryId] = useState<string | null>(null);
-  const [selectedCareHubFormId, setSelectedCareHubFormId] = useState<string | null>(null);
-  const [printedName, setPrintedName] = useState("");
-  const [signatureData, setSignatureData] = useState("");
-  const [signatureHasInk, setSignatureHasInk] = useState(false);
-  const [checkboxAgreed, setCheckboxAgreed] = useState(false);
-  const [signingForm, setSigningForm] = useState(false);
   const [estimates, setEstimates] = useState<OwnerEstimate[]>([]);
   const [estimateLoading, setEstimateLoading] = useState(false);
   const [estimateMessage, setEstimateMessage] = useState("");
   const [estimateDrafts, setEstimateDrafts] = useState<Record<string, EstimateResponseDraft>>({});
+  const [clinicFormDrafts, setClinicFormDrafts] = useState<Record<string, ClinicFormDraft>>({});
+  const [selectedClinicFormId, setSelectedClinicFormId] = useState<string | null>(null);
+  const [respondingFormId, setRespondingFormId] = useState("");
+  const [formActionMessage, setFormActionMessage] = useState("");
   const [respondingEstimateId, setRespondingEstimateId] = useState("");
-  const signaturePadRef = useRef<SignatureCanvas | null>(null);
 
   const latestUpdate = useMemo(
     () => visit.updates[visit.updates.length - 1],
     [visit.updates]
   );
-  const selectedCareHubCategory = useMemo(
-    () =>
-      careHubCategories.find((category) => category.id === selectedCareHubCategoryId) ||
-      null,
-    [careHubCategories, selectedCareHubCategoryId]
-  );
-  const selectedCareHubForm = useMemo(
-    () =>
-      selectedCareHubCategory?.forms.find((form) => form.id === selectedCareHubFormId) ||
-      null,
-    [selectedCareHubCategory, selectedCareHubFormId]
-  );
-  const careHubFormCount = careHubCategories.reduce(
-    (total, category) => total + category.forms.length,
-    0
-  );
-  const signedCareHubCount = careHubCategories.reduce(
-    (total, category) =>
-      total + category.forms.filter((form) => form.status === "Signed").length,
-    0
+  const selectedClinicForm = useMemo(
+    () => visit.forms.find((form) => form.id === selectedClinicFormId) || null,
+    [selectedClinicFormId, visit.forms]
   );
   const pendingEstimateCount = estimates.filter(
     (estimate) => estimate.status === "Pending Owner Review"
   ).length;
-  const pendingClinicFormCount = visit.forms.filter(
-    (form) => form.form_status === "Sent"
-  ).length;
-  const pendingCareHubFormCount = careHubCategories.reduce(
-    (total, category) =>
-      total + category.forms.filter((form) => form.status !== "Signed").length,
-    0
+  const pendingClinicForms = visit.forms.filter((form) => form.form_status === "Sent");
+  const pendingEmergencyConsent = pendingClinicForms.find(isEmergencyCareConsentForm) || null;
+  const pendingOtherClinicForms = pendingClinicForms.filter(
+    (form) => form.id !== pendingEmergencyConsent?.id
   );
+  const completedClinicForms = visit.forms.filter((form) => form.form_status !== "Sent");
   const currentStepIndex = getVisitStepIndex(visit.status);
-  const dischargeCareHubForms = careHubCategories
-    .flatMap((category) => category.forms)
-    .filter((form) => isDischargeRelated(`${form.title} ${form.description} ${form.formType}`));
   const dischargeClinicForms = visit.forms.filter((form) =>
     isDischargeRelated(`${form.form_type} ${form.form_body || ""}`)
   );
+  const hasDischargeDocuments = dischargeClinicForms.length > 0;
   const needsAttentionCount =
-    pendingEstimateCount + pendingClinicFormCount + pendingCareHubFormCount;
+    pendingEstimateCount + pendingClinicForms.length + (hasDischargeDocuments ? 1 : 0);
   const visitStartedLabel = visit.createdAt
     ? new Date(visit.createdAt).toLocaleString([], {
         month: "short",
@@ -280,46 +239,6 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
     },
     [token]
   );
-
-  const loadCareHub = useCallback(async () => {
-    setCareHubLoading(true);
-    setCareHubMessage("");
-
-    try {
-      const response = await fetch("/api/mypawlink", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          action: "loadCareHubByToken",
-          token,
-        }),
-      });
-
-      const result = (await response.json().catch(() => null)) as
-        | (CareHubResponse & { error?: string })
-        | null;
-
-      if (!response.ok || !result?.careHub) {
-        throw new Error(result?.error || "Unable to load Care Hub.");
-      }
-
-      setCareHubCategories(result.careHub.categories);
-      setCareHubMessage(
-        result.careHub.setupRequired
-          ? "Care Hub templates are previewing. Run the Phase 5 SQL to save signatures."
-          : ""
-      );
-    } catch (error) {
-      console.error(error);
-      setCareHubMessage(
-        error instanceof Error ? error.message : "Unable to load Care Hub forms."
-      );
-    } finally {
-      setCareHubLoading(false);
-    }
-  }, [token]);
 
   const loadEstimates = useCallback(
     async (source: "manual" | "background" = "background") => {
@@ -439,36 +358,53 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
     }
   };
 
-  const openCareHubForm = (formId: string) => {
-    setSelectedCareHubFormId(formId);
-    setPrintedName("");
-    setSignatureData("");
-    setSignatureHasInk(false);
-    setCheckboxAgreed(false);
-    setCareHubMessage("");
+  const updateClinicFormDraft = (
+    formId: string,
+    field: keyof ClinicFormDraft,
+    value: string | boolean
+  ) => {
+    setClinicFormDrafts((current) => ({
+      ...current,
+      [formId]: {
+        ...(current[formId] || emptyClinicFormDraft()),
+        [field]: value,
+      },
+    }));
   };
 
-  const clearSignature = () => {
-    signaturePadRef.current?.clear();
-    setSignatureData("");
-    setSignatureHasInk(false);
+  const openClinicForm = (formId: string) => {
+    setSelectedClinicFormId(formId);
+    setClinicFormDrafts((current) => ({
+      ...current,
+      [formId]: current[formId] || emptyClinicFormDraft(),
+    }));
+    setFormActionMessage("");
   };
 
-  const signSelectedCareHubForm = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!selectedCareHubForm) return;
+  const respondToClinicForm = async (
+    form: OwnerPortalForm,
+    formStatus: "Signed" | "Declined"
+  ) => {
+    const draft = clinicFormDrafts[form.id] || emptyClinicFormDraft();
 
-    const drawnSignature = signaturePadRef.current?.isEmpty()
-      ? ""
-      : signaturePadRef.current?.toDataURL("image/png") || signatureData;
+    if (formStatus === "Signed") {
+      if (!draft.ownerName.trim() || !draft.relationship.trim() || !draft.signature.trim()) {
+        setFormActionMessage("Please complete owner name, relationship, and typed signature.");
+        return;
+      }
+      if (isEmergencyCareConsentForm(form) && !draft.authorized) {
+        setFormActionMessage("Please check the authorization box before signing.");
+        return;
+      }
+    }
 
-    if (!drawnSignature) {
-      setCareHubMessage("Please draw your signature before submitting.");
+    if (formStatus === "Declined" && !draft.declineReason.trim()) {
+      setFormActionMessage("Please enter a brief reason before declining.");
       return;
     }
 
-    setSigningForm(true);
-    setCareHubMessage("");
+    setRespondingFormId(form.id);
+    setFormActionMessage("");
 
     try {
       const response = await fetch("/api/mypawlink", {
@@ -477,34 +413,45 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          action: "signCareHubForm",
+          action: "respondForm",
           token,
-          formId: selectedCareHubForm.id,
-          ownerName: printedName,
-          signatureData: drawnSignature,
-          checkboxAgreed,
+          formId: form.id,
+          formStatus,
+          signedName:
+            formStatus === "Signed"
+              ? draft.ownerName.trim() + " (" + draft.relationship.trim() + ")"
+              : "",
+          declineReason: draft.declineReason.trim(),
         }),
       });
 
       const result = (await response.json().catch(() => null)) as
-        | (CareHubResponse & { error?: string })
+        | { ok?: boolean; visit?: OwnerPortalVisit; error?: string }
         | null;
 
-      if (!response.ok || !result?.careHub) {
-        throw new Error(result?.error || "Unable to sign this form.");
+      if (!response.ok || !result?.ok) {
+        throw new Error(result?.error || "Unable to submit this response.");
       }
 
-      setCareHubCategories(result.careHub.categories);
-      setCareHubMessage(`${selectedCareHubForm.title} signed successfully.`);
-      setPrintedName("");
-      setSignatureData("");
-      clearSignature();
-      setCheckboxAgreed(false);
+      if (result.visit) setVisit(result.visit);
+      setSelectedClinicFormId(null);
+      setClinicFormDrafts((current) => ({
+        ...current,
+        [form.id]: emptyClinicFormDraft(),
+      }));
+      setFormActionMessage(
+        formStatus === "Signed"
+          ? form.form_type + " signed. The clinic has been notified."
+          : "The veterinary team may contact you before care can continue."
+      );
+      void refreshVisit("background");
     } catch (error) {
       console.error(error);
-      setCareHubMessage(error instanceof Error ? error.message : "Unable to sign this form.");
+      setFormActionMessage(
+        error instanceof Error ? error.message : "Unable to submit this response."
+      );
     } finally {
-      setSigningForm(false);
+      setRespondingFormId("");
     }
   };
 
@@ -548,12 +495,11 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
 
   useEffect(() => {
     const loadTimer = window.setTimeout(() => {
-      void loadCareHub();
       void loadEstimates("background");
     }, 0);
 
     return () => window.clearTimeout(loadTimer);
-  }, [loadCareHub, loadEstimates]);
+  }, [loadEstimates]);
 
   return (
     <main style={styles.page}>
@@ -639,7 +585,7 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
             </div>
             <div style={styles.ownerMetric}>
               <span>Forms</span>
-              <strong>{pendingClinicFormCount + pendingCareHubFormCount} pending</strong>
+              <strong>{pendingClinicForms.length} pending</strong>
             </div>
             <div style={styles.ownerMetric}>
               <span>Estimates</span>
@@ -665,8 +611,8 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
             <button type="button" style={styles.quickActionButton} onClick={() => jumpToSection("timeline")}>
               Updates
             </button>
-            <button type="button" style={styles.quickActionButton} onClick={() => jumpToSection("care-hub")}>
-              Care Hub
+            <button type="button" style={styles.quickActionButton} onClick={() => jumpToSection("actions")}>
+              Actions
             </button>
             <button type="button" style={styles.quickActionButton} onClick={() => jumpToSection("estimates")}>
               Estimates
@@ -706,211 +652,179 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
             )}
           </section>
 
-          <section id="care-hub" style={styles.card}>
+          <section id="actions" style={styles.card}>
             <div style={styles.sectionHeader}>
               <div>
-                <h2 style={styles.sectionTitle}>MyPawLink Care Hub</h2>
-                <p style={styles.text}>Forms, approvals, decisions, and discharge documents.</p>
+                <h2 style={styles.sectionTitle}>Actions</h2>
+                <p style={styles.text}>Forms, estimates, and discharge documents appear here only when your review is needed.</p>
               </div>
               <span style={styles.timelineCount}>
-                {signedCareHubCount}/{careHubFormCount || "-"} signed
+                {needsAttentionCount > 0 ? needsAttentionCount + " pending" : "Clear"}
               </span>
             </div>
 
-            {careHubMessage && <div style={styles.careHubNotice}>{careHubMessage}</div>}
-            {careHubLoading && <div style={styles.emptyBox}>Loading Care Hub forms...</div>}
+            {formActionMessage && <div style={styles.careHubNotice}>{formActionMessage}</div>}
 
-            {!careHubLoading && !selectedCareHubCategory && (
-              <div style={styles.categoryGrid}>
-                {careHubCategories.map((category) => {
-                  const signedCount = category.forms.filter(
-                    (form) => form.status === "Signed"
-                  ).length;
-
-                  return (
+            {!selectedClinicForm && (
+              <div style={styles.actionStack}>
+                {pendingEmergencyConsent && (
+                  <div style={styles.actionNeededCard}>
+                    <span style={styles.actionEyebrow}>Action Needed</span>
+                    <strong>Emergency Care Consent</strong>
+                    <p>Please review and sign so the veterinary team can begin care.</p>
                     <button
-                      key={category.id}
                       type="button"
-                      style={styles.categoryCard}
-                      onClick={() => {
-                        setSelectedCareHubCategoryId(category.id);
-                        setSelectedCareHubFormId(null);
-                      }}
+                      style={styles.signButton}
+                      onClick={() => openClinicForm(pendingEmergencyConsent.id)}
                     >
-                      <span style={styles.categoryTitle}>{category.name}</span>
-                      <span style={styles.categoryText}>{category.description}</span>
-                      <span style={styles.categoryMeta}>
-                        {signedCount}/{category.forms.length} signed
-                      </span>
+                      Review & Sign
                     </button>
-                  );
-                })}
-              </div>
-            )}
+                  </div>
+                )}
 
-            {selectedCareHubCategory && !selectedCareHubForm && (
-              <div style={styles.careHubStack}>
-                <button
-                  type="button"
-                  style={styles.backButton}
-                  onClick={() => setSelectedCareHubCategoryId(null)}
-                >
-                  Back to categories
-                </button>
-                <div style={styles.careHubHeaderBox}>
-                  <h3 style={styles.careHubTitle}>{selectedCareHubCategory.name}</h3>
-                  <p style={styles.text}>{selectedCareHubCategory.description}</p>
-                </div>
-                {selectedCareHubCategory.forms.map((form) => (
-                  <div key={form.id} style={styles.careHubFormCard}>
-                    <div>
-                      <div style={styles.formTitleRow}>
-                        <strong>{form.title}</strong>
-                        <span
-                          style={{
-                            ...styles.formStatus,
-                            ...(form.status === "Signed" ? styles.formStatusSigned : {}),
-                          }}
-                        >
-                          {form.status}
-                        </span>
-                      </div>
-                      <p style={styles.formText}>{form.description}</p>
-                    </div>
-                    <button
-                      type="button"
-                      style={styles.viewFormButton}
-                      onClick={() => openCareHubForm(form.id)}
-                    >
-                      View Form
+                {pendingOtherClinicForms.map((form) => (
+                  <div key={form.id} style={styles.actionNeededCard}>
+                    <span style={styles.actionEyebrow}>Action Needed</span>
+                    <strong>{form.form_type || "Form"}</strong>
+                    <p>{form.form_body || "Please review and respond to this form."}</p>
+                    <button type="button" style={styles.signButton} onClick={() => openClinicForm(form.id)}>
+                      Review & Sign
                     </button>
                   </div>
                 ))}
+
+                {pendingEstimateCount > 0 && (
+                  <div style={styles.actionInfoCard}>
+                    <span style={styles.actionEyebrow}>Estimate Approval Needed</span>
+                    <strong>Please review and approve or decline the treatment estimate.</strong>
+                    <button type="button" style={styles.secondaryActionButton} onClick={() => jumpToSection("estimates")}>
+                      Review Estimate
+                    </button>
+                  </div>
+                )}
+
+                {hasDischargeDocuments && (
+                  <div style={styles.actionInfoCard}>
+                    <span style={styles.actionEyebrow}>Discharge Instructions Available</span>
+                    <strong>Discharge documents are ready for this visit.</strong>
+                    <button type="button" style={styles.secondaryActionButton} onClick={() => jumpToSection("discharge")}>
+                      View Discharge Instructions
+                    </button>
+                  </div>
+                )}
+
+                {pendingClinicForms.length === 0 && pendingEstimateCount === 0 && !hasDischargeDocuments && (
+                  <div style={styles.emptyBox}>
+                    <strong>No action needed right now.</strong>
+                    <span>We will let you know here when something needs your review.</span>
+                  </div>
+                )}
               </div>
             )}
 
-            {selectedCareHubForm && (
-              <div style={styles.careHubStack}>
-                <button
-                  type="button"
-                  style={styles.backButton}
-                  onClick={() => setSelectedCareHubFormId(null)}
-                >
-                  Back to {selectedCareHubCategory?.name}
+            {selectedClinicForm && (
+              <div style={styles.consentShell}>
+                <button type="button" style={styles.backButton} onClick={() => setSelectedClinicFormId(null)}>
+                  Back to Actions
                 </button>
-                <div style={styles.consentShell}>
-                  <span
-                    style={{
-                      ...styles.formStatus,
-                      ...(selectedCareHubForm.status === "Signed"
-                        ? styles.formStatusSigned
-                        : {}),
-                    }}
-                  >
-                    {selectedCareHubForm.status}
-                  </span>
-                  <h3 style={styles.careHubTitle}>{selectedCareHubForm.title}</h3>
-                  <p style={styles.text}>{selectedCareHubForm.description}</p>
-                  <div style={styles.legalBox}>
-                    {selectedCareHubForm.htmlContent.split("\n\n").map((paragraph) => (
+                <span style={styles.formStatus}>{selectedClinicForm.form_status || "Pending"}</span>
+                <h3 style={styles.careHubTitle}>{selectedClinicForm.form_type || "Form"}</h3>
+                <div style={styles.legalBox}>
+                  {(selectedClinicForm.form_body || "Please review this form before responding.")
+                    .split("\n\n")
+                    .map((paragraph) => (
                       <p key={paragraph} style={styles.legalText}>
                         {paragraph}
                       </p>
                     ))}
-                  </div>
-
-                  {selectedCareHubForm.status === "Signed" ? (
-                    <div style={styles.signedBox}>
-                      <strong>Signed by {selectedCareHubForm.signedName || "owner"}</strong>
-                      {selectedCareHubForm.signedAt && (
-                        <span>{new Date(selectedCareHubForm.signedAt).toLocaleString()}</span>
-                      )}
-                    </div>
-                  ) : (
-                    <form style={styles.signatureForm} onSubmit={signSelectedCareHubForm}>
-                      <input
-                        style={styles.input}
-                        value={printedName}
-                        onChange={(event) => setPrintedName(event.target.value)}
-                        placeholder="Printed name"
-                        required
-                      />
-                      <label style={styles.checkRow}>
-                        <input
-                          type="checkbox"
-                          checked={checkboxAgreed}
-                          onChange={(event) => setCheckboxAgreed(event.target.checked)}
-                          required
-                        />
-                        I have reviewed this form and agree to sign electronically.
-                      </label>
-                      <div style={styles.signaturePadShell}>
-                        <div style={styles.signatureHintRow}>
-                          <span>Draw signature</span>
-                          <button
-                            type="button"
-                            style={styles.clearSignatureButton}
-                            onClick={clearSignature}
-                          >
-                            Clear
-                          </button>
-                        </div>
-                        <SignatureCanvas
-                          ref={signaturePadRef}
-                          penColor="#102a3a"
-                          minWidth={1.2}
-                          maxWidth={2.6}
-                          onEnd={() => {
-                            const nextSignature = signaturePadRef.current?.toDataURL("image/png") || "";
-                            setSignatureData(nextSignature);
-                            setSignatureHasInk(Boolean(nextSignature));
-                          }}
-                          canvasProps={{
-                            style: styles.signatureCanvas,
-                          }}
-                        />
-                        <span style={styles.signatureHelper}>
-                          {signatureHasInk
-                            ? "Signature captured."
-                            : "Use your finger, mouse, or stylus inside this box."}
-                        </span>
-                      </div>
-                      <div style={styles.timestampBox}>
-                        Date/time: {new Date().toLocaleString()}
-                      </div>
-                      <button
-                        type="submit"
-                        style={{
-                          ...styles.signButton,
-                          ...(signingForm ? styles.disabledButton : {}),
-                        }}
-                        disabled={signingForm}
-                      >
-                        {signingForm ? "Submitting..." : "Submit Signature"}
-                      </button>
-                    </form>
-                  )}
                 </div>
+
+                <form style={styles.signatureForm} onSubmit={(event) => event.preventDefault()}>
+                  <input
+                    style={styles.input}
+                    value={(clinicFormDrafts[selectedClinicForm.id] || emptyClinicFormDraft()).ownerName}
+                    onChange={(event) => updateClinicFormDraft(selectedClinicForm.id, "ownerName", event.target.value)}
+                    placeholder="Owner full name"
+                    autoComplete="name"
+                  />
+                  <input
+                    style={styles.input}
+                    value={(clinicFormDrafts[selectedClinicForm.id] || emptyClinicFormDraft()).relationship}
+                    onChange={(event) => updateClinicFormDraft(selectedClinicForm.id, "relationship", event.target.value)}
+                    placeholder="Relationship to pet"
+                  />
+                  {isEmergencyCareConsentForm(selectedClinicForm) && (
+                    <label style={styles.checkRow}>
+                      <input
+                        type="checkbox"
+                        checked={(clinicFormDrafts[selectedClinicForm.id] || emptyClinicFormDraft()).authorized}
+                        onChange={(event) => updateClinicFormDraft(selectedClinicForm.id, "authorized", event.target.checked)}
+                      />
+                      I authorize initial emergency evaluation and care.
+                    </label>
+                  )}
+                  <input
+                    style={styles.input}
+                    value={(clinicFormDrafts[selectedClinicForm.id] || emptyClinicFormDraft()).signature}
+                    onChange={(event) => updateClinicFormDraft(selectedClinicForm.id, "signature", event.target.value)}
+                    placeholder="Typed signature"
+                  />
+                  <div style={styles.timestampBox}>Date/time: {new Date().toLocaleString()}</div>
+                  <button
+                    type="button"
+                    style={{ ...styles.signButton, ...(respondingFormId ? styles.disabledButton : {}) }}
+                    disabled={Boolean(respondingFormId)}
+                    onClick={() => void respondToClinicForm(selectedClinicForm, "Signed")}
+                  >
+                    {respondingFormId === selectedClinicForm.id ? "Submitting..." : "Sign Consent"}
+                  </button>
+                  <textarea
+                    style={styles.estimateNotes}
+                    value={(clinicFormDrafts[selectedClinicForm.id] || emptyClinicFormDraft()).declineReason}
+                    onChange={(event) => updateClinicFormDraft(selectedClinicForm.id, "declineReason", event.target.value)}
+                    placeholder="Reason for declining"
+                  />
+                  <div style={styles.warningBox}>The veterinary team may contact you before care can continue.</div>
+                  <button
+                    type="button"
+                    style={styles.declineButton}
+                    disabled={Boolean(respondingFormId)}
+                    onClick={() => void respondToClinicForm(selectedClinicForm, "Declined")}
+                  >
+                    Decline
+                  </button>
+                </form>
               </div>
             )}
           </section>
 
-          <section id="clinic-forms" style={styles.card}>
-            <h2 style={styles.sectionTitle}>Clinic-Sent Forms</h2>
-            <p style={styles.text}>Forms sent directly by the clinic for this visit.</p>
+          <section id="care-hub" style={styles.card}>
+            <div style={styles.sectionHeader}>
+              <div>
+                <h2 style={styles.sectionTitle}>Care Hub</h2>
+                <p style={styles.text}>Only documents connected to this visit appear here.</p>
+              </div>
+            </div>
             <div style={styles.formList}>
-              {visit.forms.length > 0 ? (
-                visit.forms.map((form) => (
+              {completedClinicForms.length > 0 ? (
+                completedClinicForms.map((form) => (
                   <div key={form.id} style={styles.formCard}>
                     <div>
-                      <strong>{form.form_type || "Form"}</strong>
-                      <p style={styles.formText}>{form.form_body || "Ready for review."}</p>
+                      <strong>{form.form_type || "Document"}</strong>
+                      <p style={styles.formText}>{form.form_body || "Visit document."}</p>
                     </div>
-                    <span style={styles.formStatus}>{form.form_status || "Pending"}</span>
+                    <span
+                      style={{
+                        ...styles.formStatus,
+                        ...(form.form_status === "Signed" ? styles.formStatusSigned : {}),
+                      }}
+                    >
+                      {form.form_status || "Pending"}
+                    </span>
                   </div>
                 ))
               ) : (
-                <div style={styles.emptyBox}>No clinic-sent forms are pending right now.</div>
+                <div style={styles.emptyBox}>No visit documents are available yet.</div>
               )}
             </div>
           </section>
@@ -1047,25 +961,7 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
                   <span>{form.form_status || "Pending"}</span>
                 </div>
               ))}
-              {dischargeCareHubForms.map((form) => (
-                <button
-                  key={form.id}
-                  type="button"
-                  style={styles.dischargeItemButton}
-                  onClick={() => {
-                    const category = careHubCategories.find((item) =>
-                      item.forms.some((categoryForm) => categoryForm.id === form.id)
-                    );
-                    setSelectedCareHubCategoryId(category?.id || null);
-                    openCareHubForm(form.id);
-                    jumpToSection("care-hub");
-                  }}
-                >
-                  <strong>{form.title}</strong>
-                  <span>{form.status}</span>
-                </button>
-              ))}
-              {dischargeClinicForms.length === 0 && dischargeCareHubForms.length === 0 && (
+              {dischargeClinicForms.length === 0 && (
                 <div style={styles.emptyBox}>No discharge documents are ready yet.</div>
               )}
             </div>
@@ -1376,6 +1272,56 @@ const styles: Record<string, CSSProperties> = {
     borderRadius: 8,
     padding: 12,
     background: "#fbffff",
+  },
+  actionStack: {
+    display: "grid",
+    gap: 10,
+    marginTop: 12,
+  },
+  actionNeededCard: {
+    background: "#fff7ed",
+    border: "1px solid #fed7aa",
+    borderRadius: 8,
+    color: "#102a3a",
+    display: "grid",
+    gap: 8,
+    padding: 12,
+  },
+  actionInfoCard: {
+    background: "#f8fbff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    color: "#102a3a",
+    display: "grid",
+    gap: 8,
+    padding: 12,
+  },
+  actionEyebrow: {
+    color: "#c2410c",
+    fontSize: 11,
+    fontWeight: 950,
+    textTransform: "uppercase",
+  },
+  secondaryActionButton: {
+    background: "#ffffff",
+    border: "1px solid #bfe9e0",
+    borderRadius: 8,
+    color: "#087f78",
+    cursor: "pointer",
+    fontSize: 13,
+    fontWeight: 900,
+    minHeight: 42,
+    padding: "10px 12px",
+  },
+  warningBox: {
+    background: "#fff7ed",
+    border: "1px solid #fed7aa",
+    borderRadius: 8,
+    color: "#9a3412",
+    fontSize: 13,
+    fontWeight: 800,
+    lineHeight: 1.35,
+    padding: 10,
   },
   formText: {
     color: "#52606d",

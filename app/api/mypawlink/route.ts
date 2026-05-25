@@ -171,6 +171,13 @@ const buildVisitAccessUrl = (token: string) => {
 
 const createVisitToken = () => randomBytes(18).toString("base64url");
 
+const emergencyCareConsentTitle = "Emergency Care Consent";
+const emergencyCareConsentBody =
+  "I authorize the veterinary team to evaluate my pet and provide initial emergency care as medically necessary. I understand that additional treatments, diagnostics, estimates, or procedures may require separate approval.";
+
+const getCheckedInMessage = (petName: string) =>
+  petName + " has been checked in. The veterinary team has received your request and will update you here.";
+
 const careHubSeedCategories: CareHubSeedCategory[] = [
   {
     slug: "admission-forms",
@@ -714,18 +721,88 @@ const logEmailNotificationPlaceholder = async ({
   link: string;
   triggerType: string;
 }) => {
-  await logNotificationEvent({
-    visitId,
-    channel: "email",
-    triggerType,
-    recipientEmail,
-    subject,
-    message,
-    link,
-    status: "skipped",
-    provider: "not-configured",
-    errorMessage: "Email provider is not configured yet.",
-  });
+  if (!recipientEmail) {
+    await logNotificationEvent({
+      visitId,
+      channel: "email",
+      triggerType,
+      recipientEmail,
+      subject,
+      message,
+      link,
+      status: "skipped",
+      provider: "not-configured",
+      errorMessage: "Owner email is not available.",
+    });
+    return;
+  }
+
+  const resendApiKey = process.env.RESEND_API_KEY || process.env.MYPAWLINK_RESEND_API_KEY;
+  const fromAddress =
+    process.env.MYPAWLINK_EMAIL_FROM ||
+    process.env.RESEND_FROM_EMAIL ||
+    "MyPawLink <updates@mypawlink.com>";
+  const textBody = [message, link ? "View updates:\n" + link : ""].filter(Boolean).join("\n\n");
+
+  if (!resendApiKey) {
+    await logNotificationEvent({
+      visitId,
+      channel: "email",
+      triggerType,
+      recipientEmail,
+      subject,
+      message: textBody,
+      link,
+      status: "skipped",
+      provider: "not-configured",
+      errorMessage: "Email provider is not configured yet.",
+    });
+    return;
+  }
+
+  try {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer " + resendApiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: fromAddress,
+        to: recipientEmail,
+        subject,
+        text: textBody,
+      }),
+    });
+    const providerResponse = (await response.json().catch(() => ({}))) as DbRecord;
+
+    await logNotificationEvent({
+      visitId,
+      channel: "email",
+      triggerType,
+      recipientEmail,
+      subject,
+      message: textBody,
+      link,
+      status: response.ok ? "sent" : "failed",
+      provider: "resend",
+      providerResponse,
+      errorMessage: response.ok ? "" : stringValue(providerResponse.message, "Email send failed."),
+    });
+  } catch (error) {
+    await logNotificationEvent({
+      visitId,
+      channel: "email",
+      triggerType,
+      recipientEmail,
+      subject,
+      message: textBody,
+      link,
+      status: "failed",
+      provider: "resend",
+      errorMessage: error instanceof Error ? error.message : "Email send failed.",
+    });
+  }
 };
 
 const mapClinicSettings = (clinic: DbRecord | null, setupRequired = false): ClinicSettings => {
@@ -1981,6 +2058,60 @@ const addVisitUpdate = async ({
   };
 };
 
+const ensureEmergencyCareConsentForm = async (visitId: string) => {
+  const supabase = getSupabaseAdmin();
+  const { data: existingForms, error: existingError } = await supabase
+    .from("forms")
+    .select("id, form_status")
+    .eq("visit_id", visitId)
+    .eq("form_type", emergencyCareConsentTitle)
+    .limit(1);
+
+  if (existingError) throw existingError;
+
+  const existingForm = ((existingForms || []) as DbRecord[])[0];
+  if (existingForm?.id) return existingForm;
+
+  const { data, error } = await supabase
+    .from("forms")
+    .insert([
+      {
+        visit_id: visitId,
+        form_type: emergencyCareConsentTitle,
+        form_body: emergencyCareConsentBody,
+        form_status: "Sent",
+      },
+    ])
+    .select("id, form_status")
+    .single();
+
+  if (error) throw error;
+  return (data || {}) as DbRecord;
+};
+
+const sendCheckInConfirmationEmail = async ({
+  visitId,
+  ownerEmail,
+  petName,
+  link,
+}: {
+  visitId: string;
+  ownerEmail: string;
+  petName: string;
+  link: string;
+}) => {
+  await logEmailNotificationPlaceholder({
+    visitId,
+    recipientEmail: ownerEmail,
+    subject: petName + " has been checked in",
+    message:
+      getCheckedInMessage(petName) +
+      "\n\nIf action is needed, please review and sign the Emergency Care Consent.",
+    link,
+    triggerType: "check_in_confirmation",
+  });
+};
+
 const createOwnerPetVisit = async ({
   owner,
   pet,
@@ -2040,6 +2171,17 @@ const createOwnerPetVisit = async ({
   ]);
 
   if (updateError) throw updateError;
+
+  const visitId = String(createdVisit.id);
+  const petName = stringValue(pet.pet_name, "Your pet");
+  await ensureEmergencyCareConsentForm(visitId);
+  const accessToken = await ensureVisitAccessToken(visitId, ownerEmail);
+  await sendCheckInConfirmationEmail({
+    visitId,
+    ownerEmail,
+    petName,
+    link: buildVisitAccessUrl(accessToken),
+  });
 
   await logIntegrationEvent({
     visitId: stringValue(createdVisit.id),
@@ -2501,6 +2643,39 @@ export async function POST(request: Request) {
       return NextResponse.json(result);
     }
 
+    if (action === "sendEmergencyConsent") {
+      const accessError = await requireClinicAccess(body);
+      if (accessError) return accessError;
+
+      const visitId = stringValue(body.visitId);
+      if (!visitId) {
+        return NextResponse.json({ error: "Visit is required." }, { status: 400 });
+      }
+
+      await ensureEmergencyCareConsentForm(visitId);
+      const result = await addVisitUpdate({
+        visitId,
+        status: stringValue(body.status, "Request Submitted / Waiting for Team Review"),
+        message: "Emergency Care Consent reminder sent to the owner.",
+        triggerType: "emergency_consent_sent",
+        sendText: false,
+      });
+
+      await logEmailNotificationPlaceholder({
+        visitId,
+        recipientEmail: result.visit.ownerEmail,
+        subject: result.visit.petName + " needs Emergency Care Consent",
+        message:
+          "Please review and sign the Emergency Care Consent so the veterinary team can continue care for " +
+          result.visit.petName +
+          ".",
+        link: result.visit.accessUrl,
+        triggerType: "emergency_consent_sent",
+      });
+
+      return NextResponse.json(result);
+    }
+
     if (action === "sendForm") {
       const accessError = await requireClinicAccess(body);
       if (accessError) return accessError;
@@ -2528,7 +2703,35 @@ export async function POST(request: Request) {
     }
 
     if (action === "respondForm") {
+      const formId = stringValue(body.formId).trim();
       const formStatus = stringValue(body.formStatus);
+      const token = stringValue(body.token).trim();
+
+      if (!formId || !["Signed", "Declined"].includes(formStatus)) {
+        return NextResponse.json({ error: "A valid form response is required." }, { status: 400 });
+      }
+
+      let tokenVisitId = "";
+      if (token) {
+        const tokenAccess = await getVisitIdForToken(token);
+        if (tokenAccess.error) return tokenAccess.error;
+        tokenVisitId = tokenAccess.visitId;
+      }
+
+      const { data: formRow, error: formError } = await supabase
+        .from("forms")
+        .select("id, visit_id, form_type")
+        .eq("id", formId)
+        .maybeSingle();
+
+      if (formError) throw formError;
+      const formRecord = (formRow || {}) as DbRecord;
+      const visitId = stringValue(formRecord.visit_id);
+
+      if (!visitId || (tokenVisitId && visitId !== tokenVisitId)) {
+        return NextResponse.json({ error: "This form is not available for this visit." }, { status: 403 });
+      }
+
       const update =
         formStatus === "Signed"
           ? {
@@ -2542,13 +2745,23 @@ export async function POST(request: Request) {
               declined_at: new Date().toISOString(),
             };
 
-      const { error } = await supabase
-        .from("forms")
-        .update(update)
-        .eq("id", stringValue(body.formId));
+      const { error } = await supabase.from("forms").update(update).eq("id", formId);
 
       if (error) throw error;
-      return NextResponse.json({ ok: true });
+
+      await supabase.from("visit_updates").insert([
+        {
+          visit_id: visitId,
+          status: formStatus === "Signed" ? "Form signed" : "Form declined",
+          message:
+            stringValue(formRecord.form_type, "Form") +
+            (formStatus === "Signed" ? " signed by owner." : " declined by owner."),
+        },
+      ]);
+
+      await notifyVisitAccessChannels(visitId);
+
+      return NextResponse.json({ ok: true, visit: await fetchVisitById(visitId) });
     }
 
     return NextResponse.json({ error: "Unknown action." }, { status: 400 });
