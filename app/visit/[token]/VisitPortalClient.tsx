@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import Link from "next/link";
+import SignatureCanvas from "react-signature-canvas";
 import { supabase } from "../../../lib/supabase";
 
 export type OwnerPortalUpdate = {
@@ -68,7 +69,7 @@ type ClinicFormDraft = {
   ownerName: string;
   relationship: string;
   authorized: boolean;
-  signature: string;
+  signatureData: string;
   declineReason: string;
 };
 
@@ -138,7 +139,7 @@ const emptyClinicFormDraft = (): ClinicFormDraft => ({
   ownerName: "",
   relationship: "",
   authorized: false,
-  signature: "",
+  signatureData: "",
   declineReason: "",
 });
 
@@ -156,6 +157,7 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
   const [respondingFormId, setRespondingFormId] = useState("");
   const [formActionMessage, setFormActionMessage] = useState("");
   const [respondingEstimateId, setRespondingEstimateId] = useState("");
+  const clinicSignaturePadRef = useRef<SignatureCanvas | null>(null);
 
   const latestUpdate = useMemo(
     () => visit.updates[visit.updates.length - 1],
@@ -379,6 +381,21 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
       [formId]: current[formId] || emptyClinicFormDraft(),
     }));
     setFormActionMessage("");
+    window.setTimeout(() => {
+      clinicSignaturePadRef.current?.clear();
+    }, 0);
+  };
+
+  const captureClinicSignature = (formId: string) => {
+    const signatureData = clinicSignaturePadRef.current?.isEmpty()
+      ? ""
+      : clinicSignaturePadRef.current?.toDataURL("image/png") || "";
+    updateClinicFormDraft(formId, "signatureData", signatureData);
+  };
+
+  const clearClinicSignature = (formId: string) => {
+    clinicSignaturePadRef.current?.clear();
+    updateClinicFormDraft(formId, "signatureData", "");
   };
 
   const respondToClinicForm = async (
@@ -388,14 +405,20 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
     const draft = clinicFormDrafts[form.id] || emptyClinicFormDraft();
 
     if (formStatus === "Signed") {
-      if (!draft.ownerName.trim() || !draft.relationship.trim() || !draft.signature.trim()) {
-        setFormActionMessage("Please complete owner name, relationship, and typed signature.");
+      const signatureData = clinicSignaturePadRef.current?.isEmpty()
+        ? draft.signatureData
+        : clinicSignaturePadRef.current?.toDataURL("image/png") || draft.signatureData;
+
+      if (!draft.ownerName.trim() || !draft.relationship.trim() || !signatureData.trim()) {
+        setFormActionMessage("Please complete owner name, relationship, and signature.");
         return;
       }
       if (isEmergencyCareConsentForm(form) && !draft.authorized) {
         setFormActionMessage("Please check the authorization box before signing.");
         return;
       }
+
+      updateClinicFormDraft(form.id, "signatureData", signatureData);
     }
 
     if (formStatus === "Declined" && !draft.declineReason.trim()) {
@@ -420,6 +443,14 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
           signedName:
             formStatus === "Signed"
               ? draft.ownerName.trim() + " (" + draft.relationship.trim() + ")"
+              : "",
+          relationshipToPet: formStatus === "Signed" ? draft.relationship.trim() : "",
+          authorizationConfirmed: formStatus === "Signed" ? draft.authorized : false,
+          signatureData:
+            formStatus === "Signed"
+              ? clinicSignaturePadRef.current?.isEmpty()
+                ? draft.signatureData
+                : clinicSignaturePadRef.current?.toDataURL("image/png") || draft.signatureData
               : "",
           declineReason: draft.declineReason.trim(),
         }),
@@ -763,12 +794,34 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
                       I authorize initial emergency evaluation and care.
                     </label>
                   )}
-                  <input
-                    style={styles.input}
-                    value={(clinicFormDrafts[selectedClinicForm.id] || emptyClinicFormDraft()).signature}
-                    onChange={(event) => updateClinicFormDraft(selectedClinicForm.id, "signature", event.target.value)}
-                    placeholder="Typed signature"
-                  />
+                  <div style={styles.signaturePadShell}>
+                    <div style={styles.signatureHintRow}>
+                      <span>Sign with your finger</span>
+                      <button
+                        type="button"
+                        style={styles.clearSignatureButton}
+                        onClick={() => clearClinicSignature(selectedClinicForm.id)}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                    <SignatureCanvas
+                      ref={clinicSignaturePadRef}
+                      penColor="#102a3a"
+                      minWidth={1.2}
+                      maxWidth={2.8}
+                      onEnd={() => captureClinicSignature(selectedClinicForm.id)}
+                      canvasProps={{
+                        width: 620,
+                        height: 220,
+                        style: styles.signatureCanvas,
+                        "aria-label": "Signature pad",
+                      }}
+                    />
+                    <span style={styles.signatureHelper}>
+                      Use your finger or stylus to sign inside the box.
+                    </span>
+                  </div>
                   <div style={styles.timestampBox}>Date/time: {new Date().toLocaleString()}</div>
                   <button
                     type="button"

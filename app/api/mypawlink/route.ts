@@ -642,6 +642,17 @@ const isMissingReferralTableError = (error: unknown) => {
   );
 };
 
+const isMissingFormSignatureColumnError = (error: unknown) => {
+  const dbError = error as { code?: string; message?: string } | null;
+  const message = dbError?.message?.toLowerCase() || "";
+  return (
+    dbError?.code === "42703" ||
+    message.includes("signature_data") ||
+    message.includes("relationship_to_pet") ||
+    message.includes("authorization_confirmed")
+  );
+};
+
 const formatMoney = (amount: number) =>
   new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -2706,9 +2717,20 @@ export async function POST(request: Request) {
       const formId = stringValue(body.formId).trim();
       const formStatus = stringValue(body.formStatus);
       const token = stringValue(body.token).trim();
+      const signedName = stringValue(body.signedName).trim();
+      const signatureData = stringValue(body.signatureData).trim();
+      const relationshipToPet = stringValue(body.relationshipToPet).trim();
+      const authorizationConfirmed = booleanValue(body.authorizationConfirmed);
 
       if (!formId || !["Signed", "Declined"].includes(formStatus)) {
         return NextResponse.json({ error: "A valid form response is required." }, { status: 400 });
+      }
+
+      if (formStatus === "Signed" && (!signedName || !signatureData)) {
+        return NextResponse.json(
+          { error: "Owner name and signature are required to sign this form." },
+          { status: 400 }
+        );
       }
 
       let tokenVisitId = "";
@@ -2732,11 +2754,11 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "This form is not available for this visit." }, { status: 403 });
       }
 
-      const update =
+      const baseUpdate =
         formStatus === "Signed"
           ? {
               form_status: "Signed",
-              signed_name: stringValue(body.signedName),
+              signed_name: signedName,
               signed_at: new Date().toISOString(),
             }
           : {
@@ -2745,7 +2767,23 @@ export async function POST(request: Request) {
               declined_at: new Date().toISOString(),
             };
 
-      const { error } = await supabase.from("forms").update(update).eq("id", formId);
+      const update =
+        formStatus === "Signed"
+          ? {
+              ...baseUpdate,
+              relationship_to_pet: relationshipToPet,
+              authorization_confirmed: authorizationConfirmed,
+              signature_data: signatureData,
+            }
+          : baseUpdate;
+
+      let { error } = await supabase.from("forms").update(update).eq("id", formId);
+
+      if (error && formStatus === "Signed" && isMissingFormSignatureColumnError(error)) {
+        console.warn("Form signature columns are not installed yet. Run Phase 14 SQL.");
+        const fallbackResult = await supabase.from("forms").update(baseUpdate).eq("id", formId);
+        error = fallbackResult.error;
+      }
 
       if (error) throw error;
 
