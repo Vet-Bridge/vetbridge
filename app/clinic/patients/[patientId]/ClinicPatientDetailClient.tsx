@@ -109,6 +109,7 @@ const petPhotoMetaPattern = /\n?\[\[MPL_PET_PHOTO\]\]([\s\S]*?)\[\[\/MPL_PET_PHO
 
 const compactWorkflowSteps = ["Request", "Check-In", "Triage", "Doctor", "Diagnostics", "Treatment", "Discharge"];
 const emergencyCareConsentTitle = "Emergency Care Consent";
+const defaultPetAvatarSrc = "/pet-placeholder-avatar.svg";
 
 const getAssignedDoctorFromNotes = (notes: string): DoctorOption | null => {
   const match = notes.match(doctorMetaPattern);
@@ -741,6 +742,7 @@ export default function ClinicPatientDetailClient({ patientId }: { patientId: st
   const compactWorkflowIndex = getCompactWorkflowIndex(visit);
   const statusChips = getStatusChips(visit, doctor);
   const consentStatus = getEmergencyConsentStatus(visit);
+  const patientPhotoUrl = visit.petPhotoUrl || getPetPhotoFromNotes(visit.clinicNotes);
 
   return (
     <main style={styles.screen}>
@@ -753,8 +755,18 @@ export default function ClinicPatientDetailClient({ patientId }: { patientId: st
       </header>
 
       <section style={styles.patientHeader}>
-        <h1 style={styles.petName}>{visit.petName}</h1>
-        <p style={styles.metaLine}>{getCompactPatientMetaLine(visit)}</p>
+        <div style={styles.patientHeaderTop}>
+          <img
+            src={patientPhotoUrl || defaultPetAvatarSrc}
+            alt={patientPhotoUrl ? visit.petName : "No photo uploaded"}
+            style={styles.patientAvatar}
+          />
+          <div style={styles.patientHeaderCopy}>
+            <h1 style={styles.petName}>{visit.petName}</h1>
+            <p style={styles.metaLine}>{getCompactPatientMetaLine(visit)}</p>
+            {!patientPhotoUrl && <span style={styles.noPhotoLabel}>No photo uploaded</span>}
+          </div>
+        </div>
         <div style={styles.metaList}>
           <span><strong>Owner:</strong> {getOwnerName(visit)}</span>
           <span><strong>Doctor:</strong> {doctor ? "Dr. " + doctor.name : "Unassigned"}</span>
@@ -1001,6 +1013,25 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 9,
     padding: "12px",
   },
+  patientHeaderTop: {
+    alignItems: "center",
+    display: "grid",
+    gap: 10,
+    gridTemplateColumns: "58px minmax(0, 1fr)",
+  },
+  patientAvatar: {
+    background: "#cff4ec",
+    border: "3px solid #e7fbf7",
+    borderRadius: "50%",
+    height: 58,
+    objectFit: "cover",
+    width: 58,
+  },
+  patientHeaderCopy: {
+    display: "grid",
+    gap: 4,
+    minWidth: 0,
+  },
   petName: {
     color: "#102a3a",
     fontSize: 28,
@@ -1013,6 +1044,11 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 800,
     lineHeight: 1.25,
     margin: 0,
+  },
+  noPhotoLabel: {
+    color: "#087f78",
+    fontSize: 11,
+    fontWeight: 900,
   },
   metaList: {
     color: "#52606d",

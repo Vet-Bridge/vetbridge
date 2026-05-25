@@ -544,6 +544,7 @@ const doctorMetaPattern = new RegExp(
 );
 const petPhotoMetaStart = "[[MPL_PET_PHOTO]]";
 const petPhotoMetaEnd = "[[/MPL_PET_PHOTO]]";
+const defaultPetAvatarSrc = "/pet-placeholder-avatar.svg";
 const petPhotoMetaPattern = new RegExp(
   `\\n?${petPhotoMetaStart.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([\\s\\S]*?)${petPhotoMetaEnd.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`
 );
@@ -1482,7 +1483,7 @@ export function MyPawLinkApp({
     visit.petPhotoUrl ||
     getPetPhotoFromNotes(visit.clinicNotes) ||
     petPhotoByVisitId[visit.id] ||
-    "/vet-hero.jpeg";
+    defaultPetAvatarSrc;
 
   const getTokenFromInput = (value: string) => {
     const trimmed = value.trim();

@@ -88,6 +88,7 @@ const getRealtimeStatus = (status: string): RealtimeStatus => {
 };
 
 const visitSteps = ["Received", "Triage", "Doctor", "Treatment", "Discharge"];
+const defaultPetAvatarSrc = "/pet-placeholder-avatar.svg";
 
 const getVisitStepIndex = (status: string) => {
   const normalizedStatus = status.toLowerCase();
@@ -572,8 +573,8 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
               {latestUpdate?.message || `${visit.petName}'s visit request has been received.`}
             </h2>
             <img
-              src={visit.petPhotoUrl || "/vet-hero.jpeg"}
-              alt={visit.petName}
+              src={visit.petPhotoUrl || defaultPetAvatarSrc}
+              alt={visit.petPhotoUrl ? visit.petName : "No photo uploaded"}
               style={styles.petAvatar}
             />
           </div>

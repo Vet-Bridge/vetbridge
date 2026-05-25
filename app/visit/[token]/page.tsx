@@ -52,7 +52,7 @@ const arrayValue = (value: unknown): DbRecord[] => {
 
 const getPetPhotoFromNotes = (notes: string) => {
   const match = notes.match(/\n?\[\[MPL_PET_PHOTO\]\]([\s\S]*?)\[\[\/MPL_PET_PHOTO\]\]/);
-  return match?.[1] || "/vet-hero.jpeg";
+  return match?.[1] || "";
 };
 
 const formatDateTime = (value: unknown) => {
