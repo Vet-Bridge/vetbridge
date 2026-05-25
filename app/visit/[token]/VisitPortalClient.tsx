@@ -22,6 +22,29 @@ export type OwnerPortalForm = {
   declined_at: string | null;
 };
 
+export type OwnerPortalSecondaryContact = {
+  name: string;
+  relationship: string;
+  phone: string;
+  email: string;
+  permissionLevel: string;
+};
+
+export type OwnerPortalPrimaryContact = {
+  firstName: string;
+  lastName: string;
+  phone: string;
+  email: string;
+};
+
+export type OwnerPortalPetAge = {
+  ageValue: string;
+  ageUnit: string;
+  birthdate: string;
+  ageUnknown: boolean;
+  display: string;
+};
+
 export type OwnerPortalVisit = {
   id: string;
   createdAt: string;
@@ -30,11 +53,17 @@ export type OwnerPortalVisit = {
   breed: string;
   ownerFirstName: string;
   ownerLastName: string;
+  ownerEmail: string;
+  phone: string;
   visitType: string;
   status: string;
+  reason: string;
   updates: OwnerPortalUpdate[];
   forms: OwnerPortalForm[];
   petPhotoUrl: string;
+  primaryContact: OwnerPortalPrimaryContact;
+  secondaryContacts: OwnerPortalSecondaryContact[];
+  petAge: OwnerPortalPetAge;
 };
 
 type OwnerEstimate = {
@@ -572,11 +601,14 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
             <h2 style={styles.updateTitle}>
               {latestUpdate?.message || `${visit.petName}'s visit request has been received.`}
             </h2>
-            <img
-              src={visit.petPhotoUrl || defaultPetAvatarSrc}
-              alt={visit.petPhotoUrl ? visit.petName : "No photo uploaded"}
-              style={styles.petAvatar}
-            />
+            <div style={styles.petAvatarWrap}>
+              <img
+                src={visit.petPhotoUrl || defaultPetAvatarSrc}
+                alt={visit.petPhotoUrl ? visit.petName : "No pet photo uploaded"}
+                style={styles.petAvatar}
+              />
+              {!visit.petPhotoUrl && <span>No pet photo uploaded</span>}
+            </div>
           </div>
 
           <div style={styles.syncRow}>
@@ -591,7 +623,7 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
               <p style={styles.eyebrow}>Visit overview</p>
               <h2 style={styles.overviewTitle}>{visit.petName}</h2>
               <p style={styles.text}>
-                {[visit.breed || visit.species, visit.visitType || "Emergency visit"]
+                {[visit.breed || visit.species, visit.petAge?.display, visit.visitType || "Emergency visit"]
                   .filter(Boolean)
                   .join(" - ")}
               </p>
@@ -652,6 +684,40 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
             <button type="button" style={styles.quickActionButton} onClick={() => jumpToSection("discharge")}>
               Discharge
             </button>
+          </div>
+        </section>
+
+        <section style={styles.card}>
+          <div style={styles.sectionHeader}>
+            <div>
+              <h2 style={styles.sectionTitle}>Visit Contacts</h2>
+              <p style={styles.text}>People connected to updates for this visit.</p>
+            </div>
+          </div>
+          <div style={styles.contactStack}>
+            <div style={styles.contactCard}>
+              <span style={styles.actionEyebrow}>Primary owner</span>
+              <strong>{[visit.ownerFirstName, visit.ownerLastName].filter(Boolean).join(" ") || "Owner"}</strong>
+              <span>{visit.phone || "Phone not provided"}</span>
+              <span>{visit.ownerEmail || "Email not provided"}</span>
+              <span style={styles.permissionBadge}>Full access</span>
+            </div>
+            {(visit.secondaryContacts || []).map((contact) => (
+              <div key={`${contact.name}-${contact.phone}-${contact.email}`} style={styles.contactCard}>
+                <span style={styles.actionEyebrow}>Additional contact</span>
+                <strong>{contact.name}</strong>
+                <span>{contact.relationship}</span>
+                <span>{contact.phone || "Phone not provided"}</span>
+                <span>{contact.email || "Email not provided"}</span>
+                <span style={styles.permissionBadge}>
+                  {contact.permissionLevel === "Can approve estimates/forms"
+                    ? "Authorized approver"
+                    : contact.permissionLevel === "Can discuss care"
+                      ? "Care contact"
+                      : "Updates only"}
+                </span>
+              </div>
+            ))}
           </div>
         </section>
 
@@ -1151,6 +1217,16 @@ const styles: Record<string, CSSProperties> = {
     objectFit: "cover",
     border: "4px solid #e7fbf7",
   },
+  petAvatarWrap: {
+    alignItems: "center",
+    color: "#087f78",
+    display: "grid",
+    fontSize: 10,
+    fontWeight: 900,
+    gap: 5,
+    justifyItems: "center",
+    textAlign: "center",
+  },
   syncRow: {
     borderTop: "1px solid #eef3f4",
     color: "#64717d",
@@ -1331,6 +1407,30 @@ const styles: Record<string, CSSProperties> = {
     display: "grid",
     gap: 10,
     marginTop: 12,
+  },
+  contactStack: {
+    display: "grid",
+    gap: 10,
+  },
+  contactCard: {
+    background: "#fbffff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    color: "#52606d",
+    display: "grid",
+    fontSize: 13,
+    gap: 4,
+    padding: 12,
+  },
+  permissionBadge: {
+    background: "#e6f7f5",
+    border: "1px solid #bfe9e0",
+    borderRadius: 999,
+    color: "#087f78",
+    fontSize: 11,
+    fontWeight: 900,
+    justifySelf: "start",
+    padding: "5px 8px",
   },
   actionNeededCard: {
     background: "#fff7ed",

@@ -431,6 +431,47 @@ const getPetPhotoFromNotes = (notes: string) => {
   return match?.[1] || "";
 };
 
+const getIntakeFieldFromReason = (reason: string, label: string) => {
+  const match = reason
+    .split("\n")
+    .find((line) => line.toLowerCase().startsWith(label.toLowerCase() + ":"));
+  return match?.split(":").slice(1).join(":").trim() || "";
+};
+
+const getSecondaryContactsFromReason = (reason: string) => {
+  const name = getIntakeFieldFromReason(reason, "Additional contact");
+  const relationship = getIntakeFieldFromReason(reason, "Additional contact relationship");
+  const phone = getIntakeFieldFromReason(reason, "Additional contact phone");
+  const email = getIntakeFieldFromReason(reason, "Additional contact email");
+  const permissionLevel = getIntakeFieldFromReason(reason, "Additional contact permission");
+
+  if (![name, relationship, phone, email].some(Boolean)) return [];
+  return [
+    {
+      name: name || "Not provided",
+      relationship: relationship || "Not provided",
+      phone,
+      email,
+      permissionLevel: permissionLevel || "Updates only",
+    },
+  ];
+};
+
+const getPetAgeFromReason = (reason: string) => {
+  const display =
+    getIntakeFieldFromReason(reason, "Pet age") ||
+    getIntakeFieldFromReason(reason, "Approx. age");
+  const birthdateLine = getIntakeFieldFromReason(reason, "Pet birthdate");
+
+  return {
+    ageValue: "",
+    ageUnit: "",
+    birthdate: birthdateLine,
+    ageUnknown: display.toLowerCase() === "unknown",
+    display,
+  };
+};
+
 const mapVisit = (visit: DbRecord) => {
   const owner = recordValue(visit.owners);
   const pet = recordValue(visit.pets);
@@ -452,6 +493,7 @@ const mapVisit = (visit: DbRecord) => {
         ? (visit.updates as Update[])
         : [];
   const clinicNotes = stringValue(visit.clinic_notes);
+  const reason = stringValue(visit.reason);
 
   return {
     id: stringValue(visit.id),
@@ -464,7 +506,7 @@ const mapVisit = (visit: DbRecord) => {
     ownerLastName: stringValue(owner.last_name) || stringValue(visit.owner_last_name),
     ownerEmail: stringValue(owner.email),
     phone: stringValue(owner.phone) || stringValue(visit.phone),
-    reason: stringValue(visit.reason),
+    reason,
     visitType: stringValue(visit.visit_type),
     referralName: stringValue(visit.referral_name),
     beenHereBefore: stringValue(visit.been_here_before),
@@ -480,6 +522,14 @@ const mapVisit = (visit: DbRecord) => {
     workflowStep: stringValue(visit.workflow_step),
     forms: Array.isArray(visit.forms) ? visit.forms : [],
     petPhotoUrl: getPetPhotoFromNotes(clinicNotes),
+    primaryContact: {
+      firstName: stringValue(owner.first_name) || stringValue(visit.owner_first_name),
+      lastName: stringValue(owner.last_name) || stringValue(visit.owner_last_name),
+      phone: stringValue(owner.phone) || stringValue(visit.phone),
+      email: stringValue(owner.email),
+    },
+    secondaryContacts: getSecondaryContactsFromReason(reason),
+    petAge: getPetAgeFromReason(reason),
   };
 };
 

@@ -23,6 +23,29 @@ type VisitForm = {
   declined_at: string | null;
 };
 
+type PrimaryContact = {
+  firstName: string;
+  lastName: string;
+  phone: string;
+  email: string;
+};
+
+type SecondaryContact = {
+  name: string;
+  relationship: string;
+  phone: string;
+  email: string;
+  permissionLevel: string;
+};
+
+type PetAgeInfo = {
+  ageValue: string;
+  ageUnit: string;
+  birthdate: string;
+  ageUnknown: boolean;
+  display: string;
+};
+
 type Visit = {
   id: string;
   createdAt: string;
@@ -52,6 +75,9 @@ type Visit = {
   petPhotoUrl: string;
   accessToken: string;
   accessUrl: string;
+  primaryContact?: PrimaryContact;
+  secondaryContacts?: SecondaryContact[];
+  petAge?: PetAgeInfo;
 };
 
 type StaffRole = "Front Desk" | "Technician" | "Veterinarian" | "Admin";
@@ -165,8 +191,42 @@ const getIntakeField = (visit: Visit, label: string) => {
   return match?.split(":").slice(1).join(":").trim() || "Not provided";
 };
 
+const getOptionalIntakeField = (visit: Visit, label: string) => {
+  const value = getIntakeField(visit, label);
+  return value === "Not provided" ? "" : value;
+};
+
+const getSecondaryContactFromVisit = (visit: Visit): SecondaryContact | null => {
+  if (visit.secondaryContacts?.length) return visit.secondaryContacts[0];
+
+  const name = getOptionalIntakeField(visit, "Additional contact");
+  const relationship = getOptionalIntakeField(visit, "Additional contact relationship");
+  const phone = getOptionalIntakeField(visit, "Additional contact phone");
+  const email = getOptionalIntakeField(visit, "Additional contact email");
+  const permissionLevel = getOptionalIntakeField(visit, "Additional contact permission");
+
+  if (![name, relationship, phone, email].some(Boolean)) return null;
+  return {
+    name: name || "Not provided",
+    relationship: relationship || "Not provided",
+    phone,
+    email,
+    permissionLevel: permissionLevel || "Updates only",
+  };
+};
+
+const getPermissionBadgeLabel = (permissionLevel: string) => {
+  if (permissionLevel === "Can approve estimates/forms") return "Authorized approver";
+  if (permissionLevel === "Can discuss care") return "Care contact";
+  return "Updates only";
+};
+
 const getIntakeSummary = (visit: Visit) => ({
-  age: getIntakeField(visit, "Approx. age"),
+  age:
+    getOptionalIntakeField(visit, "Pet age") ||
+    getOptionalIntakeField(visit, "Approx. age") ||
+    "Not provided",
+  birthdate: getIntakeField(visit, "Pet birthdate"),
   weight: getIntakeField(visit, "Weight"),
   chiefComplaint: getIntakeField(visit, "Emergency reason"),
   symptom: getIntakeField(visit, "Primary symptom"),
@@ -743,6 +803,7 @@ export default function ClinicPatientDetailClient({ patientId }: { patientId: st
   const statusChips = getStatusChips(visit, doctor);
   const consentStatus = getEmergencyConsentStatus(visit);
   const patientPhotoUrl = visit.petPhotoUrl || getPetPhotoFromNotes(visit.clinicNotes);
+  const secondaryContact = getSecondaryContactFromVisit(visit);
 
   return (
     <main style={styles.screen}>
@@ -758,13 +819,13 @@ export default function ClinicPatientDetailClient({ patientId }: { patientId: st
         <div style={styles.patientHeaderTop}>
           <img
             src={patientPhotoUrl || defaultPetAvatarSrc}
-            alt={patientPhotoUrl ? visit.petName : "No photo uploaded"}
+            alt={patientPhotoUrl ? visit.petName : "No pet photo uploaded"}
             style={styles.patientAvatar}
           />
           <div style={styles.patientHeaderCopy}>
             <h1 style={styles.petName}>{visit.petName}</h1>
             <p style={styles.metaLine}>{getCompactPatientMetaLine(visit)}</p>
-            {!patientPhotoUrl && <span style={styles.noPhotoLabel}>No photo uploaded</span>}
+            {!patientPhotoUrl && <span style={styles.noPhotoLabel}>No pet photo uploaded</span>}
           </div>
         </div>
         <div style={styles.metaList}>
@@ -810,6 +871,39 @@ export default function ClinicPatientDetailClient({ patientId }: { patientId: st
         <a style={styles.quickAction} href={"sms:" + visit.phone}>Text</a>
         <a style={styles.quickAction} href={visit.ownerEmail ? "mailto:" + visit.ownerEmail : undefined}>Email</a>
         <a style={styles.quickAction} href={visit.accessUrl || "#"} target="_blank" rel="noreferrer">Owner View</a>
+      </section>
+
+      <section style={styles.contactPanel}>
+        <div style={styles.contactCard}>
+          <span style={styles.eyebrow}>Primary owner</span>
+          <strong>{getOwnerName(visit)}</strong>
+          <span>Phone: {visit.phone || "Not provided"}</span>
+          <span>Email: {visit.ownerEmail || "Not provided"}</span>
+          <span style={styles.permissionBadge}>Full access</span>
+          <div style={styles.contactActionRow}>
+            <a style={styles.contactAction} href={"tel:" + visit.phone}>Call</a>
+            <a style={styles.contactAction} href={"sms:" + visit.phone}>Text</a>
+            <a style={styles.contactAction} href={visit.ownerEmail ? "mailto:" + visit.ownerEmail : undefined}>Email</a>
+          </div>
+        </div>
+
+        {secondaryContact && (
+          <div style={styles.contactCard}>
+            <span style={styles.eyebrow}>Additional contact</span>
+            <strong>{secondaryContact.name}</strong>
+            <span>Relationship: {secondaryContact.relationship}</span>
+            <span>Phone: {secondaryContact.phone || "Not provided"}</span>
+            <span>Email: {secondaryContact.email || "Not provided"}</span>
+            <span style={styles.permissionBadge}>
+              {getPermissionBadgeLabel(secondaryContact.permissionLevel)}
+            </span>
+            <div style={styles.contactActionRow}>
+              <a style={styles.contactAction} href={secondaryContact.phone ? "tel:" + secondaryContact.phone : undefined}>Call</a>
+              <a style={styles.contactAction} href={secondaryContact.phone ? "sms:" + secondaryContact.phone : undefined}>Text</a>
+              <a style={styles.contactAction} href={secondaryContact.email ? "mailto:" + secondaryContact.email : undefined}>Email</a>
+            </div>
+          </div>
+        )}
       </section>
 
       <section style={styles.consentPanel}>
@@ -1131,6 +1225,50 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "center",
     minHeight: 38,
     textDecoration: "none",
+  },
+  contactPanel: {
+    background: "#fbffff",
+    borderBottom: "1px solid #e6eef0",
+    display: "grid",
+    gap: 10,
+    padding: "12px",
+  },
+  contactCard: {
+    background: "#ffffff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    color: "#52606d",
+    display: "grid",
+    fontSize: 13,
+    gap: 4,
+    padding: 12,
+  },
+  contactActionRow: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 6,
+  },
+  contactAction: {
+    background: "#e6f7f5",
+    border: "1px solid #bfe9e0",
+    borderRadius: 999,
+    color: "#087f78",
+    fontSize: 12,
+    fontWeight: 900,
+    padding: "6px 10px",
+    textDecoration: "none",
+  },
+  permissionBadge: {
+    background: "#f0fbf8",
+    border: "1px solid #bfe9e0",
+    borderRadius: 999,
+    color: "#087f78",
+    fontSize: 11,
+    fontWeight: 900,
+    justifySelf: "start",
+    marginTop: 4,
+    padding: "5px 8px",
   },
   consentPanel: {
     alignItems: "center",

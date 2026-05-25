@@ -27,6 +27,29 @@ type VisitForm = {
   declined_at: string | null;
 };
 
+type PrimaryContact = {
+  firstName: string;
+  lastName: string;
+  phone: string;
+  email: string;
+};
+
+type SecondaryContact = {
+  name: string;
+  relationship: string;
+  phone: string;
+  email: string;
+  permissionLevel: string;
+};
+
+type PetAgeInfo = {
+  ageValue: string;
+  ageUnit: string;
+  birthdate: string;
+  ageUnknown: boolean;
+  display: string;
+};
+
 type Visit = {
   id: string;
   createdAt: string;
@@ -56,6 +79,9 @@ type Visit = {
   petPhotoUrl: string;
   accessToken: string;
   accessUrl: string;
+  primaryContact?: PrimaryContact;
+  secondaryContacts?: SecondaryContact[];
+  petAge?: PetAgeInfo;
 };
 
 type VisitDraft = {
@@ -64,6 +90,11 @@ type VisitDraft = {
   otherSpecies: string;
   breed: string;
   petAge: string;
+  petAgeValue: string;
+  petAgeUnit: string;
+  petBirthdate: string;
+  petAgeUnknown: string;
+  petAgeMode: string;
   sex: string;
   spayedNeutered: string;
   weight: string;
@@ -81,6 +112,12 @@ type VisitDraft = {
   ownerLastName: string;
   phone: string;
   email: string;
+  secondaryContactEnabled: string;
+  secondaryContactName: string;
+  secondaryContactRelationship: string;
+  secondaryContactPhone: string;
+  secondaryContactEmail: string;
+  secondaryContactPermission: string;
   visitType: string;
   referralName: string;
   reason: string;
@@ -96,6 +133,11 @@ const initialVisitDraft: VisitDraft = {
   otherSpecies: "",
   breed: "",
   petAge: "",
+  petAgeValue: "",
+  petAgeUnit: "Years",
+  petBirthdate: "",
+  petAgeUnknown: "",
+  petAgeMode: "estimate",
   sex: "",
   spayedNeutered: "",
   weight: "",
@@ -113,6 +155,12 @@ const initialVisitDraft: VisitDraft = {
   ownerLastName: "",
   phone: "",
   email: "",
+  secondaryContactEnabled: "",
+  secondaryContactName: "",
+  secondaryContactRelationship: "",
+  secondaryContactPhone: "",
+  secondaryContactEmail: "",
+  secondaryContactPermission: "Updates only",
   visitType: "Walk-in",
   referralName: "",
   reason: "",
@@ -571,6 +619,92 @@ const removeDoctorMetadata = (notes: string) =>
 const getPetPhotoFromNotes = (notes: string) => {
   const match = notes.match(petPhotoMetaPattern);
   return match?.[1] || "";
+};
+
+const pluralizeUnit = (value: string, unit: string) => {
+  const normalizedUnit = unit.toLowerCase();
+  const numberValue = Number(value);
+  const singular =
+    normalizedUnit.startsWith("year")
+      ? "year"
+      : normalizedUnit.startsWith("month")
+        ? "month"
+        : normalizedUnit.startsWith("week")
+          ? "week"
+          : normalizedUnit || "year";
+  return `${value} ${numberValue === 1 ? singular : singular + "s"}`;
+};
+
+const formatBirthdateDisplay = (birthdate: string) => {
+  if (!birthdate) return "";
+  const [year, month, day] = birthdate.split("-");
+  if (!year || !month || !day) return birthdate;
+  return `${month}/${day}/${year}`;
+};
+
+const getApproxAgeFromBirthdate = (birthdate: string) => {
+  if (!birthdate) return "";
+  const [year, month, day] = birthdate.split("-").map(Number);
+  if (!year || !month || !day) return "";
+  const birth = new Date(year, month - 1, day);
+  const now = new Date();
+  if (Number.isNaN(birth.getTime()) || birth > now) return "";
+  const days = Math.max(0, Math.floor((now.getTime() - birth.getTime()) / 86400000));
+  const years = Math.floor(days / 365.25);
+  if (years >= 1) return `approx. ${years} ${years === 1 ? "year" : "years"} old`;
+  const months = Math.floor(days / 30.44);
+  if (months >= 1) return `approx. ${months} ${months === 1 ? "month" : "months"} old`;
+  const weeks = Math.max(1, Math.floor(days / 7));
+  return `approx. ${weeks} ${weeks === 1 ? "week" : "weeks"} old`;
+};
+
+const getPetAgeDisplayFromDraft = (draft: VisitDraft) => {
+  if (draft.petAgeUnknown === "Yes" || draft.petAgeUnit === "Unknown") return "Unknown";
+  if (draft.petAgeMode === "birthdate" && draft.petBirthdate) {
+    const formattedBirthdate = formatBirthdateDisplay(draft.petBirthdate);
+    const approxAge = getApproxAgeFromBirthdate(draft.petBirthdate);
+    return `Birthdate: ${formattedBirthdate}${approxAge ? ` - ${approxAge}` : ""}`;
+  }
+  if (draft.petAgeMode !== "birthdate" && draft.petAgeValue.trim()) return pluralizeUnit(draft.petAgeValue.trim(), draft.petAgeUnit || "Years");
+  if (draft.petAge.trim()) return draft.petAge.trim();
+  return "";
+};
+
+const getIntakeFieldFromReason = (reason: string, label: string) => {
+  const match = reason
+    .split("\n")
+    .find((line) => line.toLowerCase().startsWith(label.toLowerCase() + ":"));
+  return match?.split(":").slice(1).join(":").trim() || "";
+};
+
+const getSecondaryContactFromReason = (reason: string): SecondaryContact | null => {
+  const name = getIntakeFieldFromReason(reason, "Additional contact");
+  const relationship = getIntakeFieldFromReason(reason, "Additional contact relationship");
+  const phone = getIntakeFieldFromReason(reason, "Additional contact phone");
+  const email = getIntakeFieldFromReason(reason, "Additional contact email");
+  const permissionLevel = getIntakeFieldFromReason(reason, "Additional contact permission");
+
+  if (![name, relationship, phone, email].some(Boolean)) return null;
+  return {
+    name: name || "Not provided",
+    relationship: relationship || "Not provided",
+    phone,
+    email,
+    permissionLevel: permissionLevel || "Updates only",
+  };
+};
+
+const getSecondaryContacts = (visit: Visit) =>
+  visit.secondaryContacts?.length
+    ? visit.secondaryContacts
+    : getSecondaryContactFromReason(visit.reason)
+      ? [getSecondaryContactFromReason(visit.reason) as SecondaryContact]
+      : [];
+
+const getPermissionBadgeLabel = (permissionLevel: string) => {
+  if (permissionLevel === "Can approve estimates/forms") return "Authorized approver";
+  if (permissionLevel === "Can discuss care") return "Care contact";
+  return "Updates only";
 };
 
 const removePetPhotoMetadata = (notes: string) =>
@@ -1589,7 +1723,11 @@ export function MyPawLinkApp({
         : "No media attached";
 
     return {
-      age: getIntakeField(visit, "Approx. age"),
+      age:
+        getIntakeField(visit, "Pet age") !== "Not provided"
+          ? getIntakeField(visit, "Pet age")
+          : getIntakeField(visit, "Approx. age"),
+      birthdate: getIntakeField(visit, "Pet birthdate"),
       sex: getIntakeField(visit, "Sex"),
       weight: getIntakeField(visit, "Weight"),
       chiefComplaint: getIntakeField(visit, "Emergency reason"),
@@ -1956,6 +2094,8 @@ export function MyPawLinkApp({
     otherSpecies: "pet type",
     ownerFirstName: "owner first name",
     ownerLastName: "owner last name",
+    petAgeValue: "pet age",
+    petBirthdate: "pet birthdate",
     petName: "pet name",
     phone: "phone number",
     presentingComplaint: "presenting complaint",
@@ -1973,6 +2113,11 @@ export function MyPawLinkApp({
     transferTime: "time of transfer",
     visitType: "visit type",
     whenStartedDays: "when symptoms started",
+    secondaryContactEmail: "additional contact email",
+    secondaryContactName: "additional contact name",
+    secondaryContactPermission: "additional contact permission",
+    secondaryContactPhone: "additional contact phone",
+    secondaryContactRelationship: "additional contact relationship",
   };
 
   const getRequiredFieldLabel = (field: Element | null) => {
@@ -2047,6 +2192,20 @@ export function MyPawLinkApp({
   const sexOptions = ["Male", "Female", "Unknown"];
   const spayedOptions = ["Yes", "No", "Not sure"];
   const visitTypeOptions = ["Walk-in", "Vet referral", "Follow up"];
+  const ageUnitOptions = ["Years", "Months", "Weeks", "Unknown"];
+  const relationshipOptions = [
+    "Spouse / partner",
+    "Parent",
+    "Pet sitter",
+    "Family member",
+    "Friend",
+    "Other",
+  ];
+  const permissionLevelOptions = [
+    "Updates only",
+    "Can discuss care",
+    "Can approve estimates/forms",
+  ];
 
   const clearVisitFeedback = () => {
     if (visitSubmitError) setVisitSubmitError("");
@@ -2074,6 +2233,54 @@ export function MyPawLinkApp({
 
       if (field === "visitType" && value !== "Vet referral") {
         next.referralName = "";
+      }
+
+      if (field === "petAgeUnit" && value === "Unknown") {
+        next.petAgeValue = "";
+        next.petBirthdate = "";
+        next.petAgeUnknown = "Yes";
+        next.petAgeMode = "unknown";
+      }
+
+      if (field === "petAgeValue" && value) {
+        next.petAgeUnknown = "";
+        next.petBirthdate = "";
+        next.petAgeMode = "estimate";
+        if (next.petAgeUnit === "Unknown") next.petAgeUnit = "Years";
+      }
+
+      if (field === "petBirthdate" && value) {
+        next.petAgeUnknown = "";
+        next.petAgeValue = "";
+        next.petAgeMode = "birthdate";
+        next.petAgeUnit = "Years";
+      }
+
+      if (field === "petAgeUnknown" && value === "Yes") {
+        next.petAgeValue = "";
+        next.petBirthdate = "";
+        next.petAgeUnit = "Unknown";
+        next.petAgeMode = "unknown";
+      }
+
+      if (field === "petAgeMode" && value === "estimate") {
+        next.petAgeUnknown = "";
+        next.petBirthdate = "";
+        if (next.petAgeUnit === "Unknown") next.petAgeUnit = "Years";
+      }
+
+      if (field === "petAgeMode" && value === "birthdate") {
+        next.petAgeUnknown = "";
+        next.petAgeValue = "";
+        if (next.petAgeUnit === "Unknown") next.petAgeUnit = "Years";
+      }
+
+      if (field === "secondaryContactEnabled" && value !== "Yes") {
+        next.secondaryContactName = "";
+        next.secondaryContactRelationship = "";
+        next.secondaryContactPhone = "";
+        next.secondaryContactEmail = "";
+        next.secondaryContactPermission = "Updates only";
       }
 
       return next;
@@ -2108,9 +2315,22 @@ export function MyPawLinkApp({
         ? Object.values(requiredByStep).flat()
         : requiredByStep[step] || [];
 
-    return fields
+    const missingFields = fields
       .filter((field) => !String(visitDraft[field] || "").trim())
       .map((field) => requiredFieldLabels[field] || "required information");
+
+    if (step === 1 || step === "all") {
+      if (visitDraft.secondaryContactEnabled === "Yes") {
+        if (!visitDraft.secondaryContactName.trim()) missingFields.push("additional contact name");
+        if (!visitDraft.secondaryContactRelationship.trim()) missingFields.push("additional contact relationship");
+        if (!visitDraft.secondaryContactPermission.trim()) missingFields.push("additional contact permission");
+        if (!visitDraft.secondaryContactPhone.trim() && !visitDraft.secondaryContactEmail.trim()) {
+          missingFields.push("additional contact phone or email");
+        }
+      }
+    }
+
+    return missingFields;
   };
 
   const goToVisitWizardStep = (step: number) => {
@@ -2381,7 +2601,23 @@ export function MyPawLinkApp({
   setSubmittingVisit(true);
 
   const form = new FormData(e.currentTarget);
-  const petAge = String(form.get("petAge") || "").trim();
+  const petAgeDisplay = getPetAgeDisplayFromDraft(visitDraft) || "Not provided";
+  const secondaryContact =
+    visitDraft.secondaryContactEnabled === "Yes" &&
+    [
+      visitDraft.secondaryContactName,
+      visitDraft.secondaryContactRelationship,
+      visitDraft.secondaryContactPhone,
+      visitDraft.secondaryContactEmail,
+    ].some((value) => value.trim())
+      ? {
+          name: visitDraft.secondaryContactName.trim(),
+          relationship: visitDraft.secondaryContactRelationship.trim(),
+          phone: visitDraft.secondaryContactPhone.trim(),
+          email: visitDraft.secondaryContactEmail.trim(),
+          permissionLevel: visitDraft.secondaryContactPermission || "Updates only",
+        }
+      : null;
   const weight = String(form.get("weight") || "").trim();
   const allergies = String(form.get("allergies") || "");
   const allergyDetails = String(form.get("allergyDetails") || "").trim();
@@ -2396,7 +2632,10 @@ export function MyPawLinkApp({
         : "No photo or video selected";
   const intakeSummary = [
     "Emergency intake",
-    `Approx. age: ${petAge || "Not provided"}`,
+    `Pet age: ${petAgeDisplay}`,
+    visitDraft.petBirthdate && visitDraft.petAgeMode === "birthdate"
+      ? `Pet birthdate: ${formatBirthdateDisplay(visitDraft.petBirthdate)} - ${getApproxAgeFromBirthdate(visitDraft.petBirthdate) || "approx. age unavailable"}`
+      : "",
     `Sex: ${String(form.get("sex") || "Not provided")}`,
     `Spayed/neutered: ${String(form.get("spayedNeutered") || "Not provided")}`,
     `Weight: ${weight ? `${weight} lb` : "Not provided"}`,
@@ -2411,6 +2650,15 @@ export function MyPawLinkApp({
     `Allergies: ${allergies || "Not provided"}${
       allergies === "Yes" && allergyDetails ? ` - ${allergyDetails}` : ""
     }`,
+    secondaryContact ? `Additional contact: ${secondaryContact.name || "Not provided"}` : "",
+    secondaryContact
+      ? `Additional contact relationship: ${secondaryContact.relationship || "Not provided"}`
+      : "",
+    secondaryContact ? `Additional contact phone: ${secondaryContact.phone || "Not provided"}` : "",
+    secondaryContact ? `Additional contact email: ${secondaryContact.email || "Not provided"}` : "",
+    secondaryContact
+      ? `Additional contact permission: ${secondaryContact.permissionLevel || "Updates only"}`
+      : "",
     mediaNote,
     `Additional details: ${additionalDetails || "None provided"}`,
   ].join("\n");
@@ -3141,12 +3389,87 @@ export function MyPawLinkApp({
                         onChange={(e) => updateVisitDraft("petName", e.target.value)}
                         placeholder="Pet name"
                       />
-                      <input
-                        style={styles.input}
-                        value={visitDraft.petAge}
-                        onChange={(e) => updateVisitDraft("petAge", e.target.value)}
-                        placeholder="Approx. age (optional)"
-                      />
+                    </div>
+
+                    <div style={styles.ageSection}>
+                      <div style={styles.ageHeader}>
+                        <span style={styles.visitChoiceLabel}>Pet age</span>
+                        <span style={styles.agePreview}>
+                          {getPetAgeDisplayFromDraft(visitDraft) || "Optional"}
+                        </span>
+                      </div>
+
+                      {visitDraft.petAgeMode === "unknown" || visitDraft.petAgeUnknown === "Yes" ? (
+                        <div style={styles.ageUnknownBox}>
+                          <strong>Age: Unknown</strong>
+                          <span>The clinic will confirm age during intake if needed.</span>
+                        </div>
+                      ) : visitDraft.petAgeMode === "birthdate" ? (
+                        <div style={styles.visitFieldGrid}>
+                          <input
+                            style={styles.input}
+                            type="date"
+                            value={visitDraft.petBirthdate}
+                            onChange={(e) => updateVisitDraft("petBirthdate", e.target.value)}
+                            aria-label="Pet birthdate"
+                          />
+                        </div>
+                      ) : (
+                        <div style={styles.ageInputRow}>
+                          <input
+                            style={styles.input}
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={visitDraft.petAgeValue}
+                            onChange={(e) => updateVisitDraft("petAgeValue", e.target.value)}
+                            placeholder="Age number"
+                            inputMode="numeric"
+                          />
+                          <select
+                            style={styles.clinicCompactSelect}
+                            value={visitDraft.petAgeUnit}
+                            onChange={(e) => updateVisitDraft("petAgeUnit", e.target.value)}
+                            aria-label="Age unit"
+                          >
+                            {ageUnitOptions.map((unit) => (
+                              <option key={unit} value={unit}>
+                                {unit}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      <div style={styles.ageLinkRow}>
+                        <button
+                          type="button"
+                          style={styles.inlineTextButton}
+                          onClick={() => {
+                            updateVisitDraft("petAgeMode", "estimate");
+                          }}
+                        >
+                          Estimate age
+                        </button>
+                        <button
+                          type="button"
+                          style={styles.inlineTextButton}
+                          onClick={() => {
+                            updateVisitDraft("petAgeMode", "birthdate");
+                          }}
+                        >
+                          I know my pet&apos;s birthday
+                        </button>
+                        <button
+                          type="button"
+                          style={styles.inlineTextButton}
+                          onClick={() => {
+                            updateVisitDraft("petAgeUnknown", "Yes");
+                          }}
+                        >
+                          I&apos;m not sure
+                        </button>
+                      </div>
                     </div>
 
                     {renderVisitChoiceGroup("Pet type", "species", ["Dog", "Cat", "Other"])}
@@ -3198,6 +3521,87 @@ export function MyPawLinkApp({
 
                     {renderVisitChoiceGroup("Sex", "sex", sexOptions)}
                     {renderVisitChoiceGroup("Spayed/neutered?", "spayedNeutered", spayedOptions)}
+
+                    <div style={styles.optionalContactBox}>
+                      {visitDraft.secondaryContactEnabled !== "Yes" ? (
+                        <button
+                          type="button"
+                          style={styles.optionalContactButton}
+                          onClick={() => updateVisitDraft("secondaryContactEnabled", "Yes")}
+                        >
+                          + Add another contact
+                        </button>
+                      ) : (
+                        <div style={styles.optionalContactForm}>
+                          <div style={styles.optionalContactHeader}>
+                            <div>
+                              <h4 style={styles.optionalContactTitle}>Additional Contact</h4>
+                              <p style={styles.visitStepText}>
+                                Add another person who can receive updates or help make decisions for this visit.
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              style={styles.inlineTextButton}
+                              onClick={() => updateVisitDraft("secondaryContactEnabled", "")}
+                            >
+                              Remove
+                            </button>
+                          </div>
+
+                          <div style={styles.visitFieldGrid}>
+                            <input
+                              style={styles.input}
+                              value={visitDraft.secondaryContactName}
+                              onChange={(e) => updateVisitDraft("secondaryContactName", e.target.value)}
+                              placeholder="Contact name"
+                              autoComplete="name"
+                            />
+                            <select
+                              style={styles.clinicCompactSelect}
+                              value={visitDraft.secondaryContactRelationship}
+                              onChange={(e) => updateVisitDraft("secondaryContactRelationship", e.target.value)}
+                              aria-label="Relationship to pet"
+                            >
+                              <option value="">Relationship to pet</option>
+                              {relationshipOptions.map((relationship) => (
+                                <option key={relationship} value={relationship}>
+                                  {relationship}
+                                </option>
+                              ))}
+                            </select>
+                            <input
+                              style={styles.input}
+                              value={visitDraft.secondaryContactPhone}
+                              onChange={(e) => updateVisitDraft("secondaryContactPhone", e.target.value)}
+                              placeholder="Phone number"
+                              inputMode="tel"
+                              autoComplete="tel"
+                            />
+                            <input
+                              style={styles.input}
+                              value={visitDraft.secondaryContactEmail}
+                              onChange={(e) => updateVisitDraft("secondaryContactEmail", e.target.value)}
+                              placeholder="Email"
+                              inputMode="email"
+                              autoComplete="email"
+                            />
+                            <select
+                              style={styles.clinicCompactSelect}
+                              value={visitDraft.secondaryContactPermission}
+                              onChange={(e) => updateVisitDraft("secondaryContactPermission", e.target.value)}
+                              aria-label="Permission level"
+                            >
+                              {permissionLevelOptions.map((permission) => (
+                                <option key={permission} value={permission}>
+                                  {permission}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </section>
                 )}
 
@@ -3313,22 +3717,42 @@ export function MyPawLinkApp({
 
                     <div style={styles.visitReviewGrid}>
                       <div style={styles.visitReviewCard}>
-                        <span>Pet</span>
-                        <strong>{visitDraft.petName || "Missing pet name"}</strong>
-                        <small>
-                          {[visitDraft.species, visitDraft.breed, visitDraft.petAge]
-                            .filter(Boolean)
-                            .join(" / ") || "Species needed"}
-                        </small>
-                      </div>
-                      <div style={styles.visitReviewCard}>
-                        <span>Contact</span>
+                        <span>Primary contact</span>
                         <strong>
                           {[visitDraft.ownerFirstName, visitDraft.ownerLastName]
                             .filter(Boolean)
                             .join(" ") || "Missing owner name"}
                         </strong>
-                        <small>{visitDraft.phone || visitDraft.email || "Phone and email needed"}</small>
+                        <small>{visitDraft.phone || "Phone needed"}</small>
+                        <small>{visitDraft.email || "Email needed"}</small>
+                      </div>
+                      <div style={styles.visitReviewCard}>
+                        <span>Additional contact</span>
+                        {visitDraft.secondaryContactEnabled === "Yes" ? (
+                          <>
+                            <strong>{visitDraft.secondaryContactName || "Missing contact name"}</strong>
+                            <small>{visitDraft.secondaryContactRelationship || "Relationship needed"}</small>
+                            <small>{visitDraft.secondaryContactPhone || visitDraft.secondaryContactEmail || "Phone or email needed"}</small>
+                            <small>{visitDraft.secondaryContactPermission || "Updates only"}</small>
+                          </>
+                        ) : (
+                          <>
+                            <strong>None added</strong>
+                            <small>Primary owner remains the decision-maker.</small>
+                          </>
+                        )}
+                      </div>
+                      <div style={styles.visitReviewCard}>
+                        <span>Pet details</span>
+                        <strong>{visitDraft.petName || "Missing pet name"}</strong>
+                        <small>
+                          {[visitDraft.species, visitDraft.breed]
+                            .filter(Boolean)
+                            .join(" / ") || "Species needed"}
+                        </small>
+                        <small>Age: {getPetAgeDisplayFromDraft(visitDraft) || "Not provided"}</small>
+                        <small>Sex: {visitDraft.sex || "Not provided"}</small>
+                        <small>Spayed/neutered: {visitDraft.spayedNeutered || "Not provided"}</small>
                       </div>
                       <div style={styles.visitReviewCard}>
                         <span>Concern</span>
@@ -5041,6 +5465,11 @@ export function MyPawLinkApp({
                               setSelectedReferralId(referral.id);
                             }}
                           >
+                            <img
+                              src={defaultPetAvatarSrc}
+                              alt="No pet photo uploaded"
+                              style={styles.patientListAvatar}
+                            />
                             <span style={styles.patientListSummary}>
                               <strong>{referral.petName}</strong>
                               <span>
@@ -5105,6 +5534,11 @@ export function MyPawLinkApp({
                               style={styles.patientListCard}
                               onClick={() => openPatientRecord(visit.id)}
                             >
+                              <img
+                                src={getPetPhoto(visit)}
+                                alt={getPetPhoto(visit) === defaultPetAvatarSrc ? "No pet photo uploaded" : visit.petName}
+                                style={styles.patientListAvatar}
+                              />
                               <span style={styles.patientListSummary}>
                                 <strong>{visit.petName}</strong>
                                 <span>{getCompactPatientMetaLine(visit)}</span>
@@ -5283,6 +5717,10 @@ export function MyPawLinkApp({
                       <strong>{selectedVisit.breed || "Not provided"}</strong>
                     </div>
                     <div style={styles.ownerInfoCard}>
+                      <span>Age</span>
+                      <strong>{getIntakeSummary(selectedVisit).age || "Not provided"}</strong>
+                    </div>
+                    <div style={styles.ownerInfoCard}>
                       <span>Visit type</span>
                       <strong>{selectedVisit.visitType || "Emergency visit"}</strong>
                     </div>
@@ -5314,13 +5752,30 @@ export function MyPawLinkApp({
                     </div>
                     <div style={styles.ownerInfoCard}>
                       <span>Email</span>
-                      <strong>{authUserEmail || "Connected to this visit"}</strong>
+                      <strong>{selectedVisit.ownerEmail || authUserEmail || "Connected to this visit"}</strong>
                     </div>
                     <div style={styles.ownerInfoCard}>
                       <span>Notifications</span>
                       <strong>Updates appear here in MyPawLink</strong>
                     </div>
                   </div>
+
+                  {getSecondaryContacts(selectedVisit).length > 0 && (
+                    <div style={styles.secondaryContactPanel}>
+                      <span style={styles.ownerStatusLabel}>Additional contact</span>
+                      {getSecondaryContacts(selectedVisit).map((contact) => (
+                        <div key={`${contact.name}-${contact.phone}-${contact.email}`} style={styles.secondaryContactCard}>
+                          <strong>{contact.name}</strong>
+                          <span>{contact.relationship}</span>
+                          <span>{contact.phone || "Phone not provided"}</span>
+                          <span>{contact.email || "Email not provided"}</span>
+                          <span style={styles.permissionBadge}>
+                            {getPermissionBadgeLabel(contact.permissionLevel)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -6727,6 +7182,91 @@ const styles: { [key: string]: React.CSSProperties } = {
     gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))",
     gap: 10,
   },
+  ageSection: {
+    background: "#fbffff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    display: "grid",
+    gap: 10,
+    padding: 12,
+  },
+  ageHeader: {
+    alignItems: "center",
+    display: "flex",
+    gap: 10,
+    justifyContent: "space-between",
+  },
+  agePreview: {
+    color: "#087f78",
+    fontSize: 12,
+    fontWeight: 900,
+    textAlign: "right",
+  },
+  ageInputRow: {
+    display: "grid",
+    gap: 10,
+    gridTemplateColumns: "minmax(0, 1fr) minmax(118px, 0.65fr)",
+  },
+  ageUnknownBox: {
+    background: "#f0fbf8",
+    border: "1px solid #bfe9e0",
+    borderRadius: 8,
+    color: "#087f78",
+    display: "grid",
+    fontSize: 13,
+    gap: 3,
+    padding: 10,
+  },
+  ageLinkRow: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  inlineTextButton: {
+    background: "transparent",
+    border: "none",
+    color: "#087f78",
+    cursor: "pointer",
+    fontSize: 12,
+    fontWeight: 900,
+    padding: 0,
+    textDecoration: "underline",
+  },
+  optionalContactBox: {
+    borderTop: "1px solid #eef3f4",
+    paddingTop: 4,
+  },
+  optionalContactButton: {
+    background: "#f0fbf8",
+    border: "1px solid #bfe9e0",
+    borderRadius: 8,
+    color: "#087f78",
+    cursor: "pointer",
+    fontSize: 14,
+    fontWeight: 900,
+    minHeight: 46,
+    padding: "0 12px",
+    width: "100%",
+  },
+  optionalContactForm: {
+    background: "#fbffff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    display: "grid",
+    gap: 12,
+    padding: 12,
+  },
+  optionalContactHeader: {
+    alignItems: "flex-start",
+    display: "flex",
+    gap: 10,
+    justifyContent: "space-between",
+  },
+  optionalContactTitle: {
+    color: "#102a3a",
+    fontSize: 16,
+    margin: 0,
+  },
   visitChoiceBlock: {
     display: "grid",
     gap: 8,
@@ -7763,10 +8303,18 @@ const styles: { [key: string]: React.CSSProperties } = {
     cursor: "pointer",
     display: "grid",
     gap: 6,
-    gridTemplateColumns: "minmax(0, 1fr) auto",
+    gridTemplateColumns: "44px minmax(0, 1fr) auto",
     minHeight: 62,
     padding: "9px 10px",
     textAlign: "left",
+  },
+  patientListAvatar: {
+    background: "#d8f7f0",
+    border: "2px solid #e7fbf7",
+    borderRadius: "50%",
+    height: 44,
+    objectFit: "cover",
+    width: 44,
   },
   patientListSummary: {
     color: "#52606d",
@@ -7785,7 +8333,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: 12,
     fontWeight: 800,
     gap: 6,
-    gridColumn: "1 / -1",
+    gridColumn: "2 / -1",
   },
   patientListTriageChip: {
     background: "#f8fbff",
@@ -8839,6 +9387,38 @@ ownerInfoCard: {
   display: "grid",
   gap: 4,
   padding: 12,
+},
+
+secondaryContactPanel: {
+  background: "#fbffff",
+  border: "1px solid #dcefeb",
+  borderRadius: 8,
+  display: "grid",
+  gap: 10,
+  padding: 12,
+},
+
+secondaryContactCard: {
+  background: "#ffffff",
+  border: "1px solid #e1ecec",
+  borderRadius: 8,
+  color: "#52606d",
+  display: "grid",
+  fontSize: 13,
+  gap: 4,
+  padding: 12,
+},
+
+permissionBadge: {
+  background: "#e6f7f5",
+  border: "1px solid #bfe9e0",
+  borderRadius: 999,
+  color: "#087f78",
+  display: "inline-block",
+  fontSize: 11,
+  fontWeight: 900,
+  justifySelf: "start",
+  padding: "5px 8px",
 },
 
 ownerFormCard: {
