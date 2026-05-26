@@ -54,6 +54,15 @@ type PetAgeInfo = {
   display: string;
 };
 
+type PetAgeDraft = {
+  petAge: string;
+  petAgeValue: string;
+  petAgeUnit: string;
+  petBirthdate: string;
+  petAgeUnknown: string;
+  petAgeMode: string;
+};
+
 type Visit = {
   id: string;
   createdAt: string;
@@ -88,17 +97,11 @@ type Visit = {
   petAge?: PetAgeInfo;
 };
 
-type VisitDraft = {
+type VisitDraft = PetAgeDraft & {
   petName: string;
   species: string;
   otherSpecies: string;
   breed: string;
-  petAge: string;
-  petAgeValue: string;
-  petAgeUnit: string;
-  petBirthdate: string;
-  petAgeUnknown: string;
-  petAgeMode: string;
   sex: string;
   spayedNeutered: string;
   weight: string;
@@ -131,17 +134,21 @@ type VisitDraft = {
 type OwnerPortalTab = "home" | "updates" | "actions" | "pet" | "profile";
 type OwnerPortalMode = "owner" | "shared";
 
-const initialVisitDraft: VisitDraft = {
-  petName: "",
-  species: "",
-  otherSpecies: "",
-  breed: "",
+const initialPetAgeDraft: PetAgeDraft = {
   petAge: "",
   petAgeValue: "",
   petAgeUnit: "Years",
   petBirthdate: "",
   petAgeUnknown: "",
   petAgeMode: "estimate",
+};
+
+const initialVisitDraft: VisitDraft = {
+  ...initialPetAgeDraft,
+  petName: "",
+  species: "",
+  otherSpecies: "",
+  breed: "",
   sex: "",
   spayedNeutered: "",
   weight: "",
@@ -689,7 +696,7 @@ const getApproxAgeFromBirthdate = (birthdate: string) => {
   return `approx. ${weeks} ${weeks === 1 ? "week" : "weeks"} old`;
 };
 
-const getPetAgeDisplayFromDraft = (draft: VisitDraft) => {
+const getPetAgeDisplayFromDraft = (draft: PetAgeDraft) => {
   if (draft.petAgeUnknown === "Yes" || draft.petAgeUnit === "Unknown") return "Unknown";
   if (draft.petAgeMode === "birthdate" && draft.petBirthdate) {
     const formattedBirthdate = formatBirthdateDisplay(draft.petBirthdate);
@@ -699,6 +706,18 @@ const getPetAgeDisplayFromDraft = (draft: VisitDraft) => {
   if (draft.petAgeMode !== "birthdate" && draft.petAgeValue.trim()) return pluralizeUnit(draft.petAgeValue.trim(), draft.petAgeUnit || "Years");
   if (draft.petAge.trim()) return draft.petAge.trim();
   return "";
+};
+
+const formatReferralTransferTime = (value: string) => {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 };
 
 const getIntakeFieldFromReason = (reason: string, label: string) => {
@@ -1005,7 +1024,9 @@ export function MyPawLinkApp({
   const [referralSubmitMessage, setReferralSubmitMessage] = useState("");
   const [referralMissingFields, setReferralMissingFields] = useState<string[]>([]);
   const [referralWizardStep, setReferralWizardStep] = useState(1);
-  const [referralOwnerExpanded, setReferralOwnerExpanded] = useState(false);
+  const [referralPetAgeDraft, setReferralPetAgeDraft] = useState<PetAgeDraft>({
+    ...initialPetAgeDraft,
+  });
   const [selectedReferralUrgency, setSelectedReferralUrgency] = useState("");
   const [selectedReferralIvFluids, setSelectedReferralIvFluids] = useState("");
   const [referralLocationLabel, setReferralLocationLabel] = useState("");
@@ -2535,6 +2556,8 @@ export function MyPawLinkApp({
     otherSpecies: "pet type",
     ownerFirstName: "owner first name",
     ownerLastName: "owner last name",
+    ownerPhone: "owner phone number",
+    ownerEmail: "owner email",
     petAgeValue: "pet age",
     petBirthdate: "pet birthdate",
     petName: "pet name",
@@ -2845,6 +2868,55 @@ export function MyPawLinkApp({
     if (referralMissingFields.length) setReferralMissingFields([]);
   };
 
+  const updateReferralPetAgeDraft = (field: keyof PetAgeDraft, value: string) => {
+    clearReferralFeedback();
+    setReferralPetAgeDraft((current) => {
+      const next = { ...current, [field]: value };
+
+      if (field === "petAgeUnit" && value === "Unknown") {
+        next.petAgeValue = "";
+        next.petBirthdate = "";
+        next.petAgeUnknown = "Yes";
+        next.petAgeMode = "unknown";
+      }
+
+      if (field === "petAgeValue" && value) {
+        next.petAgeUnknown = "";
+        next.petBirthdate = "";
+        next.petAgeMode = "estimate";
+        if (next.petAgeUnit === "Unknown") next.petAgeUnit = "Years";
+      }
+
+      if (field === "petBirthdate" && value) {
+        next.petAgeUnknown = "";
+        next.petAgeValue = "";
+        next.petAgeMode = "birthdate";
+        next.petAgeUnit = "Years";
+      }
+
+      if (field === "petAgeUnknown" && value === "Yes") {
+        next.petAgeValue = "";
+        next.petBirthdate = "";
+        next.petAgeUnit = "Unknown";
+        next.petAgeMode = "unknown";
+      }
+
+      if (field === "petAgeMode" && value === "estimate") {
+        next.petAgeUnknown = "";
+        next.petBirthdate = "";
+        if (next.petAgeUnit === "Unknown") next.petAgeUnit = "Years";
+      }
+
+      if (field === "petAgeMode" && value === "birthdate") {
+        next.petAgeUnknown = "";
+        next.petAgeValue = "";
+        if (next.petAgeUnit === "Unknown") next.petAgeUnit = "Years";
+      }
+
+      return next;
+    });
+  };
+
   const getReferralFormValue = (name: string) => {
     if (name === "stabilityLevel") return selectedReferralUrgency;
     if (name === "ivFluids") return selectedReferralIvFluids;
@@ -2871,9 +2943,12 @@ export function MyPawLinkApp({
         String(data.get("species") || "") === "Other"
           ? String(data.get("otherSpecies") || "Other")
           : String(data.get("species") || ""),
-      age: String(data.get("age") || ""),
+      age: getPetAgeDisplayFromDraft(referralPetAgeDraft),
       sex: String(data.get("sex") || ""),
-      weight: String(data.get("weight") || ""),
+      spayedNeutered: String(data.get("spayedNeutered") || ""),
+      weight: String(data.get("weight") || "").trim()
+        ? `${String(data.get("weight") || "").trim()} lb`
+        : "",
       ownerFirstName: String(data.get("ownerFirstName") || ""),
       ownerLastName: String(data.get("ownerLastName") || ""),
       ownerPhone: String(data.get("ownerPhone") || ""),
@@ -2893,7 +2968,7 @@ export function MyPawLinkApp({
   const getReferralStepMissingFields = (step: number | "all" = referralWizardStep) => {
     const requiredByStep: Record<number, string[]> = {
       1: ["referringClinic", "referringDoctor", "doctorPhone", "doctorEmail"],
-      2: ["petName", "species"],
+      2: ["ownerFirstName", "ownerLastName", "ownerPhone", "ownerEmail", "petName", "species"],
       3: ["referralType", "stabilityLevel", "reason", "clinicalSummary", "transferTime"],
       4: ["ivFluids"],
       5: [],
@@ -3230,11 +3305,22 @@ export function MyPawLinkApp({
       fileType: file.type || file.name.split(".").pop() || "document",
     }));
     const referralReason = String(form.get("reason") || "").trim();
+    const referralAgeDisplay = getPetAgeDisplayFromDraft(referralPetAgeDraft) || "Not provided";
+    const referralBirthdateLine =
+      referralPetAgeDraft.petBirthdate && referralPetAgeDraft.petAgeMode === "birthdate"
+        ? `Pet birthdate: ${formatBirthdateDisplay(referralPetAgeDraft.petBirthdate)} - ${
+            getApproxAgeFromBirthdate(referralPetAgeDraft.petBirthdate) || "approx. age unavailable"
+          }`
+        : "";
+    const spayedNeutered = String(form.get("spayedNeutered") || "").trim();
     const clinicalSummary = [
       `Presenting problem: ${referralReason}`,
       String(form.get("suspectedDiagnosis") || "").trim()
         ? `Suspected diagnosis: ${String(form.get("suspectedDiagnosis") || "").trim()}`
         : "",
+      `Pet age: ${referralAgeDisplay}`,
+      referralBirthdateLine,
+      `Spayed/neutered: ${spayedNeutered || "Not provided"}`,
       String(form.get("clinicalSummary") || "").trim(),
       proceduresCompleted.length ? `Procedures completed: ${proceduresCompleted.join(", ")}` : "",
       documentsIncluded.length ? `Documents included: ${documentsIncluded.join(", ")}` : "",
@@ -3258,7 +3344,7 @@ export function MyPawLinkApp({
               ? String(form.get("otherSpecies") || "Other").trim()
               : String(form.get("species") || "").trim(),
           breed: String(form.get("breed") || "").trim(),
-          age: String(form.get("age") || "").trim(),
+          age: referralAgeDisplay,
           sex: String(form.get("sex") || "").trim(),
           weight: String(form.get("weight") || "").trim(),
           ownerFirstName,
@@ -3297,7 +3383,7 @@ export function MyPawLinkApp({
     setSelectedReferralSpecies("");
     setSelectedReferralUrgency("");
     setSelectedReferralIvFluids("");
-    setReferralOwnerExpanded(false);
+    setReferralPetAgeDraft({ ...initialPetAgeDraft });
     setReferralWizardStep(1);
     setReferralLocationLabel("");
     setReferralReviewSnapshot({});
@@ -4373,72 +4459,192 @@ export function MyPawLinkApp({
                   }}
                 >
                   <div>
-                    <h3 style={styles.visitStepTitle}>Patient information</h3>
-                    <p style={styles.visitStepText}>Just the details needed before transfer.</p>
+                    <h3 style={styles.visitStepTitle}>Client + patient information</h3>
+                    <p style={styles.visitStepText}>
+                      Owner details are required so the patient can move from referral to arrival without duplicate intake.
+                    </p>
                   </div>
 
-                  <div style={styles.visitFieldGrid}>
-                    <input style={styles.input} name="petName" placeholder="Pet name" />
-                    <select
-                      style={styles.input}
-                      name="species"
-                      value={selectedReferralSpecies}
-                      onChange={(e) => {
-                        clearReferralFeedback();
-                        setSelectedReferralSpecies(e.target.value);
-                      }}
-                    >
-                      <option value="">Species</option>
-                      <option value="Dog">Dog</option>
-                      <option value="Cat">Cat</option>
-                      <option value="Other">Other</option>
-                    </select>
-                    {selectedReferralSpecies === "Other" && (
+                  <input
+                    type="hidden"
+                    name="age"
+                    value={getPetAgeDisplayFromDraft(referralPetAgeDraft)}
+                    readOnly
+                  />
+
+                  <div style={styles.referralSubsection}>
+                    <strong>Client information</strong>
+                    <p style={styles.visitStepText}>
+                      Required for owner updates and to avoid re-entering the same client when the pet arrives.
+                    </p>
+                    <div style={styles.visitFieldGrid}>
                       <input
                         style={styles.input}
-                        name="otherSpecies"
-                        placeholder="Pet type, for example Rabbit or Bird"
+                        name="ownerFirstName"
+                        placeholder="Owner first name"
+                        autoComplete="given-name"
                       />
-                    )}
-                    <input style={styles.input} name="breed" placeholder="Breed (if known)" />
-                    <input style={styles.input} name="age" placeholder="Approx age" />
-                    <select style={styles.input} name="sex">
-                      <option value="">Sex</option>
-                      <option value="Female">Female</option>
-                      <option value="Female spayed">Female spayed</option>
-                      <option value="Male">Male</option>
-                      <option value="Male neutered">Male neutered</option>
-                      <option value="Unknown">Unknown</option>
-                    </select>
-                    <input
-                      style={styles.input}
-                      name="weight"
-                      type="number"
-                      min="0"
-                      step="0.1"
-                      placeholder="Weight in pounds"
-                      inputMode="decimal"
-                    />
+                      <input
+                        style={styles.input}
+                        name="ownerLastName"
+                        placeholder="Owner last name"
+                        autoComplete="family-name"
+                      />
+                      <input
+                        style={styles.input}
+                        name="ownerPhone"
+                        placeholder="Owner phone"
+                        inputMode="tel"
+                        autoComplete="tel"
+                      />
+                      <input
+                        style={styles.input}
+                        name="ownerEmail"
+                        placeholder="Owner email"
+                        inputMode="email"
+                        autoComplete="email"
+                      />
+                    </div>
                   </div>
 
-                  <button
-                    style={styles.referralOwnerToggle}
-                    type="button"
-                    onClick={() => setReferralOwnerExpanded((current) => !current)}
-                  >
-                    {referralOwnerExpanded ? "Hide owner contact" : "Add owner contact (optional)"}
-                  </button>
+                  <div style={styles.referralSubsection}>
+                    <strong>Patient information</strong>
+                    <div style={styles.visitFieldGrid}>
+                      <input style={styles.input} name="petName" placeholder="Pet name" />
+                      <select
+                        style={styles.input}
+                        name="species"
+                        value={selectedReferralSpecies}
+                        onChange={(e) => {
+                          clearReferralFeedback();
+                          setSelectedReferralSpecies(e.target.value);
+                        }}
+                      >
+                        <option value="">Species</option>
+                        <option value="Dog">Dog</option>
+                        <option value="Cat">Cat</option>
+                        <option value="Other">Other</option>
+                      </select>
+                      {selectedReferralSpecies === "Other" && (
+                        <input
+                          style={styles.input}
+                          name="otherSpecies"
+                          placeholder="Pet type, for example Rabbit or Bird"
+                        />
+                      )}
+                      <input
+                        style={styles.input}
+                        name="breed"
+                        placeholder="Breed (if known)"
+                        list={
+                          selectedReferralSpecies === "Dog"
+                            ? "dog-breeds"
+                            : selectedReferralSpecies === "Cat"
+                              ? "cat-breeds"
+                              : undefined
+                        }
+                      />
+                      <input
+                        style={styles.input}
+                        name="weight"
+                        type="number"
+                        min="0"
+                        step="0.1"
+                        placeholder="Weight in pounds"
+                        inputMode="decimal"
+                      />
+                    </div>
 
-                  <div
-                    style={{
-                      ...styles.referralOwnerPanel,
-                      display: referralOwnerExpanded ? "grid" : "none",
-                    }}
-                  >
-                    <input style={styles.input} name="ownerFirstName" placeholder="Owner first name" />
-                    <input style={styles.input} name="ownerLastName" placeholder="Owner last name" />
-                    <input style={styles.input} name="ownerPhone" placeholder="Owner phone" inputMode="tel" />
-                    <input style={styles.input} name="ownerEmail" placeholder="Owner email" inputMode="email" />
+                    <div style={styles.ageSection}>
+                      <div style={styles.ageHeader}>
+                        <span style={styles.visitChoiceLabel}>Pet age</span>
+                        <span style={styles.agePreview}>
+                          {getPetAgeDisplayFromDraft(referralPetAgeDraft) || "Optional"}
+                        </span>
+                      </div>
+
+                      {referralPetAgeDraft.petAgeMode === "unknown" ||
+                      referralPetAgeDraft.petAgeUnknown === "Yes" ? (
+                        <div style={styles.ageUnknownBox}>
+                          <strong>Age: Unknown</strong>
+                          <span>The clinic can confirm age during intake if needed.</span>
+                        </div>
+                      ) : referralPetAgeDraft.petAgeMode === "birthdate" ? (
+                        <div style={styles.visitFieldGrid}>
+                          <input
+                            style={styles.input}
+                            type="date"
+                            value={referralPetAgeDraft.petBirthdate}
+                            onChange={(e) => updateReferralPetAgeDraft("petBirthdate", e.target.value)}
+                            aria-label="Pet birthdate"
+                          />
+                        </div>
+                      ) : (
+                        <div style={styles.ageInputRow}>
+                          <input
+                            style={styles.input}
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={referralPetAgeDraft.petAgeValue}
+                            onChange={(e) => updateReferralPetAgeDraft("petAgeValue", e.target.value)}
+                            placeholder="Age number"
+                            inputMode="numeric"
+                          />
+                          <select
+                            style={styles.clinicCompactSelect}
+                            value={referralPetAgeDraft.petAgeUnit}
+                            onChange={(e) => updateReferralPetAgeDraft("petAgeUnit", e.target.value)}
+                            aria-label="Age unit"
+                          >
+                            {ageUnitOptions.map((unit) => (
+                              <option key={unit} value={unit}>
+                                {unit}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      <div style={styles.ageLinkRow}>
+                        <button
+                          type="button"
+                          style={styles.inlineTextButton}
+                          onClick={() => updateReferralPetAgeDraft("petAgeMode", "estimate")}
+                        >
+                          Estimate age
+                        </button>
+                        <button
+                          type="button"
+                          style={styles.inlineTextButton}
+                          onClick={() => updateReferralPetAgeDraft("petAgeMode", "birthdate")}
+                        >
+                          I know the pet&apos;s birthday
+                        </button>
+                        <button
+                          type="button"
+                          style={styles.inlineTextButton}
+                          onClick={() => updateReferralPetAgeDraft("petAgeUnknown", "Yes")}
+                        >
+                          I&apos;m not sure
+                        </button>
+                      </div>
+                    </div>
+
+                    <div style={styles.visitFieldGrid}>
+                      <select style={styles.input} name="sex">
+                        <option value="">Sex</option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Unknown">Unknown</option>
+                      </select>
+                      <select style={styles.input} name="spayedNeutered">
+                        <option value="">Spayed/neutered?</option>
+                        <option value="Yes">Yes</option>
+                        <option value="No">No</option>
+                        <option value="Not sure">Not sure</option>
+                      </select>
+                    </div>
                   </div>
                 </section>
 
@@ -4622,12 +4828,26 @@ export function MyPawLinkApp({
                       <small>{referralReviewSnapshot.referringDoctor || "Doctor needed"}</small>
                     </div>
                     <div style={styles.visitReviewCard}>
+                      <span>Client</span>
+                      <strong>
+                        {[referralReviewSnapshot.ownerFirstName, referralReviewSnapshot.ownerLastName]
+                          .filter(Boolean)
+                          .join(" ") || "Missing owner"}
+                      </strong>
+                      <small>{referralReviewSnapshot.ownerPhone || "Phone needed"}</small>
+                      <small>{referralReviewSnapshot.ownerEmail || "Email needed"}</small>
+                    </div>
+                    <div style={styles.visitReviewCard}>
                       <span>Patient</span>
                       <strong>{referralReviewSnapshot.petName || "Missing pet"}</strong>
                       <small>
                         {[referralReviewSnapshot.species, referralReviewSnapshot.age, referralReviewSnapshot.weight]
                           .filter(Boolean)
                           .join(" / ") || "Patient basics"}
+                      </small>
+                      <small>
+                        Sex: {referralReviewSnapshot.sex || "Not provided"} / Spay-neuter:{" "}
+                        {referralReviewSnapshot.spayedNeutered || "Not provided"}
                       </small>
                     </div>
                     <div style={styles.visitReviewCard}>
@@ -5676,7 +5896,7 @@ export function MyPawLinkApp({
                                 </span>
                                 <span>
                                   <strong>ETA</strong>
-                                  {selectedReferral.transferTime || "Not provided"}
+                                  {formatReferralTransferTime(selectedReferral.transferTime) || "Not provided"}
                                 </span>
                                 <span>
                                   <strong>Type</strong>
@@ -5687,6 +5907,14 @@ export function MyPawLinkApp({
                                   {[selectedReferral.ownerFirstName, selectedReferral.ownerLastName]
                                     .filter(Boolean)
                                     .join(" ") || "Not provided"}
+                                </span>
+                                <span>
+                                  <strong>Owner phone</strong>
+                                  {selectedReferral.ownerPhone || "Not provided"}
+                                </span>
+                                <span>
+                                  <strong>Owner email</strong>
+                                  {selectedReferral.ownerEmail || "Not provided"}
                                 </span>
                               </div>
                             </section>
@@ -5985,7 +6213,7 @@ export function MyPawLinkApp({
                               <span>{referral.referringClinicName || "Clinic not provided"}</span>
                               <span>{referral.referringDoctorName || "Doctor not provided"}</span>
                               <span>{referral.stabilityLevel || "Urgency not set"}</span>
-                              <span>{referral.transferTime || "ETA not set"}</span>
+                              <span>{formatReferralTransferTime(referral.transferTime) || "ETA not set"}</span>
                               <span>{referral.documents.length} docs</span>
                             </span>
                             <span style={styles.patientListOpen}>Review</span>

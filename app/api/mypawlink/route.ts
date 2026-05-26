@@ -140,6 +140,41 @@ const numberValue = (value: unknown, fallback: number) => {
   return Number.isFinite(number) ? number : fallback;
 };
 
+const parseReferralTransferTime = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const normalized = trimmed.toLowerCase();
+  const relativeMinutes =
+    normalized.match(/^15\s*(min|mins|minute|minutes)$/)
+      ? 15
+      : normalized.match(/^30\s*(min|mins|minute|minutes)$/)
+        ? 30
+        : normalized.match(/^1\s*(hour|hours|hr|hrs)$/)
+          ? 60
+          : normalized.match(/^2\+?\s*(hour|hours|hr|hrs)$/)
+            ? 120
+            : null;
+
+  if (relativeMinutes) {
+    return new Date(Date.now() + relativeMinutes * 60 * 1000).toISOString();
+  }
+
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error("Please choose a valid transfer ETA before sending the referral.");
+  }
+
+  return parsed.toISOString();
+};
+
+const formatReferralTransferTime = (value: string) => {
+  if (!value) return "Not provided";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString();
+};
+
 const demoClinicSlug = "demo-emergency-hospital";
 
 const defaultClinicSettings: ClinicSettings = {
@@ -1396,9 +1431,26 @@ const createReferralRecord = async (body: RequestBody) => {
   const species = stringValue(referral.species).trim();
   const referralType = stringValue(referral.referralType).trim();
   const reason = stringValue(referral.reason).trim();
+  const ownerFirstName = stringValue(referral.ownerFirstName).trim();
+  const ownerLastName = stringValue(referral.ownerLastName).trim();
+  const ownerPhone = stringValue(referral.ownerPhone).trim();
+  const ownerEmail = normalizeEmail(stringValue(referral.ownerEmail));
 
-  if (!referringClinicName || !referringDoctorName || !petName || !species || !referralType || !reason) {
-    throw new Error("Referring clinic, doctor, pet, referral type, and reason are required.");
+  if (
+    !referringClinicName ||
+    !referringDoctorName ||
+    !petName ||
+    !species ||
+    !ownerFirstName ||
+    !ownerLastName ||
+    !ownerPhone ||
+    !ownerEmail ||
+    !referralType ||
+    !reason
+  ) {
+    throw new Error(
+      "Referring clinic, doctor, pet, owner contact, referral type, and reason are required."
+    );
   }
 
   const payload = {
@@ -1415,10 +1467,10 @@ const createReferralRecord = async (body: RequestBody) => {
     age: stringValue(referral.age).trim(),
     sex: stringValue(referral.sex).trim(),
     weight: Number.isFinite(weight) && weight > 0 ? weight : null,
-    owner_first_name: stringValue(referral.ownerFirstName).trim(),
-    owner_last_name: stringValue(referral.ownerLastName).trim(),
-    owner_phone: stringValue(referral.ownerPhone).trim(),
-    owner_email: normalizeEmail(stringValue(referral.ownerEmail)),
+    owner_first_name: ownerFirstName,
+    owner_last_name: ownerLastName,
+    owner_phone: ownerPhone,
+    owner_email: ownerEmail,
     referral_type: referralType,
     reason,
     presenting_complaint: stringValue(referral.presentingComplaint).trim(),
@@ -1429,7 +1481,7 @@ const createReferralRecord = async (body: RequestBody) => {
     treatment_provided: stringValue(referral.treatmentProvided).trim(),
     medications_given: stringValue(referral.medicationsGiven).trim(),
     iv_fluids: stringValue(referral.ivFluids).trim(),
-    transfer_time: transferTime ? new Date(transferTime).toISOString() : null,
+    transfer_time: parseReferralTransferTime(transferTime),
     stability_level: stringValue(referral.stabilityLevel, "Stable").trim(),
     status: "Referral Submitted",
   };
@@ -1547,6 +1599,8 @@ const convertReferralToVisit = async (referralId: string) => {
     `Stability: ${referral.stabilityLevel}`,
     `Referring clinic: ${referringName}`,
     `Callback: ${referral.preferredCallbackNumber || referral.referringPhone || "Not provided"}`,
+    `Pet age: ${referral.age || "Not provided"}`,
+    `Sex: ${referral.sex || "Not provided"}`,
     `Reason: ${referral.reason}`,
     `Presenting complaint: ${referral.presentingComplaint || "Not provided"}`,
     `History: ${referral.history || "Not provided"}`,
@@ -1556,9 +1610,7 @@ const convertReferralToVisit = async (referralId: string) => {
     `Treatment provided: ${referral.treatmentProvided || "Not provided"}`,
     `Medications: ${referral.medicationsGiven || "Not provided"}`,
     `IV fluids: ${referral.ivFluids || "Not provided"}`,
-    `Transfer time: ${
-      referral.transferTime ? new Date(referral.transferTime).toLocaleString() : "Not provided"
-    }`,
+    `Transfer time: ${formatReferralTransferTime(referral.transferTime)}`,
     `Documents: ${
       referral.documents.length
         ? referral.documents.map((document) => document.fileName).join(", ")
