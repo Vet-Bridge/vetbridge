@@ -1,8 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Session } from "@supabase/supabase-js";
+import type {
+  PointerEvent as ReactPointerEvent,
+  TouchEvent as ReactTouchEvent,
+} from "react";
 import { supabase } from "../lib/supabase";
 import {
   buildFallbackIntegrationReadiness,
@@ -248,6 +252,30 @@ type NotificationSummary = {
   recipientPhone: string;
   messageBody: string;
   sentAt: string;
+};
+
+type SignaturePoint = {
+  x: number;
+  y: number;
+};
+
+type SignaturePadProps = {
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+};
+
+type OwnerFormSignatureDraft = {
+  ownerName: string;
+  relationship: string;
+  authorized: boolean;
+  chargesAcknowledged: boolean;
+  paymentDueAcknowledged: boolean;
+  separateEstimateAcknowledged: boolean;
+  signatureData: string;
+  typedSignature: string;
+  typedSignatureAccepted: boolean;
+  declineReason: string;
 };
 
 type ClinicActionResult = {
@@ -776,6 +804,184 @@ const resizePetPhoto = (file: File) =>
     reader.readAsDataURL(file);
   });
 
+const emptyOwnerFormSignatureDraft = (): OwnerFormSignatureDraft => ({
+  ownerName: "",
+  relationship: "",
+  authorized: false,
+  chargesAcknowledged: false,
+  paymentDueAcknowledged: false,
+  separateEstimateAcknowledged: false,
+  signatureData: "",
+  typedSignature: "",
+  typedSignatureAccepted: false,
+  declineReason: "",
+});
+
+const isEmergencyCareConsentForm = (form: VisitForm) =>
+  form.form_type.toLowerCase() === "emergency care consent";
+
+function SignaturePad({ value, onChange, disabled = false }: SignaturePadProps) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const drawingRef = useRef(false);
+  const lastPointRef = useRef<SignaturePoint | null>(null);
+
+  const configureCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const width = Math.max(1, Math.round(rect.width * dpr));
+    const height = Math.max(1, Math.round(rect.height * dpr));
+
+    if (canvas.width !== width || canvas.height !== height) {
+      canvas.width = width;
+      canvas.height = height;
+    }
+
+    const context = canvas.getContext("2d");
+    if (!context) return;
+
+    context.setTransform(dpr, 0, 0, dpr, 0, 0);
+    context.clearRect(0, 0, rect.width, rect.height);
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.lineWidth = 2.4;
+    context.strokeStyle = "#102a3a";
+
+    if (value && value.startsWith("data:image")) {
+      const image = new Image();
+      image.onload = () => {
+        context.drawImage(image, 0, 0, rect.width, rect.height);
+      };
+      image.src = value;
+    }
+  }, [value]);
+
+  useEffect(() => {
+    configureCanvas();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const resizeObserver =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => configureCanvas())
+        : null;
+
+    resizeObserver?.observe(canvas);
+    window.addEventListener("resize", configureCanvas);
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", configureCanvas);
+    };
+  }, [configureCanvas]);
+
+  const getPoint = (clientX: number, clientY: number): SignaturePoint => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: clientX - rect.left,
+      y: clientY - rect.top,
+    };
+  };
+
+  const drawTo = (point: SignaturePoint) => {
+    const canvas = canvasRef.current;
+    const previousPoint = lastPointRef.current;
+    if (!canvas || !previousPoint) return;
+
+    const context = canvas.getContext("2d");
+    if (!context) return;
+
+    context.beginPath();
+    context.moveTo(previousPoint.x, previousPoint.y);
+    context.lineTo(point.x, point.y);
+    context.stroke();
+    lastPointRef.current = point;
+  };
+
+  const beginStroke = (point: SignaturePoint) => {
+    if (disabled) return;
+
+    drawingRef.current = true;
+    lastPointRef.current = point;
+    drawTo({ x: point.x + 0.01, y: point.y + 0.01 });
+  };
+
+  const finishStroke = () => {
+    if (!drawingRef.current) return;
+
+    drawingRef.current = false;
+    lastPointRef.current = null;
+    const canvas = canvasRef.current;
+    if (canvas) onChange(canvas.toDataURL("image/png"));
+  };
+
+  const handlePointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    beginStroke(getPoint(event.clientX, event.clientY));
+  };
+
+  const handlePointerMove = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (!drawingRef.current) return;
+
+    event.preventDefault();
+    drawTo(getPoint(event.clientX, event.clientY));
+  };
+
+  const handlePointerUp = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    event.preventDefault();
+    finishStroke();
+  };
+
+  const handleTouchStart = (event: ReactTouchEvent<HTMLCanvasElement>) => {
+    if ("PointerEvent" in window) return;
+
+    const touch = event.touches[0];
+    if (!touch) return;
+
+    event.preventDefault();
+    beginStroke(getPoint(touch.clientX, touch.clientY));
+  };
+
+  const handleTouchMove = (event: ReactTouchEvent<HTMLCanvasElement>) => {
+    if ("PointerEvent" in window || !drawingRef.current) return;
+
+    const touch = event.touches[0];
+    if (!touch) return;
+
+    event.preventDefault();
+    drawTo(getPoint(touch.clientX, touch.clientY));
+  };
+
+  const handleTouchEnd = (event: ReactTouchEvent<HTMLCanvasElement>) => {
+    if ("PointerEvent" in window) return;
+
+    event.preventDefault();
+    finishStroke();
+  };
+
+  return (
+    <canvas
+      ref={canvasRef}
+      aria-label="Signature pad"
+      style={styles.signatureCanvas}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      onPointerLeave={finishStroke}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    />
+  );
+}
+
 export function MyPawLinkApp({
   initialView = "home",
   initialClinicWorkflowView = "patients",
@@ -859,6 +1065,9 @@ export function MyPawLinkApp({
     accessUrl: string;
     notification?: NotificationSummary | null;
   } | null>(null);
+  const [ownerFormDrafts, setOwnerFormDrafts] = useState<Record<string, OwnerFormSignatureDraft>>({});
+  const [respondingOwnerFormId, setRespondingOwnerFormId] = useState("");
+  const [ownerFormMessages, setOwnerFormMessages] = useState<Record<string, string>>({});
   const [ownerVisits, setOwnerVisits] = useState<Visit[]>([]);
   const [ownerVisitsLoading, setOwnerVisitsLoading] = useState(false);
   const [ownerVisitsError, setOwnerVisitsError] = useState("");
@@ -1715,6 +1924,162 @@ export function MyPawLinkApp({
       alert("Secure visit link copied.");
     } catch {
       window.prompt("Copy this secure visit link", link);
+    }
+  };
+
+  const updateOwnerFormDraft = (
+    formId: string,
+    field: keyof OwnerFormSignatureDraft,
+    value: string | boolean
+  ) => {
+    setOwnerFormDrafts((current) => ({
+      ...current,
+      [formId]: {
+        ...(current[formId] || emptyOwnerFormSignatureDraft()),
+        [field]: value,
+      },
+    }));
+    setOwnerFormMessages((current) => ({ ...current, [formId]: "" }));
+  };
+
+  const clearOwnerSignature = (formId: string) => {
+    updateOwnerFormDraft(formId, "signatureData", "");
+  };
+
+  const respondToOwnerForm = async (
+    visit: Visit,
+    form: VisitForm,
+    formStatus: "Signed" | "Declined"
+  ) => {
+    const draft = ownerFormDrafts[form.id] || emptyOwnerFormSignatureDraft();
+    const drawnSignatureData = draft.signatureData.trim();
+    const typedSignatureData = draft.typedSignature.trim()
+      ? "typed-signature:" + draft.typedSignature.trim()
+      : "";
+    const finalSignatureData =
+      drawnSignatureData || (draft.typedSignatureAccepted ? typedSignatureData : "");
+
+    if (formStatus === "Signed") {
+      if (!draft.ownerName.trim() || !draft.relationship.trim() || !finalSignatureData) {
+        setOwnerFormMessages((current) => ({
+          ...current,
+          [form.id]: "Please complete owner name, relationship, and signature.",
+        }));
+        return;
+      }
+
+      if (!drawnSignatureData && typedSignatureData && !draft.typedSignatureAccepted) {
+        setOwnerFormMessages((current) => ({
+          ...current,
+          [form.id]: "Please confirm that your typed name represents your electronic signature.",
+        }));
+        return;
+      }
+
+      if (
+        isEmergencyCareConsentForm(form) &&
+        (!draft.authorized ||
+          !draft.chargesAcknowledged ||
+          !draft.paymentDueAcknowledged ||
+          !draft.separateEstimateAcknowledged)
+      ) {
+        setOwnerFormMessages((current) => ({
+          ...current,
+          [form.id]: "Please complete all required Emergency Care Consent acknowledgments.",
+        }));
+        return;
+      }
+    }
+
+    if (formStatus === "Declined") {
+      if (!draft.ownerName.trim()) {
+        setOwnerFormMessages((current) => ({
+          ...current,
+          [form.id]: "Please enter your full name before declining.",
+        }));
+        return;
+      }
+
+      if (!draft.declineReason.trim()) {
+        setOwnerFormMessages((current) => ({
+          ...current,
+          [form.id]: "Please enter a brief reason before declining.",
+        }));
+        return;
+      }
+    }
+
+    setRespondingOwnerFormId(form.id);
+    setOwnerFormMessages((current) => ({ ...current, [form.id]: "" }));
+
+    try {
+      const result = await apiRequest<{ ok: boolean; visit?: Visit }>({
+        action: "respondForm",
+        token: visit.accessToken || getTokenFromInput(visit.accessUrl || ""),
+        formId: form.id,
+        formStatus,
+        signedName:
+          draft.ownerName.trim() +
+          (draft.relationship.trim() ? " (" + draft.relationship.trim() + ")" : ""),
+        relationshipToPet: draft.relationship.trim(),
+        authorizationConfirmed: formStatus === "Signed" ? draft.authorized : false,
+        chargesAcknowledged: formStatus === "Signed" ? draft.chargesAcknowledged : false,
+        paymentDueAcknowledged: formStatus === "Signed" ? draft.paymentDueAcknowledged : false,
+        separateEstimateAcknowledged:
+          formStatus === "Signed" ? draft.separateEstimateAcknowledged : false,
+        signatureData: formStatus === "Signed" ? finalSignatureData : "",
+        declineReason: draft.declineReason.trim(),
+      });
+
+      if (result.visit) {
+        setVisits((current) =>
+          current.map((item) => (item.id === visit.id ? result.visit as Visit : item))
+        );
+      } else {
+        setVisits((current) =>
+          current.map((item) =>
+            item.id === visit.id
+              ? {
+                  ...item,
+                  forms: item.forms.map((itemForm) =>
+                    itemForm.id === form.id
+                      ? {
+                          ...itemForm,
+                          form_status: formStatus,
+                          signed_name: formStatus === "Signed" ? draft.ownerName.trim() : itemForm.signed_name,
+                          signed_at: formStatus === "Signed" ? new Date().toISOString() : itemForm.signed_at,
+                          decline_reason:
+                            formStatus === "Declined" ? draft.declineReason.trim() : itemForm.decline_reason,
+                          declined_at:
+                            formStatus === "Declined" ? new Date().toISOString() : itemForm.declined_at,
+                        }
+                      : itemForm
+                  ),
+                }
+              : item
+          )
+        );
+      }
+
+      setOwnerFormDrafts((current) => ({
+        ...current,
+        [form.id]: emptyOwnerFormSignatureDraft(),
+      }));
+      setOwnerFormMessages((current) => ({
+        ...current,
+        [form.id]:
+          formStatus === "Signed"
+            ? "Form signed. The clinic has been notified."
+            : "Form declined. The clinic has been notified.",
+      }));
+    } catch (error) {
+      console.error(error);
+      setOwnerFormMessages((current) => ({
+        ...current,
+        [form.id]: error instanceof Error ? error.message : "Error submitting form.",
+      }));
+    } finally {
+      setRespondingOwnerFormId("");
     }
   };
 
@@ -3224,13 +3589,23 @@ export function MyPawLinkApp({
     event.preventDefault();
     if (!selectedCareHubForm) return;
 
-    const form = new FormData(event.currentTarget);
-    const signedName = String(form.get("printedName") || "").trim();
-    const signature = String(form.get("signature") || "").trim();
-    const accepted = form.get("accepted") === "on";
+    const draftKey = `carehub:${selectedCareHubForm.id}`;
+    const draft = ownerFormDrafts[draftKey] || emptyOwnerFormSignatureDraft();
+    const signedName = draft.ownerName.trim();
+    const drawnSignatureData = draft.signatureData.trim();
+    const typedSignatureData = draft.typedSignature.trim()
+      ? "typed-signature:" + draft.typedSignature.trim()
+      : "";
+    const signatureData =
+      drawnSignatureData || (draft.typedSignatureAccepted ? typedSignatureData : "");
 
-    if (!signedName || !signature || !accepted) {
+    if (!signedName || !signatureData || !draft.authorized) {
       alert("Please complete the printed name, checkbox, and signature.");
+      return;
+    }
+
+    if (!drawnSignatureData && typedSignatureData && !draft.typedSignatureAccepted) {
+      alert("Please confirm that your typed name represents your electronic signature.");
       return;
     }
 
@@ -3240,6 +3615,10 @@ export function MyPawLinkApp({
         signedName,
         signedAt: new Date().toLocaleString(),
       },
+    }));
+    setOwnerFormDrafts((current) => ({
+      ...current,
+      [draftKey]: emptyOwnerFormSignatureDraft(),
     }));
     setSelectedCareHubFormId(null);
   };
@@ -5966,145 +6345,220 @@ export function MyPawLinkApp({
                       <span>We will let you know here when something needs your review.</span>
                     </div>
                   )}
-              {selectedVisit.forms && selectedVisit.forms.length > 0 && (
-  <div style={{ marginBottom: 20 }}>
-    <h3>Forms</h3>
+                  {selectedVisit.forms && selectedVisit.forms.length > 0 && (
+                    <div style={styles.ownerFormList}>
+                      <h3 style={styles.ownerVisitTitle}>Forms</h3>
 
-    {selectedVisit.forms.map((form) => (
-      <div
-        key={form.id}
-        style={{
-          border: "1px solid #dcefeb",
-          borderRadius: 8,
-          padding: 16,
-          marginBottom: 12,
-          background: "#ffffff",
-        }}
-      >
-        <p>
-          <strong>{form.form_type}</strong>
-        </p>
+                      {selectedVisit.forms.map((form) => {
+                        const draft = ownerFormDrafts[form.id] || emptyOwnerFormSignatureDraft();
+                        const formMessage = ownerFormMessages[form.id] || "";
+                        const isResponding = respondingOwnerFormId === form.id;
 
-        <p>Status: {form.form_status}</p>
+                        return (
+                          <div key={form.id} style={styles.ownerFormCard}>
+                            <div style={styles.ownerFormHeader}>
+                              <div>
+                                <strong>{form.form_type}</strong>
+                                <p>Status: {form.form_status}</p>
+                              </div>
+                              <span style={styles.formStatus}>{form.form_status}</span>
+                            </div>
 
-        {form.form_body && (
-          <div style={styles.noticeBox}>
-            <strong>Please review before responding:</strong>
-            <p>{form.form_body}</p>
-          </div>
-        )}
+                            {form.form_body && (
+                              <div style={styles.noticeBox}>
+                                <strong>Please review before responding:</strong>
+                                {form.form_body.split("\n\n").map((paragraph) => (
+                                  <p key={paragraph}>{paragraph}</p>
+                                ))}
+                              </div>
+                            )}
 
-        {form.form_status === "Sent" && (
-          <div style={{ display: "grid", gap: 10 }}>
-            <button
-              style={styles.primaryButton}
-              onClick={async () => {
-                const signedName = window.prompt("Type your full name to sign");
-
-                if (!signedName) return;
-
-                try {
-                  await apiRequest<{ ok: boolean }>({
-                    action: "respondForm",
-                    formId: form.id,
-                    formStatus: "Signed",
-                    signedName,
-                  });
-                  setVisits((current) =>
-                    current.map((visit) =>
-                      visit.id === selectedVisit.id
-                        ? {
-                            ...visit,
-                            forms: visit.forms.map((item) =>
-                              item.id === form.id
-                                ? {
-                                    ...item,
-                                    form_status: "Signed",
-                                    signed_name: signedName,
-                                    signed_at: new Date().toISOString(),
+                            {form.form_status === "Sent" && (
+                              <div style={styles.signatureForm}>
+                                <input
+                                  style={styles.input}
+                                  value={draft.ownerName}
+                                  onChange={(event) =>
+                                    updateOwnerFormDraft(form.id, "ownerName", event.target.value)
                                   }
-                                : item
-                            ),
-                          }
-                        : visit
-                    )
-                  );
-                } catch (error) {
-                  console.error(error);
-                  alert("Error signing form");
-                  return;
-                }
-
-                alert("Form signed successfully");
-              }}
-            >
-              Sign Form
-            </button>
-
-            <button
-              style={styles.redAction}
-              onClick={async () => {
-                const reason = window.prompt(
-                  "Please tell us why you do not want to sign this form"
-                );
-
-                if (!reason) return;
-
-                try {
-                  await apiRequest<{ ok: boolean }>({
-                    action: "respondForm",
-                    formId: form.id,
-                    formStatus: "Declined",
-                    declineReason: reason,
-                  });
-                  setVisits((current) =>
-                    current.map((visit) =>
-                      visit.id === selectedVisit.id
-                        ? {
-                            ...visit,
-                            forms: visit.forms.map((item) =>
-                              item.id === form.id
-                                ? {
-                                    ...item,
-                                    form_status: "Declined",
-                                    decline_reason: reason,
-                                    declined_at: new Date().toISOString(),
+                                  placeholder="Owner full name"
+                                  autoComplete="name"
+                                />
+                                <input
+                                  style={styles.input}
+                                  value={draft.relationship}
+                                  onChange={(event) =>
+                                    updateOwnerFormDraft(form.id, "relationship", event.target.value)
                                   }
-                                : item
-                            ),
-                          }
-                        : visit
-                    )
-                  );
-                } catch (error) {
-                  console.error(error);
-                  alert("Error declining form");
-                  return;
-                }
+                                  placeholder="Relationship to pet"
+                                />
 
-                alert("Form declined. The clinic has been notified.");
-              }}
-            >
-              Decline / Do Not Sign
-            </button>
-          </div>
-        )}
+                                {isEmergencyCareConsentForm(form) && (
+                                  <div style={styles.checkboxStack}>
+                                    <label style={styles.checkRow}>
+                                      <input
+                                        type="checkbox"
+                                        checked={draft.authorized}
+                                        onChange={(event) =>
+                                          updateOwnerFormDraft(form.id, "authorized", event.target.checked)
+                                        }
+                                      />
+                                      I authorize initial emergency evaluation and stabilizing care for my pet.
+                                    </label>
+                                    <label style={styles.checkRow}>
+                                      <input
+                                        type="checkbox"
+                                        checked={draft.chargesAcknowledged}
+                                        onChange={(event) =>
+                                          updateOwnerFormDraft(form.id, "chargesAcknowledged", event.target.checked)
+                                        }
+                                      />
+                                      I understand that charges may apply for emergency evaluation and stabilizing care.
+                                    </label>
+                                    <label style={styles.checkRow}>
+                                      <input
+                                        type="checkbox"
+                                        checked={draft.paymentDueAcknowledged}
+                                        onChange={(event) =>
+                                          updateOwnerFormDraft(form.id, "paymentDueAcknowledged", event.target.checked)
+                                        }
+                                      />
+                                      I understand that payment is due at the time of service.
+                                    </label>
+                                    <label style={styles.checkRow}>
+                                      <input
+                                        type="checkbox"
+                                        checked={draft.separateEstimateAcknowledged}
+                                        onChange={(event) =>
+                                          updateOwnerFormDraft(
+                                            form.id,
+                                            "separateEstimateAcknowledged",
+                                            event.target.checked
+                                          )
+                                        }
+                                      />
+                                      I understand that additional diagnostics, treatment, hospitalization, procedures, or surgery may require a separate estimate and approval.
+                                    </label>
+                                  </div>
+                                )}
 
-        {form.form_status === "Signed" && (
-          <p>
-            Signed by: {form.signed_name}
-          </p>
-        )}
+                                <div style={styles.signaturePadShell}>
+                                  <div style={styles.signatureHintRow}>
+                                    <span>Sign with your finger</span>
+                                    <button
+                                      type="button"
+                                      style={styles.clearSignatureButton}
+                                      onClick={() => clearOwnerSignature(form.id)}
+                                    >
+                                      Clear Signature
+                                    </button>
+                                  </div>
+                                  <SignaturePad
+                                    value={draft.signatureData}
+                                    onChange={(value) => updateOwnerFormDraft(form.id, "signatureData", value)}
+                                  />
+                                  <span style={styles.signatureHelper}>
+                                    Use your finger or stylus to sign inside the box.
+                                  </span>
+                                </div>
 
-        {form.form_status === "Declined" && (
-          <p style={{ color: "#b91c1c", fontWeight: 700 }}>
-            Declined by customer. Reason: {form.decline_reason}
-          </p>
-        )}
-      </div>
-    ))}
-  </div>
-)}
+                                <div style={styles.typedSignatureBox}>
+                                  <input
+                                    style={styles.input}
+                                    value={draft.typedSignature}
+                                    onChange={(event) =>
+                                      updateOwnerFormDraft(form.id, "typedSignature", event.target.value)
+                                    }
+                                    placeholder="Typed signature fallback"
+                                    autoComplete="name"
+                                  />
+                                  <label style={styles.checkRow}>
+                                    <input
+                                      type="checkbox"
+                                      checked={draft.typedSignatureAccepted}
+                                      onChange={(event) =>
+                                        updateOwnerFormDraft(
+                                          form.id,
+                                          "typedSignatureAccepted",
+                                          event.target.checked
+                                        )
+                                      }
+                                    />
+                                    I agree that my typed name represents my electronic signature.
+                                  </label>
+                                </div>
+
+                                <div style={styles.timestampBox}>
+                                  Date/time signed: {new Date().toLocaleString()}
+                                </div>
+
+                                {formMessage && (
+                                  <div
+                                    style={{
+                                      ...styles.authMessage,
+                                      ...(formMessage.toLowerCase().includes("error") ||
+                                      formMessage.toLowerCase().includes("please")
+                                        ? styles.errorBox
+                                        : {}),
+                                    }}
+                                  >
+                                    {formMessage}
+                                  </div>
+                                )}
+
+                                <button
+                                  type="button"
+                                  style={{
+                                    ...styles.signButton,
+                                    ...(isResponding ? styles.disabledButton : {}),
+                                  }}
+                                  disabled={Boolean(respondingOwnerFormId)}
+                                  onClick={() => void respondToOwnerForm(selectedVisit, form, "Signed")}
+                                >
+                                  {isResponding ? "Submitting..." : "Sign Consent"}
+                                </button>
+
+                                <textarea
+                                  style={styles.estimateNotes}
+                                  value={draft.declineReason}
+                                  onChange={(event) =>
+                                    updateOwnerFormDraft(form.id, "declineReason", event.target.value)
+                                  }
+                                  placeholder="Reason for declining"
+                                />
+                                <div style={styles.warningBox}>
+                                  Declining this consent may delay care. The veterinary team may contact you before care can continue.
+                                </div>
+                                <button
+                                  type="button"
+                                  style={styles.declineButton}
+                                  disabled={Boolean(respondingOwnerFormId)}
+                                  onClick={() => void respondToOwnerForm(selectedVisit, form, "Declined")}
+                                >
+                                  Decline
+                                </button>
+                              </div>
+                            )}
+
+                            {form.form_status === "Signed" && (
+                              <p style={styles.signedFormText}>
+                                Signed by: {form.signed_name}
+                                {form.signed_at
+                                  ? " at " + new Date(form.signed_at).toLocaleString()
+                                  : ""}
+                              </p>
+                            )}
+
+                            {form.form_status === "Declined" && (
+                              <p style={styles.ownerDeclinedText}>
+                                Declined by customer. Reason: {form.decline_reason}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
               <div style={styles.ownerActionCard}>
                 <h3 style={styles.sectionTitle}>MyPawLink Care Hub</h3>
                 <p style={styles.careHubIntro}>
@@ -6267,37 +6721,91 @@ export function MyPawLinkApp({
                           </span>
                         </div>
                       ) : (
-                        <form
-                          key={selectedCareHubForm.id}
-                          style={styles.careHubSignatureForm}
-                          onSubmit={submitCareHubForm}
-                        >
-                          <input
-                            style={styles.input}
-                            name="printedName"
-                            placeholder="Printed name"
-                            required
-                          />
-                          <label style={styles.careHubCheckRow}>
-                            <input type="checkbox" name="accepted" required /> I have reviewed
-                            and agree to this form.
-                          </label>
-                          <input
-                            style={styles.input}
-                            name="signature"
-                            placeholder="Electronic signature"
-                            required
-                          />
-                          <input
-                            style={styles.input}
-                            name="dateTime"
-                            value={new Date().toLocaleString()}
-                            readOnly
-                          />
-                          <button style={styles.primaryButton} type="submit">
-                            Submit Signed Form
-                          </button>
-                        </form>
+                        (() => {
+                          const draftKey = `carehub:${selectedCareHubForm.id}`;
+                          const draft =
+                            ownerFormDrafts[draftKey] || emptyOwnerFormSignatureDraft();
+
+                          return (
+                            <form
+                              key={selectedCareHubForm.id}
+                              style={styles.careHubSignatureForm}
+                              onSubmit={submitCareHubForm}
+                            >
+                              <input
+                                style={styles.input}
+                                value={draft.ownerName}
+                                onChange={(event) =>
+                                  updateOwnerFormDraft(draftKey, "ownerName", event.target.value)
+                                }
+                                placeholder="Printed name"
+                                autoComplete="name"
+                              />
+                              <label style={styles.careHubCheckRow}>
+                                <input
+                                  type="checkbox"
+                                  checked={draft.authorized}
+                                  onChange={(event) =>
+                                    updateOwnerFormDraft(draftKey, "authorized", event.target.checked)
+                                  }
+                                />{" "}
+                                I have reviewed and agree to this form.
+                              </label>
+                              <div style={styles.signaturePadShell}>
+                                <div style={styles.signatureHintRow}>
+                                  <span>Sign with your finger</span>
+                                  <button
+                                    type="button"
+                                    style={styles.clearSignatureButton}
+                                    onClick={() => clearOwnerSignature(draftKey)}
+                                  >
+                                    Clear Signature
+                                  </button>
+                                </div>
+                                <SignaturePad
+                                  value={draft.signatureData}
+                                  onChange={(value) =>
+                                    updateOwnerFormDraft(draftKey, "signatureData", value)
+                                  }
+                                />
+                                <span style={styles.signatureHelper}>
+                                  Use your finger or stylus to sign inside the box.
+                                </span>
+                              </div>
+                              <div style={styles.typedSignatureBox}>
+                                <input
+                                  style={styles.input}
+                                  value={draft.typedSignature}
+                                  onChange={(event) =>
+                                    updateOwnerFormDraft(draftKey, "typedSignature", event.target.value)
+                                  }
+                                  placeholder="Typed signature fallback"
+                                  autoComplete="name"
+                                />
+                                <label style={styles.careHubCheckRow}>
+                                  <input
+                                    type="checkbox"
+                                    checked={draft.typedSignatureAccepted}
+                                    onChange={(event) =>
+                                      updateOwnerFormDraft(
+                                        draftKey,
+                                        "typedSignatureAccepted",
+                                        event.target.checked
+                                      )
+                                    }
+                                  />{" "}
+                                  I agree that my typed name represents my electronic signature.
+                                </label>
+                              </div>
+                              <div style={styles.timestampBox}>
+                                Date/time signed: {new Date().toLocaleString()}
+                              </div>
+                              <button style={styles.primaryButton} type="submit">
+                                Submit Signed Form
+                              </button>
+                            </form>
+                          );
+                        })()
                       )}
                     </div>
                   )}
@@ -9639,6 +10147,11 @@ permissionBadge: {
   padding: "5px 8px",
 },
 
+ownerFormList: {
+  display: "grid",
+  gap: 12,
+},
+
 ownerFormCard: {
   background: "#ffffff",
   border: "1px solid #dcefeb",
@@ -9656,6 +10169,19 @@ ownerFormHeader: {
   justifyContent: "space-between",
 },
 
+formStatus: {
+  background: "#fff7ed",
+  border: "1px solid #fed7aa",
+  borderRadius: 8,
+  color: "#c2410c",
+  fontSize: 12,
+  fontWeight: 900,
+  justifySelf: "start",
+  lineHeight: 1.1,
+  padding: "6px 8px",
+  whiteSpace: "nowrap",
+},
+
 ownerFormBody: {
   background: "#f8fbff",
   border: "1px solid #e1ecec",
@@ -9669,6 +10195,147 @@ ownerFormBody: {
 ownerFormActions: {
   display: "grid",
   gap: 10,
+},
+
+signatureForm: {
+  display: "grid",
+  gap: 10,
+},
+
+checkRow: {
+  alignItems: "flex-start",
+  background: "#f8fbff",
+  border: "1px solid #dcefeb",
+  borderRadius: 8,
+  color: "#243447",
+  display: "flex",
+  fontSize: 13,
+  fontWeight: 800,
+  gap: 10,
+  lineHeight: 1.35,
+  padding: 12,
+},
+
+checkboxStack: {
+  display: "grid",
+  gap: 8,
+},
+
+signaturePadShell: {
+  background: "#ffffff",
+  border: "1px solid #bfe9e0",
+  borderRadius: 8,
+  display: "grid",
+  gap: 8,
+  padding: 10,
+},
+
+signatureHintRow: {
+  alignItems: "center",
+  color: "#52606d",
+  display: "flex",
+  fontSize: 12,
+  fontWeight: 900,
+  justifyContent: "space-between",
+},
+
+clearSignatureButton: {
+  background: "#fff7ed",
+  border: "1px solid #fed7aa",
+  borderRadius: 8,
+  color: "#c2410c",
+  cursor: "pointer",
+  fontSize: 12,
+  fontWeight: 900,
+  padding: "6px 9px",
+},
+
+signatureCanvas: {
+  background: "#fbffff",
+  border: "1px dashed #9ccbc6",
+  borderRadius: 8,
+  display: "block",
+  height: 190,
+  touchAction: "none",
+  width: "100%",
+},
+
+signatureHelper: {
+  color: "#64717d",
+  fontSize: 12,
+  fontWeight: 800,
+},
+
+typedSignatureBox: {
+  background: "#ffffff",
+  border: "1px solid #e1ecec",
+  borderRadius: 8,
+  display: "grid",
+  gap: 8,
+  padding: 10,
+},
+
+timestampBox: {
+  background: "#f8fbff",
+  border: "1px solid #dcefeb",
+  borderRadius: 8,
+  color: "#52606d",
+  fontSize: 12,
+  fontWeight: 800,
+  padding: 10,
+},
+
+signButton: {
+  background: "linear-gradient(135deg, #13a89e, #0f766e)",
+  border: "none",
+  borderRadius: 8,
+  color: "#ffffff",
+  cursor: "pointer",
+  fontSize: 14,
+  fontWeight: 900,
+  minHeight: 48,
+  padding: "12px 14px",
+},
+
+estimateNotes: {
+  border: "1px solid #cfe0df",
+  borderRadius: 8,
+  color: "#102a3a",
+  fontFamily: "inherit",
+  fontSize: 14,
+  minHeight: 74,
+  padding: "11px 12px",
+  resize: "vertical",
+  width: "100%",
+},
+
+warningBox: {
+  background: "#fff7ed",
+  border: "1px solid #fed7aa",
+  borderRadius: 8,
+  color: "#9a3412",
+  fontSize: 13,
+  fontWeight: 800,
+  lineHeight: 1.35,
+  padding: 10,
+},
+
+declineButton: {
+  background: "#fff1f2",
+  border: "1px solid #fecdd3",
+  borderRadius: 8,
+  color: "#be123c",
+  cursor: "pointer",
+  fontSize: 13,
+  fontWeight: 900,
+  minHeight: 44,
+  padding: "10px 12px",
+},
+
+signedFormText: {
+  color: "#027a48",
+  fontWeight: 800,
+  margin: 0,
 },
 
 ownerCompletedText: {
