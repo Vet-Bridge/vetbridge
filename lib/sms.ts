@@ -13,17 +13,20 @@ export const sendSmsNotification = async ({
   petName,
   message,
   link,
+  messageBody,
 }: {
   phone: string;
   petName: string;
   message: string;
   link?: string;
+  messageBody?: string;
 }): Promise<SmsNotificationResult> => {
   const result = await notificationService.sendOwnerSms({
     phone,
     petName,
     message,
     link,
+    messageBody,
   });
 
   return {

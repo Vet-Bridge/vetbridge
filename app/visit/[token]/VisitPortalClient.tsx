@@ -135,6 +135,24 @@ const getRealtimeStatus = (status: string): RealtimeStatus => {
   return "Connecting";
 };
 
+const getCompactVisitStatusLabel = (status: string) => {
+  const normalized = status.trim().toLowerCase();
+
+  if (
+    normalized === "request submitted" ||
+    normalized === "request submitted / waiting for team review" ||
+    (normalized.includes("request submitted") && normalized.includes("review"))
+  ) {
+    return "Request received";
+  }
+
+  if (normalized.includes("waiting") && normalized.includes("review")) {
+    return "Waiting for review";
+  }
+
+  return status;
+};
+
 const visitSteps = ["Received", "Triage", "Doctor", "Treatment", "Discharge"];
 const defaultPetAvatarSrc = "/pet-placeholder-avatar.svg";
 
@@ -382,6 +400,7 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
   );
   const completedClinicForms = visit.forms.filter((form) => form.form_status !== "Sent");
   const currentStepIndex = getVisitStepIndex(visit.status);
+  const compactStatusLabel = getCompactVisitStatusLabel(visit.status);
   const dischargeClinicForms = visit.forms.filter((form) =>
     isDischargeRelated(`${form.form_type} ${form.form_body || ""}`)
   );
@@ -756,12 +775,12 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
         </div>
 
         <div style={styles.greeting}>
-          <div>
+          <div style={{ minWidth: 0 }}>
             <p style={styles.eyebrow}>Secure visit portal</p>
             <h1 style={styles.title}>Hi, {visit.ownerFirstName || "there"}.</h1>
             <p style={styles.text}>Here is the latest on {visit.petName}.</p>
           </div>
-          <span style={styles.statusBadge}>{visit.status}</span>
+          <span style={styles.statusBadge}>{compactStatusLabel}</span>
         </div>
 
         <div style={styles.liveCard}>
@@ -1362,8 +1381,10 @@ const styles: Record<string, CSSProperties> = {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "flex-start",
+    flexWrap: "wrap",
     gap: 14,
     marginBottom: 14,
+    minWidth: 0,
   },
   eyebrow: {
     color: "#087f78",
@@ -1392,7 +1413,11 @@ const styles: Record<string, CSSProperties> = {
     padding: "7px 9px",
     fontSize: 12,
     fontWeight: 900,
-    whiteSpace: "nowrap",
+    lineHeight: 1.2,
+    maxWidth: "100%",
+    overflowWrap: "anywhere",
+    textAlign: "right",
+    whiteSpace: "normal",
   },
   liveCard: {
     background: "#ffffff",

@@ -30,10 +30,13 @@ type DbRecord = Record<string, unknown>;
 
 type OwnerNotificationSummary = {
   channel: "sms";
-  status: "sent" | "skipped" | "failed";
+  status: "sent" | "mock" | "skipped" | "failed";
   reason: string;
   error: string;
   link: string;
+  recipientPhone: string;
+  messageBody: string;
+  sentAt: string;
 };
 
 type ClinicSettings = {
@@ -179,6 +182,12 @@ const emergencyCareConsentBody =
 
 const getCheckedInMessage = (petName: string) =>
   petName + " has been checked in. The veterinary team has received your request and will update you here.";
+
+const getCheckInSmsMessage = (petName: string, link: string) =>
+  "Thank you for checking in with MyPawLink. You can follow " +
+  petName +
+  "'s visit updates here: " +
+  link;
 
 const careHubSeedCategories: CareHubSeedCategory[] = [
   {
@@ -1557,7 +1566,7 @@ const convertReferralToVisit = async (referralId: string) => {
     }`,
   ].join("\n");
 
-  const visit = await createOwnerPetVisit({
+  const createdVisit = await createOwnerPetVisit({
     owner: {
       first_name: referral.ownerFirstName || "Referral",
       last_name: referral.ownerLastName || referral.referringClinicName,
@@ -1582,6 +1591,7 @@ const convertReferralToVisit = async (referralId: string) => {
       status: "Referral converted to visit",
     },
   });
+  const visit = createdVisit.visit;
 
   const supabase = getSupabaseAdmin();
   const { error } = await supabase
@@ -1646,11 +1656,13 @@ const sendOwnerNotification = async ({
     message,
     link,
   });
-  const smsStatus = smsResult.sent
+  const smsStatus: OwnerNotificationSummary["status"] = smsResult.sent
     ? "sent"
     : smsResult.reason === "not-configured"
-      ? "skipped"
+      ? "mock"
       : "failed";
+  const messageBody = `MyPawLink update for ${mappedVisit.petName}: ${message} View visit: ${link}`;
+  const sentAt = new Date().toISOString();
 
   await logNotificationEvent({
     visitId: mappedVisit.id,
@@ -1658,13 +1670,14 @@ const sendOwnerNotification = async ({
     triggerType,
     recipientPhone: ownerPhone,
     subject,
-    message,
+    message: messageBody,
     link,
-    status: smsStatus,
-    provider: smsResult.provider || "twilio",
+    status: smsStatus === "mock" ? "skipped" : smsStatus,
+    provider: smsStatus === "mock" ? "mock" : smsResult.provider || "twilio",
     providerResponse: {
       reason: smsResult.reason || "",
       providerMessageId: smsResult.providerMessageId || "",
+      status: smsStatus === "mock" ? "mock sent" : smsStatus,
     },
     errorMessage: smsResult.error || "",
   });
@@ -1672,14 +1685,14 @@ const sendOwnerNotification = async ({
   await recordAuditLog({
     clinicId: stringValue(visit.clinic_id),
     visitId: mappedVisit.id,
-    action: smsStatus === "sent" ? "text_message_sent" : "text_message_failed",
+    action: smsStatus === "failed" ? "text_message_failed" : "text_message_sent",
     entityType: "notification_message",
     metadata: {
       channel: "sms",
       triggerType,
       recipientPhone: ownerPhone,
       status: smsStatus,
-      provider: smsResult.provider || "twilio",
+      provider: smsStatus === "mock" ? "mock" : smsResult.provider || "twilio",
       providerMessageId: smsResult.providerMessageId || "",
       error: smsResult.error || "",
     },
@@ -1702,6 +1715,9 @@ const sendOwnerNotification = async ({
     reason: smsResult.reason || "",
     error: smsResult.error || "",
     link,
+    recipientPhone: ownerPhone,
+    messageBody,
+    sentAt,
   } satisfies OwnerNotificationSummary;
 };
 
@@ -2457,6 +2473,62 @@ const sendCheckInConfirmationEmail = async ({
   });
 };
 
+const sendCheckInSmsNotification = async ({
+  visitId,
+  ownerPhone,
+  petName,
+  link,
+}: {
+  visitId: string;
+  ownerPhone: string;
+  petName: string;
+  link: string;
+}): Promise<OwnerNotificationSummary> => {
+  const messageBody = getCheckInSmsMessage(petName, link);
+  const sentAt = new Date().toISOString();
+  const smsResult = await sendSmsNotification({
+    phone: ownerPhone,
+    petName,
+    message: "Thank you for checking in with MyPawLink. You can follow " + petName + "'s visit updates here:",
+    link,
+    messageBody,
+  });
+  const smsStatus: OwnerNotificationSummary["status"] = smsResult.sent
+    ? "sent"
+    : smsResult.reason === "not-configured"
+      ? "mock"
+      : "failed";
+
+  await logNotificationEvent({
+    visitId,
+    channel: "sms",
+    triggerType: "check_in_confirmation",
+    recipientPhone: ownerPhone,
+    subject: petName + " visit link",
+    message: messageBody,
+    link,
+    status: smsStatus === "mock" ? "skipped" : smsStatus,
+    provider: smsStatus === "mock" ? "mock" : smsResult.provider || "twilio",
+    providerResponse: {
+      reason: smsResult.reason || "",
+      providerMessageId: smsResult.providerMessageId || "",
+      status: smsStatus === "mock" ? "mock sent" : smsStatus,
+    },
+    errorMessage: smsResult.error || "",
+  });
+
+  return {
+    channel: "sms",
+    status: smsStatus,
+    reason: smsResult.reason || "",
+    error: smsResult.error || "",
+    link,
+    recipientPhone: ownerPhone,
+    messageBody,
+    sentAt,
+  };
+};
+
 const createOwnerPetVisit = async ({
   owner,
   pet,
@@ -2529,11 +2601,18 @@ const createOwnerPetVisit = async ({
   });
   await ensureEmergencyCareConsentForm(visitId);
   const accessToken = await ensureVisitAccessToken(visitId, ownerEmail);
+  const accessUrl = buildVisitAccessUrl(accessToken);
   await sendCheckInConfirmationEmail({
     visitId,
     ownerEmail,
     petName,
-    link: buildVisitAccessUrl(accessToken),
+    link: accessUrl,
+  });
+  const notification = await sendCheckInSmsNotification({
+    visitId,
+    ownerPhone: stringValue(owner.phone),
+    petName,
+    link: accessUrl,
   });
 
   await logIntegrationEvent({
@@ -2563,7 +2642,10 @@ const createOwnerPetVisit = async ({
     },
   });
 
-  return fetchVisitById(String(createdVisit.id));
+  return {
+    visit: await fetchVisitById(String(createdVisit.id)),
+    notification,
+  };
 };
 
 const loadOwnerVisitsForSession = async (body: RequestBody) => {
@@ -2619,6 +2701,71 @@ const loadOwnerVisitsForSession = async (body: RequestBody) => {
 
   const visits = await Promise.all(((data || []) as DbRecord[]).map(withVisitAccess));
   return { error: null, visits };
+};
+
+const normalizePhoneDigits = (phone: string) => phone.replace(/\D/g, "");
+
+const phoneDigitsMatch = (storedPhone: string, submittedPhone: string) => {
+  const storedDigits = normalizePhoneDigits(storedPhone);
+  const submittedDigits = normalizePhoneDigits(submittedPhone);
+  if (!storedDigits || !submittedDigits) return false;
+  return (
+    storedDigits === submittedDigits ||
+    storedDigits.slice(-10) === submittedDigits.slice(-10)
+  );
+};
+
+const findVisitsForOwnerLookup = async (body: RequestBody) => {
+  const phone = stringValue(body.phone).trim();
+  const petName = stringValue(body.petName).trim().toLowerCase();
+  const ownerLastName = stringValue(body.ownerLastName).trim().toLowerCase();
+
+  if (normalizePhoneDigits(phone).length < 7 || (!petName && !ownerLastName)) {
+    return NextResponse.json(
+      { error: "Enter your phone number and either your pet name or owner last name." },
+      { status: 400 }
+    );
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data: ownerRows, error: ownerError } = await supabase
+    .from("owners")
+    .select("id, first_name, last_name, phone, email");
+
+  if (ownerError) throw ownerError;
+
+  const matchedOwnerIds = ((ownerRows || []) as DbRecord[])
+    .filter((owner) => phoneDigitsMatch(stringValue(owner.phone), phone))
+    .filter((owner) =>
+      ownerLastName
+        ? stringValue(owner.last_name).trim().toLowerCase() === ownerLastName
+        : true
+    )
+    .map((owner) => stringValue(owner.id))
+    .filter(Boolean);
+
+  if (!matchedOwnerIds.length) return NextResponse.json({ visits: [] });
+
+  const { data, error } = await supabase
+    .from("visits")
+    .select(visitSelect)
+    .in("owner_id", matchedOwnerIds)
+    .neq("status", "Closed")
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+
+  const visits = await Promise.all(
+    ((data || []) as DbRecord[])
+      .filter((visit) => {
+        if (!petName) return true;
+        const pet = recordValue(visit.pets);
+        return stringValue(pet.pet_name).trim().toLowerCase() === petName;
+      })
+      .map(withVisitAccess)
+  );
+
+  return NextResponse.json({ visits });
 };
 
 export async function POST(request: Request) {
@@ -2681,7 +2828,7 @@ export async function POST(request: Request) {
     }
 
     if (action === "createVisit") {
-      const visit = await createOwnerPetVisit({
+      const result = await createOwnerPetVisit({
         owner: recordValue(body.owner),
         pet: recordValue(body.pet),
         visit: recordValue(body.visit),
@@ -2691,7 +2838,7 @@ export async function POST(request: Request) {
         },
       });
 
-      return NextResponse.json({ visit });
+      return NextResponse.json(result);
     }
 
     if (action === "createReferral") {
@@ -2710,6 +2857,10 @@ export async function POST(request: Request) {
       if (ownerVisits.error) return ownerVisits.error;
 
       return NextResponse.json({ visits: ownerVisits.visits });
+    }
+
+    if (action === "findVisit") {
+      return findVisitsForOwnerLookup(body);
     }
 
     if (action === "loadVisitByToken") {

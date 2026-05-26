@@ -25,4 +25,5 @@ export type OwnerSmsNotificationInput = {
   petName: string;
   message: string;
   link?: string;
+  messageBody?: string;
 };

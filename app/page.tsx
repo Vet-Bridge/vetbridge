@@ -241,10 +241,13 @@ type StaffProfile = {
 
 type NotificationSummary = {
   channel: "sms";
-  status: "sent" | "skipped" | "failed";
+  status: "sent" | "mock" | "skipped" | "failed";
   reason: string;
   error: string;
   link: string;
+  recipientPhone: string;
+  messageBody: string;
+  sentAt: string;
 };
 
 type ClinicActionResult = {
@@ -847,6 +850,15 @@ export function MyPawLinkApp({
   const [ownerAccessEmail, setOwnerAccessEmail] = useState("");
   const [ownerAccessCode, setOwnerAccessCode] = useState("");
   const [ownerCodeSent, setOwnerCodeSent] = useState(false);
+  const [findVisitPhone, setFindVisitPhone] = useState("");
+  const [findVisitPetName, setFindVisitPetName] = useState("");
+  const [findVisitOwnerLastName, setFindVisitOwnerLastName] = useState("");
+  const [findVisitMessage, setFindVisitMessage] = useState("");
+  const [checkInConfirmation, setCheckInConfirmation] = useState<{
+    visitId: string;
+    accessUrl: string;
+    notification?: NotificationSummary | null;
+  } | null>(null);
   const [ownerVisits, setOwnerVisits] = useState<Visit[]>([]);
   const [ownerVisitsLoading, setOwnerVisitsLoading] = useState(false);
   const [ownerVisitsError, setOwnerVisitsError] = useState("");
@@ -977,10 +989,23 @@ export function MyPawLinkApp({
   const ownerActionCount =
     pendingOwnerForms.length +
     (selectedVisit?.estimateStatus?.toLowerCase().includes("pending") ? 1 : 0);
-  const getOwnerStatusLabel = (visit: Visit) =>
-    visit.status.toLowerCase() === "request submitted"
-      ? "Waiting for team review"
-      : visit.status;
+  const getOwnerStatusLabel = (visit: Visit) => {
+    const status = visit.status.trim().toLowerCase();
+
+    if (
+      status === "request submitted" ||
+      status === "request submitted / waiting for team review" ||
+      (status.includes("request submitted") && status.includes("review"))
+    ) {
+      return "Request received";
+    }
+
+    if (status.includes("waiting") && status.includes("review")) {
+      return "Waiting for review";
+    }
+
+    return visit.status;
+  };
   const getOwnerReviewMessage = (visit: Visit) =>
     visit.status.toLowerCase() === "request submitted"
       ? "The veterinary team has received your request and will update you here."
@@ -1518,6 +1543,41 @@ export function MyPawLinkApp({
     }
   }
 
+  async function findVisitByPhone(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setOwnerVisitsLoading(true);
+    setOwnerVisitsError("");
+    setFindVisitMessage("");
+    setSearchError("");
+
+    try {
+      const result = await apiRequest<{ visits: Visit[] }>({
+        action: "findVisit",
+        phone: findVisitPhone,
+        petName: findVisitPetName,
+        ownerLastName: findVisitOwnerLastName,
+      });
+
+      setOwnerVisits(result.visits);
+      setVisits((current) => {
+        const byId = new Map(current.map((visit) => [visit.id, visit]));
+        result.visits.forEach((visit) => byId.set(visit.id, visit));
+        return Array.from(byId.values());
+      });
+      setFindVisitMessage(
+        result.visits.length
+          ? "We found your visit. Use the secure link below to return anytime."
+          : "No matching active visit was found. Check the phone and pet/last name, or ask the clinic to resend your link."
+      );
+    } catch (error) {
+      setOwnerVisitsError(
+        error instanceof Error ? error.message : "Unable to find that visit."
+      );
+    } finally {
+      setOwnerVisitsLoading(false);
+    }
+  }
+
   const signInClinicStaff = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setAuthLoading(true);
@@ -1635,17 +1695,26 @@ export function MyPawLinkApp({
     return callbackUrl.toString();
   };
 
+  const getVisitLink = (visit: Visit) => {
+    if (visit.accessUrl) return visit.accessUrl;
+    if (!visit.accessToken) return "";
+
+    return `${window.location.origin}/visit/${visit.accessToken}`;
+  };
+
   const copyVisitLink = async (visit: Visit) => {
-    if (!visit.accessUrl) {
+    const link = getVisitLink(visit);
+
+    if (!link) {
       alert("This visit does not have a secure link yet. Refresh the dashboard and try again.");
       return;
     }
 
     try {
-      await navigator.clipboard.writeText(visit.accessUrl);
+      await navigator.clipboard.writeText(link);
       alert("Secure visit link copied.");
     } catch {
-      window.prompt("Copy this secure visit link", visit.accessUrl);
+      window.prompt("Copy this secure visit link", link);
     }
   };
 
@@ -2063,7 +2132,7 @@ export function MyPawLinkApp({
   };
 
   const showNotificationIssue = (notification?: NotificationSummary | null) => {
-    if (!notification || notification.status === "sent") return;
+    if (!notification || notification.status === "sent" || notification.status === "mock") return;
 
     const reason =
       notification.reason === "not-configured"
@@ -2672,9 +2741,10 @@ export function MyPawLinkApp({
   };
 
   let visit: Visit;
+  let notification: NotificationSummary | null = null;
 
   try {
-    const result = await apiRequest<{ visit: Visit }>({
+    const result = await apiRequest<{ visit: Visit; notification?: NotificationSummary | null }>({
       action: "createVisit",
       owner: {
         first_name: String(form.get("ownerFirstName")),
@@ -2700,6 +2770,7 @@ export function MyPawLinkApp({
       firstUpdateStatus: firstUpdate.status,
     });
     visit = result.visit;
+    notification = result.notification || null;
   } catch (error) {
     console.error(error);
     setVisitSubmitError(error instanceof Error ? error.message : "Error creating visit");
@@ -2725,22 +2796,18 @@ export function MyPawLinkApp({
   setPetPhotoPreview("");
   setVisitSubmitMessage(
     visit.petName +
-      " has been checked in. Opening the live visit page with your Emergency Care Consent."
+      " has been checked in. Your secure visit page is ready below."
   );
   submittingVisitRef.current = false;
   setSubmittingVisit(false);
 
-  if (visit.accessToken) {
-    router.push("/visit/" + visit.accessToken);
-    return;
-  }
-
-  if (visit.accessUrl) {
-    window.location.href = visit.accessUrl;
-    return;
-  }
-
+  setCheckInConfirmation({
+    visitId: visit.id,
+    accessUrl: getVisitLink(visit),
+    notification,
+  });
   setOwnerPortalTab("actions");
+  setOwnerPortalMode("owner");
   setView("status");
 };
 
@@ -4260,6 +4327,61 @@ export function MyPawLinkApp({
               </div>
 
               <div style={styles.ownerAccessCard}>
+                <div>
+                  <h3 style={styles.trackCardTitle}>Find My Visit</h3>
+                  <p style={styles.trackCardText}>
+                    Enter the phone number used at check-in plus your pet name or owner last name.
+                  </p>
+                </div>
+
+                <form style={styles.trackForm} onSubmit={findVisitByPhone}>
+                  <label style={styles.trackFieldLabel}>
+                    Phone number
+                    <input
+                      style={styles.trackInput}
+                      type="tel"
+                      value={findVisitPhone}
+                      onChange={(event) => setFindVisitPhone(event.target.value)}
+                      placeholder="Phone used at check-in"
+                      required
+                    />
+                  </label>
+                  <div style={styles.trackTwoColumn}>
+                    <label style={styles.trackFieldLabel}>
+                      Pet name
+                      <input
+                        style={styles.trackInput}
+                        value={findVisitPetName}
+                        onChange={(event) => setFindVisitPetName(event.target.value)}
+                        placeholder="Trampas"
+                      />
+                    </label>
+                    <label style={styles.trackFieldLabel}>
+                      Owner last name
+                      <input
+                        style={styles.trackInput}
+                        value={findVisitOwnerLastName}
+                        onChange={(event) => setFindVisitOwnerLastName(event.target.value)}
+                        placeholder="Bernal"
+                      />
+                    </label>
+                  </div>
+                  <button
+                    style={{
+                      ...styles.trackPrimaryButton,
+                      ...(ownerVisitsLoading ? styles.disabledButton : {}),
+                    }}
+                    type="submit"
+                    disabled={ownerVisitsLoading}
+                  >
+                    {ownerVisitsLoading ? "Searching..." : "Find Visit"}
+                  </button>
+                </form>
+
+                {findVisitMessage && <div style={styles.authMessage}>{findVisitMessage}</div>}
+              </div>
+
+              <div style={styles.ownerAccessCard}>
                 {!ownerCodeSent ? (
                   <>
                     <div>
@@ -4452,11 +4574,11 @@ export function MyPawLinkApp({
               {loading && <p style={styles.text}>Opening secure visit...</p>}
               {searchError && <div style={styles.errorBox}>{searchError}</div>}
 
-              {authUserEmail && (
+              {(authUserEmail || ownerVisits.length > 0 || ownerVisitsLoading || ownerVisitsError || findVisitMessage) && (
                 <div style={styles.ownerVisitPanel}>
                   <div>
-                    <h3 style={styles.ownerVisitTitle}>Your Pets</h3>
-                    <p style={styles.authHelpText}>Choose a pet to open live updates.</p>
+                    <h3 style={styles.ownerVisitTitle}>Your Visits</h3>
+                    <p style={styles.authHelpText}>Choose a visit or use the secure link buttons.</p>
                   </div>
 
                   {ownerVisitsLoading && <div style={styles.authMessage}>Loading your pets...</div>}
@@ -4483,24 +4605,9 @@ export function MyPawLinkApp({
 
                   <div style={styles.ownerVisitList}>
                     {ownerVisits.map((visit) => (
-                      <button
+                      <div
                         key={visit.id}
-                        type="button"
                         style={styles.ownerVisitCard}
-                        onClick={() => {
-                          setVisits((current) =>
-                            current.some((currentVisit) => currentVisit.id === visit.id)
-                              ? current.map((currentVisit) =>
-                                  currentVisit.id === visit.id ? visit : currentVisit
-                                )
-                              : [visit, ...current]
-                          );
-                          setSelectedVisitId(visit.id);
-                          setVisitAccessInput(visit.accessUrl || visit.accessToken || "");
-                          setOwnerPortalTab("home");
-                          setOwnerPortalMode("owner");
-                          setView("status");
-                        }}
                       >
                         <img src={getPetPhoto(visit)} alt={visit.petName} style={styles.ownerVisitImage} />
                         <span style={styles.ownerVisitContent}>
@@ -4513,10 +4620,22 @@ export function MyPawLinkApp({
                           <span>{clinicSettings.name || "MyPawLink Emergency Hospital"}</span>
                           <small>{getVisitRelativeTime(visit)}</small>
                         </span>
-                        <span style={styles.ownerVisitArrow}>
-                          {isDischargedVisit(visit) ? "View Discharge" : "Open Updates"}
+                        <span style={styles.ownerVisitActionStack}>
+                          <a
+                            href={getVisitLink(visit) || "#"}
+                            style={styles.ownerVisitArrow}
+                          >
+                            Open Visit Page
+                          </a>
+                          <button
+                            type="button"
+                            style={styles.ownerVisitMiniButton}
+                            onClick={() => void copyVisitLink(visit)}
+                          >
+                            Copy Visit Link
+                          </button>
                         </span>
-                      </button>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -5579,6 +5698,58 @@ export function MyPawLinkApp({
                 )}
               </div>
 
+              {checkInConfirmation?.visitId === selectedVisit.id && (
+                <div style={styles.secureVisitLinkCard}>
+                  <div>
+                    <span style={styles.ownerHeroEyebrow}>Your visit has been created</span>
+                    <h2 style={styles.ownerVisitTitle}>Save this secure visit link</h2>
+                    <p style={styles.secureVisitLinkText}>
+                      You can leave this page and come back anytime using this link.
+                    </p>
+                  </div>
+                  <div style={styles.ownerLinkButtonRow}>
+                    <a
+                      href={checkInConfirmation.accessUrl}
+                      style={styles.secureVisitLinkButton}
+                    >
+                      Open Visit Page
+                    </a>
+                    <button
+                      type="button"
+                      style={styles.secureVisitLinkButton}
+                      onClick={() => void copyVisitLink(selectedVisit)}
+                    >
+                      Copy Visit Link
+                    </button>
+                  </div>
+                  <code style={styles.secureVisitVisibleLink}>
+                    {checkInConfirmation.accessUrl}
+                  </code>
+
+                  {checkInConfirmation.notification && (
+                    <div style={styles.mockSmsCard}>
+                      <span style={styles.ownerHeroEyebrow}>
+                        {checkInConfirmation.notification.status === "mock"
+                          ? "Mock SMS"
+                          : "SMS notification"}
+                      </span>
+                      <strong>Status: {checkInConfirmation.notification.status === "mock" ? "mock sent" : checkInConfirmation.notification.status}</strong>
+                      <span>To: {checkInConfirmation.notification.recipientPhone || selectedVisit.phone || "Phone not provided"}</span>
+                      <span>
+                        Time:{" "}
+                        {checkInConfirmation.notification.sentAt
+                          ? new Date(checkInConfirmation.notification.sentAt).toLocaleString()
+                          : new Date().toLocaleString()}
+                      </span>
+                      <p>{checkInConfirmation.notification.messageBody}</p>
+                      <code style={styles.secureVisitVisibleLink}>
+                        {checkInConfirmation.notification.link || checkInConfirmation.accessUrl}
+                      </code>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {ownerPortalTab === "home" && (
                 <div style={styles.ownerTabPanel}>
                   <div style={styles.ownerHeroStatusCard}>
@@ -5703,7 +5874,7 @@ export function MyPawLinkApp({
                     <img src={getPetPhoto(selectedVisit)} alt={selectedVisit.petName} style={styles.ownerPetProfileImage} />
                     <div>
                       <h2 style={styles.petTitle}>{selectedVisit.petName}</h2>
-                      <p style={styles.statusBadge}>{selectedVisit.status}</p>
+                      <p style={styles.statusBadge}>{getOwnerStatusLabel(selectedVisit)}</p>
                     </div>
                   </div>
 
@@ -7408,12 +7579,58 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: 13,
     fontWeight: 900,
     whiteSpace: "nowrap",
+    textAlign: "center",
+    textDecoration: "none",
+  },
+  secureVisitVisibleLink: {
+    background: "#ffffff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    color: "#12485a",
+    display: "block",
+    fontSize: 12,
+    lineHeight: 1.35,
+    overflowWrap: "anywhere",
+    padding: 10,
+    whiteSpace: "normal",
   },
   ownerLinkButtonRow: {
     display: "grid",
     gap: 8,
-    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
     width: "100%",
+  },
+  mockSmsCard: {
+    background: "#ffffff",
+    border: "1px solid #bfe9e0",
+    borderRadius: 8,
+    color: "#243447",
+    display: "grid",
+    fontSize: 13,
+    gap: 6,
+    lineHeight: 1.4,
+    padding: 12,
+  },
+  trackTwoColumn: {
+    display: "grid",
+    gap: 10,
+    gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+  },
+  ownerVisitActionStack: {
+    alignItems: "stretch",
+    display: "grid",
+    gap: 8,
+    minWidth: 130,
+  },
+  ownerVisitMiniButton: {
+    background: "#ffffff",
+    border: "1px solid #bfe9e0",
+    borderRadius: 8,
+    color: "#087f78",
+    cursor: "pointer",
+    fontSize: 12,
+    fontWeight: 900,
+    padding: "8px 10px",
   },
   ownerAccessDetails: {
     background: "#f0fbf8",
@@ -7864,7 +8081,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: 12,
     alignItems: "center",
     textAlign: "left",
-    cursor: "pointer",
+    cursor: "default",
   },
   ownerVisitImage: {
     width: 52,
@@ -7883,6 +8100,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: "#087f78",
     fontSize: 12,
     fontWeight: 900,
+    textDecoration: "none",
     textAlign: "right",
   },
   manualVisitLinkPanel: {
@@ -9995,6 +10213,10 @@ statusBadge: {
   borderRadius: 8,
   fontWeight: 700,
   fontSize: 12,
+  lineHeight: 1.2,
+  maxWidth: "100%",
+  overflowWrap: "anywhere",
+  whiteSpace: "normal",
 },
 
 detailsCard: {

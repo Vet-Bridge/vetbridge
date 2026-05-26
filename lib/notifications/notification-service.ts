@@ -14,16 +14,17 @@ export const createNotificationService = ({
 }: {
   smsProvider?: NotificationProviderAdapter;
 } = {}): NotificationService => ({
-  async sendOwnerSms({ phone, petName, message, link }: OwnerSmsNotificationInput) {
+  async sendOwnerSms({ phone, petName, message, link, messageBody }: OwnerSmsNotificationInput) {
     const siteUrl = link || process.env.NEXT_PUBLIC_SITE_URL || "https://mypawlink.com";
+    const smsBody = messageBody || `MyPawLink update for ${petName}: ${message} View visit: ${siteUrl}`;
 
-    if (!phone || !petName || !message) {
+    if (!phone || !petName || !smsBody) {
       return { status: "failed", provider: smsProvider.providerKey, reason: "missing-fields" };
     }
 
     return smsProvider.sendSms({
       phone,
-      message: `MyPawLink update for ${petName}: ${message} View visit: ${siteUrl}`,
+      message: smsBody,
     });
   },
 });
