@@ -1066,6 +1066,7 @@ export function MyPawLinkApp({
     notification?: NotificationSummary | null;
   } | null>(null);
   const [ownerFormDrafts, setOwnerFormDrafts] = useState<Record<string, OwnerFormSignatureDraft>>({});
+  const [activeOwnerFormId, setActiveOwnerFormId] = useState("");
   const [respondingOwnerFormId, setRespondingOwnerFormId] = useState("");
   const [ownerFormMessages, setOwnerFormMessages] = useState<Record<string, string>>({});
   const [ownerVisits, setOwnerVisits] = useState<Visit[]>([]);
@@ -2072,6 +2073,7 @@ export function MyPawLinkApp({
             ? "Form signed. The clinic has been notified."
             : "Form declined. The clinic has been notified.",
       }));
+      setActiveOwnerFormId("");
     } catch (error) {
       console.error(error);
       setOwnerFormMessages((current) => ({
@@ -6340,14 +6342,18 @@ export function MyPawLinkApp({
                       <span>We will let you know here when something needs your review.</span>
                     </div>
                   )}
-                  {selectedVisit.forms && selectedVisit.forms.length > 0 && (
+                  {pendingOwnerForms.length > 0 && (
                     <div style={styles.ownerFormList}>
-                      <h3 style={styles.ownerVisitTitle}>Forms</h3>
+                      <div>
+                        <span style={styles.ownerHeroEyebrow}>Action Needed</span>
+                        <h3 style={styles.ownerVisitTitle}>Forms to review</h3>
+                      </div>
 
-                      {selectedVisit.forms.map((form) => {
+                      {pendingOwnerForms.map((form) => {
                         const draft = ownerFormDrafts[form.id] || emptyOwnerFormSignatureDraft();
                         const formMessage = ownerFormMessages[form.id] || "";
                         const isResponding = respondingOwnerFormId === form.id;
+                        const formIsOpen = activeOwnerFormId === form.id;
 
                         return (
                           <div key={form.id} style={styles.ownerFormCard}>
@@ -6359,7 +6365,7 @@ export function MyPawLinkApp({
                               <span style={styles.formStatus}>{form.form_status}</span>
                             </div>
 
-                            {form.form_body && (
+                            {form.form_body && formIsOpen && (
                               <div style={styles.noticeBox}>
                                 <strong>Please review before responding:</strong>
                                 {form.form_body.split("\n\n").map((paragraph) => (
@@ -6368,8 +6374,39 @@ export function MyPawLinkApp({
                               </div>
                             )}
 
-                            {form.form_status === "Sent" && (
+                            {!formIsOpen && (
+                              <div style={styles.ownerRequiredActionCard}>
+                                <div>
+                                  <strong>
+                                    {isEmergencyCareConsentForm(form)
+                                      ? "Emergency Care Consent"
+                                      : form.form_type || "Form"}
+                                  </strong>
+                                  <span>
+                                    {isEmergencyCareConsentForm(form)
+                                      ? "Please review and sign so the veterinary team can begin evaluation and stabilizing care."
+                                      : "Please review this item from the veterinary team."}
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  style={styles.careHubViewButton}
+                                  onClick={() => setActiveOwnerFormId(form.id)}
+                                >
+                                  Review & Sign
+                                </button>
+                              </div>
+                            )}
+
+                            {formIsOpen && (
                               <div style={styles.signatureForm}>
+                                <button
+                                  type="button"
+                                  style={styles.backButton}
+                                  onClick={() => setActiveOwnerFormId("")}
+                                >
+                                  Back to Actions
+                                </button>
                                 <input
                                   style={styles.input}
                                   value={draft.ownerName}
@@ -6554,17 +6591,19 @@ export function MyPawLinkApp({
                       })}
                     </div>
                   )}
-              <div style={styles.ownerActionCard}>
-                <h3 style={styles.sectionTitle}>MyPawLink Care Hub</h3>
-                <p style={styles.careHubIntro}>
-                  Only documents connected to this visit are shown here.
-                </p>
-                <button style={styles.careHubButton} onClick={openCareHub}>
-                  Open Care Hub <span>&gt;</span>
-                </button>
-              </div>
+              {pendingOwnerForms.length === 0 && (
+                <div style={styles.ownerActionCard}>
+                  <h3 style={styles.sectionTitle}>MyPawLink Care Hub</h3>
+                  <p style={styles.careHubIntro}>
+                    Only documents connected to this visit are shown here.
+                  </p>
+                  <button style={styles.careHubButton} onClick={openCareHub}>
+                    Open Care Hub <span>&gt;</span>
+                  </button>
+                </div>
+              )}
 
-              {careHubOpen && (
+              {pendingOwnerForms.length === 0 && careHubOpen && (
                 <div style={styles.careHubPortal}>
                   <div style={styles.careHubHeader}>
                     <div>
@@ -10207,6 +10246,28 @@ ownerFormBody: {
 ownerFormActions: {
   display: "grid",
   gap: 10,
+},
+
+ownerRequiredActionCard: {
+  alignItems: "stretch",
+  background: "#f0fbf8",
+  border: "1px solid #bfe9e0",
+  borderRadius: 8,
+  display: "grid",
+  gap: 12,
+  padding: 12,
+},
+
+backButton: {
+  background: "#ffffff",
+  border: "1px solid #dcefeb",
+  borderRadius: 8,
+  color: "#52606d",
+  cursor: "pointer",
+  fontSize: 13,
+  fontWeight: 900,
+  justifySelf: "start",
+  padding: "9px 11px",
 },
 
 signatureForm: {
