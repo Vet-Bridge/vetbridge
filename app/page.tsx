@@ -1199,6 +1199,11 @@ export function MyPawLinkApp({
   const ownerActionCount =
     pendingOwnerForms.length +
     (selectedVisit?.estimateStatus?.toLowerCase().includes("pending") ? 1 : 0);
+  const showPostCheckInConfirmationOnly = Boolean(
+    selectedVisit &&
+      checkInConfirmation?.visitId === selectedVisit.id &&
+      pendingOwnerForms.length === 0
+  );
   const getOwnerStatusLabel = (visit: Visit) => {
     const status = visit.status.trim().toLowerCase();
 
@@ -6058,6 +6063,7 @@ export function MyPawLinkApp({
 
           {view === "status" && selectedVisit && (
             <section style={styles.ownerPortalShell}>
+              {!showPostCheckInConfirmationOnly && (
               <div style={styles.ownerPortalHeader}>
                 <button style={styles.customerHomeButton} onClick={() => setView("home")}>
                   Exit
@@ -6073,6 +6079,7 @@ export function MyPawLinkApp({
                   </button>
                 )}
               </div>
+              )}
 
               {checkInConfirmation?.visitId === selectedVisit.id && (
                 <div style={styles.secureVisitLinkCard}>
@@ -6126,7 +6133,7 @@ export function MyPawLinkApp({
                 </div>
               )}
 
-              {ownerPortalTab === "home" && (
+              {!showPostCheckInConfirmationOnly && ownerPortalTab === "home" && (
                 <div style={styles.ownerTabPanel}>
                   <div style={styles.ownerHeroStatusCard}>
                     <div>
@@ -6216,7 +6223,7 @@ export function MyPawLinkApp({
                 </div>
               )}
 
-              {ownerPortalTab === "updates" && (
+              {!showPostCheckInConfirmationOnly && ownerPortalTab === "updates" && (
                 <div style={styles.ownerTabPanel}>
                   <div style={styles.ownerSectionHeader}>
                     <h2 style={styles.sectionTitle}>Updates</h2>
@@ -6244,7 +6251,7 @@ export function MyPawLinkApp({
                 </div>
               )}
 
-              {ownerPortalTab === "pet" && (
+              {!showPostCheckInConfirmationOnly && ownerPortalTab === "pet" && (
                 <div style={styles.ownerTabPanel}>
                   <div style={styles.ownerPetProfileCard}>
                     <img src={getPetPhoto(selectedVisit)} alt={selectedVisit.petName} style={styles.ownerPetProfileImage} />
@@ -6279,7 +6286,7 @@ export function MyPawLinkApp({
                 </div>
               )}
 
-              {ownerPortalTab === "profile" && (
+              {!showPostCheckInConfirmationOnly && ownerPortalTab === "profile" && (
                 <div style={styles.ownerTabPanel}>
                   <div style={styles.ownerSectionHeader}>
                     <h2 style={styles.sectionTitle}>Profile</h2>
@@ -6326,7 +6333,7 @@ export function MyPawLinkApp({
                 </div>
               )}
 
-              {ownerPortalTab === "actions" && (
+              {!showPostCheckInConfirmationOnly && ownerPortalTab === "actions" && (
                 <div style={styles.ownerTabPanel}>
                   <div style={styles.ownerSectionHeader}>
                     <h2 style={styles.sectionTitle}>Actions</h2>
@@ -6866,6 +6873,7 @@ export function MyPawLinkApp({
                 </div>
               )}
 
+              {!showPostCheckInConfirmationOnly && (
               <div style={styles.bottomNav}>
                 {visibleOwnerPortalTabs.map((tab) => (
                   <button
@@ -6884,6 +6892,7 @@ export function MyPawLinkApp({
                   </button>
                 ))}
               </div>
+              )}
             </section>
           )}
         </div>
