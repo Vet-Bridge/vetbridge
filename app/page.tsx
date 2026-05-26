@@ -3580,11 +3580,6 @@ export function MyPawLinkApp({
     setSelectedCareHubFormId(null);
   };
 
-  const openCareHubCategory = (categoryId: string) => {
-    setSelectedCareHubCategoryId(categoryId);
-    setSelectedCareHubFormId(null);
-  };
-
   const submitCareHubForm = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!selectedCareHubForm) return;
@@ -6562,35 +6557,21 @@ export function MyPawLinkApp({
               <div style={styles.ownerActionCard}>
                 <h3 style={styles.sectionTitle}>MyPawLink Care Hub</h3>
                 <p style={styles.careHubIntro}>
-                  Review forms, decisions, approvals, and discharge documents in one place.
+                  Only documents connected to this visit are shown here.
                 </p>
                 <button style={styles.careHubButton} onClick={openCareHub}>
                   Open Care Hub <span>&gt;</span>
                 </button>
-                <div style={styles.careHubActionList}>
-                  {[
-                    "🐾 Admission Forms",
-                    "💳 Financial Approvals",
-                    "❤️ Emergency Decisions",
-                    "📋 Treatment Consents",
-                    "🩺 Procedure Authorizations",
-                    "🏠 Discharge Instructions",
-                  ].map((item) => (
-                    <div key={item} style={styles.careHubActionItem}>
-                      {item}
-                    </div>
-                  ))}
-                </div>
               </div>
 
               {careHubOpen && (
                 <div style={styles.careHubPortal}>
                   <div style={styles.careHubHeader}>
                     <div>
-                      <p style={styles.careHubEyebrow}>Client Portal</p>
+                      <p style={styles.careHubEyebrow}>Visit documents</p>
                       <h3 style={styles.sectionTitle}>MyPawLink Care Hub</h3>
                       <p style={styles.careHubIntro}>
-                        Documents are organized by category for the care team to send as needed.
+                        Forms, approvals, and discharge documents appear here only after the clinic sends them for this visit.
                       </p>
                     </div>
                     <button
@@ -6612,27 +6593,58 @@ export function MyPawLinkApp({
                   </div>
 
                   {!selectedCareHubCategory && (
-                    <div style={styles.careHubCategoryGrid}>
-                      {careHubCategories.map((category) => {
-                        const signedCount = category.forms.filter(
-                          (form) => signedCareHubForms[form.id]
-                        ).length;
-
-                        return (
-                          <button
-                            key={category.id}
-                            style={styles.careHubCategoryCard}
-                            onClick={() => openCareHubCategory(category.id)}
-                          >
-                            <span style={styles.careHubCategoryTitle}>{category.title}</span>
-                            <span style={styles.careHubCategoryText}>{category.description}</span>
-                            <span style={styles.careHubCategoryMeta}>
-                              {signedCount}/{category.forms.length} signed
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
+                    selectedVisit.forms.length === 0 ? (
+                      <div style={styles.ownerNoActionCard}>
+                        <strong>No visit documents yet.</strong>
+                        <span>
+                          The veterinary team will send forms, approvals, or discharge documents here when needed.
+                        </span>
+                      </div>
+                    ) : (
+                      <div style={styles.careHubFormList}>
+                        {selectedVisit.forms.map((form) => (
+                          <div key={form.id} style={styles.careHubFormCard}>
+                            <div>
+                              <div style={styles.careHubFormTitleRow}>
+                                <h5 style={styles.careHubFormTitle}>
+                                  {form.form_type || "Visit document"}
+                                </h5>
+                                <span
+                                  style={{
+                                    ...styles.careHubStatusBadge,
+                                    ...(form.form_status === "Signed" ? styles.careHubSignedBadge : {}),
+                                  }}
+                                >
+                                  {form.form_status || "Pending"}
+                                </span>
+                              </div>
+                              {form.form_body && (
+                                <p style={styles.careHubFormDescription}>{form.form_body}</p>
+                              )}
+                              {form.signed_at && (
+                                <p style={styles.signedFormText}>
+                                  Signed at {new Date(form.signed_at).toLocaleString()}
+                                </p>
+                              )}
+                              {form.declined_at && (
+                                <p style={styles.ownerDeclinedText}>
+                                  Declined at {new Date(form.declined_at).toLocaleString()}
+                                </p>
+                              )}
+                            </div>
+                            {form.form_status === "Sent" && (
+                              <button
+                                type="button"
+                                style={styles.careHubViewButton}
+                                onClick={() => setCareHubOpen(false)}
+                              >
+                                Review in Actions
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )
                   )}
 
                   {selectedCareHubCategory && !selectedCareHubForm && (
