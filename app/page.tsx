@@ -3925,6 +3925,87 @@ export function MyPawLinkApp({
                       />
                     </div>
 
+                    <div style={styles.optionalContactBox}>
+                      {visitDraft.secondaryContactEnabled !== "Yes" ? (
+                        <button
+                          type="button"
+                          style={styles.optionalContactButton}
+                          onClick={() => updateVisitDraft("secondaryContactEnabled", "Yes")}
+                        >
+                          + Add another contact
+                        </button>
+                      ) : (
+                        <div style={styles.optionalContactForm}>
+                          <div style={styles.optionalContactHeader}>
+                            <div>
+                              <h4 style={styles.optionalContactTitle}>Additional Contact</h4>
+                              <p style={styles.visitStepText}>
+                                Add another person who can receive updates or help make decisions for this visit.
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              style={styles.inlineTextButton}
+                              onClick={() => updateVisitDraft("secondaryContactEnabled", "")}
+                            >
+                              Remove
+                            </button>
+                          </div>
+
+                          <div style={styles.visitFieldGrid}>
+                            <input
+                              style={styles.input}
+                              value={visitDraft.secondaryContactName}
+                              onChange={(e) => updateVisitDraft("secondaryContactName", e.target.value)}
+                              placeholder="Contact name"
+                              autoComplete="name"
+                            />
+                            <select
+                              style={styles.clinicCompactSelect}
+                              value={visitDraft.secondaryContactRelationship}
+                              onChange={(e) => updateVisitDraft("secondaryContactRelationship", e.target.value)}
+                              aria-label="Relationship"
+                            >
+                              <option value="">Relationship</option>
+                              {relationshipOptions.map((relationship) => (
+                                <option key={relationship} value={relationship}>
+                                  {relationship}
+                                </option>
+                              ))}
+                            </select>
+                            <input
+                              style={styles.input}
+                              value={visitDraft.secondaryContactPhone}
+                              onChange={(e) => updateVisitDraft("secondaryContactPhone", e.target.value)}
+                              placeholder="Phone number"
+                              inputMode="tel"
+                              autoComplete="tel"
+                            />
+                            <input
+                              style={styles.input}
+                              value={visitDraft.secondaryContactEmail}
+                              onChange={(e) => updateVisitDraft("secondaryContactEmail", e.target.value)}
+                              placeholder="Email"
+                              inputMode="email"
+                              autoComplete="email"
+                            />
+                            <select
+                              style={styles.clinicCompactSelect}
+                              value={visitDraft.secondaryContactPermission}
+                              onChange={(e) => updateVisitDraft("secondaryContactPermission", e.target.value)}
+                              aria-label="Permission level"
+                            >
+                              {permissionLevelOptions.map((permission) => (
+                                <option key={permission} value={permission}>
+                                  {permission}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
                     <div style={styles.ageSection}>
                       <div style={styles.ageHeader}>
                         <span style={styles.visitChoiceLabel}>Pet age</span>
@@ -4055,87 +4136,6 @@ export function MyPawLinkApp({
 
                     {renderVisitChoiceGroup("Sex", "sex", sexOptions)}
                     {renderVisitChoiceGroup("Spayed/neutered?", "spayedNeutered", spayedOptions)}
-
-                    <div style={styles.optionalContactBox}>
-                      {visitDraft.secondaryContactEnabled !== "Yes" ? (
-                        <button
-                          type="button"
-                          style={styles.optionalContactButton}
-                          onClick={() => updateVisitDraft("secondaryContactEnabled", "Yes")}
-                        >
-                          + Add another contact
-                        </button>
-                      ) : (
-                        <div style={styles.optionalContactForm}>
-                          <div style={styles.optionalContactHeader}>
-                            <div>
-                              <h4 style={styles.optionalContactTitle}>Additional Contact</h4>
-                              <p style={styles.visitStepText}>
-                                Add another person who can receive updates or help make decisions for this visit.
-                              </p>
-                            </div>
-                            <button
-                              type="button"
-                              style={styles.inlineTextButton}
-                              onClick={() => updateVisitDraft("secondaryContactEnabled", "")}
-                            >
-                              Remove
-                            </button>
-                          </div>
-
-                          <div style={styles.visitFieldGrid}>
-                            <input
-                              style={styles.input}
-                              value={visitDraft.secondaryContactName}
-                              onChange={(e) => updateVisitDraft("secondaryContactName", e.target.value)}
-                              placeholder="Contact name"
-                              autoComplete="name"
-                            />
-                            <select
-                              style={styles.clinicCompactSelect}
-                              value={visitDraft.secondaryContactRelationship}
-                              onChange={(e) => updateVisitDraft("secondaryContactRelationship", e.target.value)}
-                              aria-label="Relationship to pet"
-                            >
-                              <option value="">Relationship to pet</option>
-                              {relationshipOptions.map((relationship) => (
-                                <option key={relationship} value={relationship}>
-                                  {relationship}
-                                </option>
-                              ))}
-                            </select>
-                            <input
-                              style={styles.input}
-                              value={visitDraft.secondaryContactPhone}
-                              onChange={(e) => updateVisitDraft("secondaryContactPhone", e.target.value)}
-                              placeholder="Phone number"
-                              inputMode="tel"
-                              autoComplete="tel"
-                            />
-                            <input
-                              style={styles.input}
-                              value={visitDraft.secondaryContactEmail}
-                              onChange={(e) => updateVisitDraft("secondaryContactEmail", e.target.value)}
-                              placeholder="Email"
-                              inputMode="email"
-                              autoComplete="email"
-                            />
-                            <select
-                              style={styles.clinicCompactSelect}
-                              value={visitDraft.secondaryContactPermission}
-                              onChange={(e) => updateVisitDraft("secondaryContactPermission", e.target.value)}
-                              aria-label="Permission level"
-                            >
-                              {permissionLevelOptions.map((permission) => (
-                                <option key={permission} value={permission}>
-                                  {permission}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
-                      )}
-                    </div>
                   </section>
                 )}
 
