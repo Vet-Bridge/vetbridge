@@ -47,6 +47,23 @@ Core workflows:
 - Documents/forms/signatures.
 - Clinic staff authentication and roles.
 
+## Business Priorities
+
+Priority 1:
+Referral Intake Workflow
+
+Priority 2:
+Owner Check-In Workflow
+
+Priority 3:
+Owner Communication and Updates
+
+Priority 4:
+Forms, Consents, and Estimates
+
+Priority 5:
+Integrations
+
 ## MVP Success Criteria
 
 The MVP is successful when:
