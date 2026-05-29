@@ -47,6 +47,39 @@ Core workflows:
 - Documents/forms/signatures.
 - Clinic staff authentication and roles.
 
+## MVP Success Criteria
+
+The MVP is successful when:
+
+Owner Check-In Workflow
+
+- A pet owner can complete check-in.
+- The owner receives a secure visit link.
+- The clinic receives the visit.
+- Required forms can be signed.
+- Owners can receive updates.
+- Owners can approve estimates.
+- Owners can receive discharge instructions.
+
+Referral Workflow
+
+- A referring veterinary clinic can submit a referral.
+- Referral documents, notes, and attachments can be uploaded.
+- Owner and patient information are captured during referral intake.
+- A referral can be converted into a visit without requiring duplicate data entry.
+- The owner receives a secure visit link once the referral is accepted.
+- The clinic can review referral information before patient arrival.
+
+Clinic Workflow
+
+- Clinic staff can review incoming referrals.
+- Clinic staff can review incoming check-ins.
+- Clinic staff can manage consent status.
+- Clinic staff can send updates to owners.
+- Clinic staff can manage owner-facing documents and approvals.
+
+Additional features should be evaluated against MVP priorities before implementation.
+
 ## System Ownership
 
 MyPawLink is not intended to replace SmartFlow, ezyVet, Cornerstone, Instinct, or any veterinary practice management system.
