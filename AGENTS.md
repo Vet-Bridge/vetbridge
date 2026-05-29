@@ -55,6 +55,18 @@ Technicians and doctors continue documenting medical care, treatments, vitals, m
 
 MyPawLink serves as the client communication and engagement layer.
 
+## Clinic Dashboard Boundaries
+
+The clinic dashboard exists only to:
+
+- Review owner-facing information.
+- Manage forms and approvals.
+- Send visit updates.
+- Review communication history.
+- Monitor integration status.
+
+The clinic dashboard is not intended to become the primary working system for technicians or doctors.
+
 ## Product Boundaries
 
 Do not build or expand:
