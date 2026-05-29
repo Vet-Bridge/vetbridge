@@ -47,6 +47,14 @@ Core workflows:
 - Documents/forms/signatures.
 - Clinic staff authentication and roles.
 
+## System Ownership
+
+MyPawLink is not intended to replace SmartFlow, ezyVet, Cornerstone, Instinct, or any veterinary practice management system.
+
+Technicians and doctors continue documenting medical care, treatments, vitals, medications, and medical records in their existing systems.
+
+MyPawLink serves as the client communication and engagement layer.
+
 ## Product Boundaries
 
 Do not build or expand:
