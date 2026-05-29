@@ -88,6 +88,16 @@ Estimates may remain only as clinic-provided documents/actions that a client can
 - SmartFlow-style clinical updates must require review/approval before anything is sent to the owner.
 - Do not hardcode external integration logic inside check-in forms or UI components.
 
+## Integration Priority
+
+Phase 1:
+
+- ezyVet.
+- SmartFlow.
+- Instinct.
+
+New integrations should not be added unless specifically requested.
+
 ## Owner Experience Rules
 
 - Owner-facing screens must be mobile-first, warm, simple, and clear.
