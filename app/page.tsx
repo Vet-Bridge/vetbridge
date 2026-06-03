@@ -3815,7 +3815,17 @@ export function MyPawLinkApp({
                     "Clear discharge communication",
                   ].map((benefit) => (
                     <div key={benefit} style={styles.homeBenefitCard}>
-                      <span style={styles.homeBenefitCheck}>OK</span>
+                      <span aria-label="Completed benefit" role="img" style={styles.homeBenefitCheck}>
+                        <svg aria-hidden="true" fill="none" height="16" viewBox="0 0 16 16" width="16">
+                          <path
+                            d="M13.25 4.75 6.5 11.25 3.25 8"
+                            stroke="currentColor"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth="2.25"
+                          />
+                        </svg>
+                      </span>
                       <strong>{benefit}</strong>
                     </div>
                   ))}
@@ -7662,12 +7672,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: 30,
     height: 30,
     borderRadius: "50%",
-    background: "#ecfdf3",
-    color: "#027a48",
+    background: "#16a34a",
+    color: "#ffffff",
     display: "grid",
     placeItems: "center",
-    fontSize: 10,
-    fontWeight: 900,
   },
   homeStepList: {
     display: "grid",
