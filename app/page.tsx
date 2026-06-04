@@ -3833,9 +3833,10 @@ export function MyPawLinkApp({
               </div>
 
               <div style={styles.homeDisclaimer}>
-                MyPawLink does not replace emergency veterinary medical advice. If your pet is
-                experiencing a life-threatening emergency, contact your nearest emergency
-                veterinary hospital immediately.
+                MyPawLink is a communication platform that helps veterinary clinics share updates
+                with pet owners. MyPawLink does not provide veterinary medical advice, diagnosis,
+                or treatment. If your pet is experiencing a medical emergency, contact your
+                veterinarian or the nearest emergency veterinary hospital immediately.
               </div>
             </section>
           )}
