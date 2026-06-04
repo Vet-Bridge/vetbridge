@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import LegalFooter from "./components/LegalFooter";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -13,7 +14,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="h-full antialiased">
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <div className="site-shell">
+          <div className="site-shell__content">{children}</div>
+          <LegalFooter />
+        </div>
+      </body>
     </html>
   );
 }

@@ -202,6 +202,9 @@ const isDischargeRelated = (value: string) =>
 const isEmergencyCareConsentForm = (form: OwnerPortalForm) =>
   form.form_type.toLowerCase() === "emergency care consent";
 
+const electronicSignatureNotice =
+  "I acknowledge that my electronic signature has the same legal effect as a handwritten signature.";
+
 const emptyClinicFormDraft = (): ClinicFormDraft => ({
   ownerName: "",
   relationship: "",
@@ -1144,9 +1147,10 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
                         checked={(clinicFormDrafts[selectedClinicForm.id] || emptyClinicFormDraft()).typedSignatureAccepted}
                         onChange={(event) => updateClinicFormDraft(selectedClinicForm.id, "typedSignatureAccepted", event.target.checked)}
                       />
-                      I agree that my typed name represents my electronic signature.
+                      {electronicSignatureNotice}
                     </label>
                   </div>
+                  <div style={styles.legalNotice}>{electronicSignatureNotice}</div>
                   <div style={styles.timestampBox}>Date/time signed: {new Date().toLocaleString()}</div>
                   <button
                     type="button"
@@ -1274,6 +1278,7 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
                           }
                           placeholder="Optional note or question"
                         />
+                        <div style={styles.legalNotice}>{electronicSignatureNotice}</div>
                         <div style={styles.estimateButtonGrid}>
                           <button
                             type="button"
@@ -1979,6 +1984,16 @@ const styles: Record<string, CSSProperties> = {
     color: "#52606d",
     fontSize: 12,
     fontWeight: 800,
+    padding: 10,
+  },
+  legalNotice: {
+    background: "#f8fbff",
+    border: "1px solid #dcefeb",
+    borderRadius: 8,
+    color: "#52606d",
+    fontSize: 12,
+    fontWeight: 800,
+    lineHeight: 1.45,
     padding: 10,
   },
   signButton: {

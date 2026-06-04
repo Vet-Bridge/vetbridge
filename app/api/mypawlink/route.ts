@@ -140,6 +140,10 @@ const numberValue = (value: unknown, fallback: number) => {
   return Number.isFinite(number) ? number : fallback;
 };
 
+const getRequestIp = (request: Request) =>
+  stringValue(request.headers.get("x-forwarded-for")).split(",")[0]?.trim() ||
+  stringValue(request.headers.get("x-real-ip")).trim();
+
 const parseReferralTransferTime = (value: string) => {
   const trimmed = value.trim();
   if (!trimmed) return null;
@@ -607,6 +611,59 @@ const createVisitAccessToken = async ({
   }
 
   throw new Error("Unable to create visit access token.");
+};
+
+const getOwnerActionAuditContext = async (visitId: string) => {
+  if (!visitId) {
+    return {
+      clinicId: "",
+      ownerName: "",
+      ownerEmail: "",
+      petId: "",
+    };
+  }
+
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("visits")
+      .select(
+        `
+          clinic_id,
+          pet_id,
+          owners!visits_owner_id_fkey (
+            first_name,
+            last_name,
+            email
+          )
+        `
+      )
+      .eq("id", visitId)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    const visit = (data || {}) as DbRecord;
+    const owner = recordValue(visit.owners);
+    const ownerName = [stringValue(owner.first_name), stringValue(owner.last_name)]
+      .filter(Boolean)
+      .join(" ");
+
+    return {
+      clinicId: stringValue(visit.clinic_id),
+      ownerName,
+      ownerEmail: stringValue(owner.email),
+      petId: stringValue(visit.pet_id),
+    };
+  } catch (error) {
+    console.error("Unable to load owner audit context:", error);
+    return {
+      clinicId: "",
+      ownerName: "",
+      ownerEmail: "",
+      petId: "",
+    };
+  }
 };
 
 const ensureVisitAccessToken = async (visitId: string, ownerEmail?: string) => {
@@ -1959,9 +2016,34 @@ const signCareHubFormForVisit = async ({
   await notifyVisitAccessChannels(visitId);
 
   const signedForm = (data || {}) as DbRecord;
+  const auditContext = await getOwnerActionAuditContext(visitId);
+  const relatedFormId = stringValue(signedForm.form_id, formId);
+
+  await recordAuditLog({
+    clinicId: auditContext.clinicId || (await getDemoClinicId()),
+    visitId,
+    action: "forms_submitted",
+    entityType: "care_hub_form",
+    entityId: relatedFormId,
+    ipAddress,
+    userAgent: deviceInfo,
+    metadata: {
+      actionType: "forms_submitted",
+      ownerName: ownerName || auditContext.ownerName,
+      ownerEmail: auditContext.ownerEmail,
+      visitId,
+      petId: auditContext.petId,
+      occurredAt: signedAt,
+      ipAddress,
+      relatedDocumentId: relatedFormId,
+      checkboxAgreed,
+      signatureMethod: signatureData.startsWith("typed-signature:") ? "typed" : "drawn",
+    },
+  });
+
   return {
     id: stringValue(signedForm.id),
-    formId: stringValue(signedForm.form_id, formId),
+    formId: relatedFormId,
     ownerName: stringValue(signedForm.owner_name, ownerName),
     signedAt: stringValue(signedForm.signed_at, signedAt),
     status: stringValue(signedForm.status, "Signed"),
@@ -2073,12 +2155,16 @@ const respondToEstimateForVisit = async ({
   response,
   ownerName,
   responseNotes,
+  ipAddress,
+  userAgent,
 }: {
   visitId: string;
   estimateId: string;
   response: string;
   ownerName: string;
   responseNotes: string;
+  ipAddress: string;
+  userAgent: string;
 }) => {
   const normalizedResponse = response.toLowerCase();
   const now = new Date().toISOString();
@@ -2139,6 +2225,32 @@ const respondToEstimateForVisit = async ({
           : `${ownerName} requested a discussion about the treatment estimate.`,
     sendText: false,
   });
+
+  if (status === "Approved" || status === "Declined") {
+    const actionType = status === "Approved" ? "estimate_approved" : "estimate_declined";
+    const auditContext = await getOwnerActionAuditContext(visitId);
+
+    await recordAuditLog({
+      clinicId: auditContext.clinicId || (await getDemoClinicId()),
+      visitId,
+      action: actionType,
+      entityType: "estimate",
+      entityId: estimateId,
+      ipAddress,
+      userAgent,
+      metadata: {
+        actionType,
+        ownerName: ownerName || auditContext.ownerName,
+        ownerEmail: auditContext.ownerEmail,
+        visitId,
+        petId: auditContext.petId,
+        occurredAt: now,
+        ipAddress,
+        relatedDocumentId: estimateId,
+        responseNotes,
+      },
+    });
+  }
 
   return mapEstimate((data || {}) as DbRecord);
 };
@@ -2973,7 +3085,7 @@ export async function POST(request: Request) {
           ownerName,
           signatureData,
           checkboxAgreed,
-          ipAddress: stringValue(request.headers.get("x-forwarded-for")).split(",")[0]?.trim(),
+          ipAddress: getRequestIp(request),
           deviceInfo: stringValue(request.headers.get("user-agent")),
         });
 
@@ -3042,6 +3154,8 @@ export async function POST(request: Request) {
           response,
           ownerName,
           responseNotes,
+          ipAddress: getRequestIp(request),
+          userAgent: stringValue(request.headers.get("user-agent")),
         });
 
         return NextResponse.json({
@@ -3372,13 +3486,36 @@ export async function POST(request: Request) {
         },
       ]);
 
+      const actionType =
+        formStatus === "Signed"
+          ? isEmergencyConsent
+            ? "consent_signed"
+            : "forms_submitted"
+          : "form_declined";
+      const occurredAt =
+        formStatus === "Signed"
+          ? stringValue((baseUpdate as DbRecord).signed_at)
+          : stringValue((baseUpdate as DbRecord).declined_at);
+      const auditContext = await getOwnerActionAuditContext(visitId);
+      const requestIp = getRequestIp(request);
+
       await recordAuditLog({
-        clinicId: await getDemoClinicId(),
+        clinicId: auditContext.clinicId || (await getDemoClinicId()),
         visitId,
-        action: formStatus === "Signed" ? "form_signed" : "form_declined",
+        action: actionType,
         entityType: "form",
         entityId: formId,
+        ipAddress: requestIp,
+        userAgent: stringValue(request.headers.get("user-agent")),
         metadata: {
+          actionType,
+          ownerName: signedName || auditContext.ownerName,
+          ownerEmail: auditContext.ownerEmail,
+          visitId,
+          petId: auditContext.petId,
+          occurredAt,
+          ipAddress: requestIp,
+          relatedDocumentId: formId,
           formType: stringValue(formRecord.form_type),
           signerName: signedName,
           relationshipToPet,
