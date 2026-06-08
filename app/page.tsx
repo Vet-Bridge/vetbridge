@@ -3994,6 +3994,24 @@ export function MyPawLinkApp({
           .customer-language-button {
             justify-self: center !important;
           }
+          .owner-visit-card {
+            align-items: start !important;
+            grid-template-columns: 52px minmax(0, 1fr) !important;
+            padding: 14px !important;
+          }
+          .owner-visit-actions {
+            grid-column: 1 / -1 !important;
+            grid-template-columns: 1fr !important;
+            margin-top: 4px !important;
+            min-width: 0 !important;
+            width: 100% !important;
+          }
+          .owner-visit-actions a,
+          .owner-visit-actions button {
+            justify-content: center !important;
+            text-align: center !important;
+            width: 100% !important;
+          }
         }
       `}</style>
       {view === "home" && (
@@ -5501,6 +5519,7 @@ export function MyPawLinkApp({
                     {ownerVisits.map((visit) => (
                       <div
                         key={visit.id}
+                        className="owner-visit-card"
                         style={styles.ownerVisitCard}
                       >
                         <img src={getPetPhoto(visit)} alt={visit.petName} style={styles.ownerVisitImage} />
@@ -5514,7 +5533,7 @@ export function MyPawLinkApp({
                           <span>{clinicSettings.name || "MyPawLink Emergency Hospital"}</span>
                           <small>{getVisitRelativeTime(visit)}</small>
                         </span>
-                        <span style={styles.ownerVisitActionStack}>
+                        <span className="owner-visit-actions" style={styles.ownerVisitActionStack}>
                           <a
                             href={getVisitLink(visit) || "#"}
                             style={styles.ownerVisitArrow}
@@ -8728,6 +8747,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: "grid",
     gap: 8,
     minWidth: 130,
+    width: "100%",
   },
   ownerVisitMiniButton: {
     background: "#ffffff",
@@ -8737,7 +8757,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     cursor: "pointer",
     fontSize: 12,
     fontWeight: 900,
+    minHeight: 36,
     padding: "8px 10px",
+    textAlign: "center",
+    width: "100%",
   },
   ownerAccessDetails: {
     background: "#f0fbf8",
@@ -9189,6 +9212,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignItems: "center",
     textAlign: "left",
     cursor: "default",
+    overflow: "hidden",
   },
   ownerVisitImage: {
     width: 52,
@@ -9202,13 +9226,24 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: 3,
     color: "#52606d",
     fontSize: 13,
+    minWidth: 0,
+    overflowWrap: "anywhere",
   },
   ownerVisitArrow: {
-    color: "#087f78",
+    alignItems: "center",
+    background: "#087f78",
+    border: "1px solid #087f78",
+    borderRadius: 8,
+    color: "#ffffff",
+    display: "flex",
     fontSize: 12,
     fontWeight: 900,
+    justifyContent: "center",
+    minHeight: 36,
+    padding: "8px 10px",
     textDecoration: "none",
-    textAlign: "right",
+    textAlign: "center",
+    width: "100%",
   },
   manualVisitLinkPanel: {
     background: "#f8fbff",
