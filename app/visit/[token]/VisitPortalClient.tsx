@@ -127,6 +127,7 @@ type VisitPortalClientProps = {
 };
 
 type RealtimeStatus = "Connecting" | "Live" | "Reconnecting" | "Offline";
+type CustomerLanguage = "en" | "es";
 
 const getRealtimeStatus = (status: string): RealtimeStatus => {
   if (status === "SUBSCRIBED") return "Live";
@@ -204,6 +205,218 @@ const isEmergencyCareConsentForm = (form: OwnerPortalForm) =>
 
 const electronicSignatureNotice =
   "I acknowledge that my electronic signature has the same legal effect as a handwritten signature.";
+const customerLanguageStorageKey = "mypawlink-customer-language";
+const customerLanguageChangedEvent = "mypawlink-language-change";
+const visitPortalCopy = {
+  en: {
+    languageButton: "Español",
+    languageAriaLabel: "Switch customer experience to Spanish",
+    securePortal: "Secure visit portal",
+    hi: "Hi",
+    there: "there",
+    latestOn: (petName: string) => `Here is the latest on ${petName}.`,
+    refresh: "Refresh",
+    visitReceived: (petName: string) => `${petName}'s visit request has been received.`,
+    noPetPhoto: "No pet photo uploaded",
+    synced: "Synced",
+    visitOverview: "Visit overview",
+    emergencyVisit: "Emergency visit",
+    needsReview: (count: number) => `${count} needs review`,
+    noActionNeeded: "No action needed",
+    started: "Started",
+    latest: "Latest",
+    waiting: "Waiting",
+    forms: "Forms",
+    estimates: "Estimates",
+    pending: (count: number) => `${count} pending`,
+    visitSteps: ["Received", "Triage", "Doctor", "Treatment", "Discharge"],
+    quickActions: {
+      updates: "Updates",
+      actions: "Actions",
+      estimates: "Estimates",
+      discharge: "Discharge",
+    },
+    contactsTitle: "Visit Contacts",
+    contactsIntro: "People connected to updates for this visit.",
+    primaryOwner: "Primary owner",
+    owner: "Owner",
+    phoneMissing: "Phone not provided",
+    emailMissing: "Email not provided",
+    fullAccess: "Full access",
+    additionalContact: "Additional contact",
+    authorizedApprover: "Authorized approver",
+    careContact: "Care contact",
+    updatesOnly: "Updates only",
+    liveTimeline: "Live Timeline",
+    updateCount: (count: number) => `${count} updates`,
+    emptyTimeline: "Updates will appear here as the clinic sends them.",
+    actionsTitle: "Actions",
+    actionsIntro: "Forms, estimates, and discharge documents appear here only when your review is needed.",
+    clear: "Clear",
+    actionNeeded: "Action Needed",
+    emergencyCareConsent: "Emergency Care Consent",
+    emergencyConsentIntro: "Please review and sign so the veterinary team can begin evaluation and stabilizing care.",
+    reviewAndSign: "Review & Sign",
+    formFallback: "Form",
+    formReviewFallback: "Please review and respond to this form.",
+    estimateApprovalNeeded: "Estimate Approval Needed",
+    estimateApprovalIntro: "Please review and approve or decline the treatment estimate.",
+    reviewEstimate: "Review Estimate",
+    dischargeAvailable: "Discharge Instructions Available",
+    dischargeReady: "Discharge documents are ready for this visit.",
+    viewDischarge: "View Discharge Instructions",
+    noActionNow: "No action needed right now.",
+    noActionBody: "We will let you know here when something needs your review.",
+    completedActions: "Completed Actions",
+    backToActions: "Back to Actions",
+    pendingStatus: "Pending",
+    formBodyFallback: "Please review this form before responding.",
+    ownerFullName: "Owner full name",
+    relationshipToPet: "Relationship to pet",
+    emergencyChecks: [
+      "I authorize initial emergency evaluation and stabilizing care for my pet.",
+      "I understand that charges may apply for emergency evaluation and stabilizing care.",
+      "I understand that payment is due at the time of service.",
+      "I understand that additional diagnostics, treatment, hospitalization, procedures, or surgery may require a separate estimate and approval.",
+    ],
+    signWithFinger: "Sign with your finger",
+    clearSignature: "Clear Signature",
+    signatureHelp: "Use your finger or stylus to sign inside the box.",
+    typedSignature: "Typed signature fallback",
+    dateTimeSigned: "Date/time signed",
+    submitting: "Submitting...",
+    signConsent: "Sign Consent",
+    declineReason: "Reason for declining",
+    declineWarning: "Declining this consent may delay care. The veterinary team may contact you before care can continue.",
+    decline: "Decline",
+    careHubTitle: "Care Hub",
+    careHubIntro: "Only documents connected to this visit appear here.",
+    documentFallback: "Document",
+    visitDocumentFallback: "Visit document.",
+    noDocuments: "No visit documents are available yet.",
+    estimatesTitle: "Treatment Estimates",
+    estimatesIntro: "Review estimates and tell the clinic how to proceed.",
+    loadingEstimates: "Loading estimates...",
+    noEstimates: "No treatment estimates are ready right now.",
+    printedName: "Printed name",
+    optionalNote: "Optional note or question",
+    approve: "Approve",
+    requestDiscussion: "Request Discussion",
+    ownerResponded: (ownerName: string, status: string) => `${ownerName || "Owner"} responded: ${status}`,
+    dischargeTitle: "Discharge Documents",
+    dischargeIntro: "Discharge instructions, medication acknowledgments, and follow-up care will appear here when ready.",
+    dischargeDocument: "Discharge document",
+    noDischargeDocuments: "No discharge documents are ready yet.",
+    backToMyPawLink: "Back to MyPawLink",
+  },
+  es: {
+    languageButton: "English",
+    languageAriaLabel: "Cambiar la experiencia del cliente a inglés",
+    securePortal: "Portal seguro de visita",
+    hi: "Hola",
+    there: "familia",
+    latestOn: (petName: string) => `Aquí está la información más reciente de ${petName}.`,
+    refresh: "Actualizar",
+    visitReceived: (petName: string) => `La solicitud de visita de ${petName} fue recibida.`,
+    noPetPhoto: "No se subió foto de la mascota",
+    synced: "Sincronizado",
+    visitOverview: "Resumen de la visita",
+    emergencyVisit: "Visita de emergencia",
+    needsReview: (count: number) => `${count} por revisar`,
+    noActionNeeded: "No se necesita acción",
+    started: "Inicio",
+    latest: "Más reciente",
+    waiting: "En espera",
+    forms: "Formularios",
+    estimates: "Estimados",
+    pending: (count: number) => `${count} pendientes`,
+    visitSteps: ["Recibido", "Triaje", "Doctor", "Tratamiento", "Alta"],
+    quickActions: {
+      updates: "Actualizaciones",
+      actions: "Acciones",
+      estimates: "Estimados",
+      discharge: "Alta",
+    },
+    contactsTitle: "Contactos de la visita",
+    contactsIntro: "Personas conectadas a las actualizaciones de esta visita.",
+    primaryOwner: "Dueño principal",
+    owner: "Dueño",
+    phoneMissing: "Teléfono no proporcionado",
+    emailMissing: "Correo no proporcionado",
+    fullAccess: "Acceso completo",
+    additionalContact: "Contacto adicional",
+    authorizedApprover: "Autorizado para aprobar",
+    careContact: "Contacto de cuidado",
+    updatesOnly: "Solo actualizaciones",
+    liveTimeline: "Cronología en vivo",
+    updateCount: (count: number) => `${count} actualizaciones`,
+    emptyTimeline: "Las actualizaciones aparecerán aquí cuando la clínica las envíe.",
+    actionsTitle: "Acciones",
+    actionsIntro: "Los formularios, estimados y documentos de alta aparecen aquí solo cuando necesitan su revisión.",
+    clear: "Sin pendientes",
+    actionNeeded: "Acción necesaria",
+    emergencyCareConsent: "Consentimiento de atención de emergencia",
+    emergencyConsentIntro: "Revise y firme para que el equipo veterinario pueda iniciar la evaluación y el cuidado de estabilización.",
+    reviewAndSign: "Revisar y firmar",
+    formFallback: "Formulario",
+    formReviewFallback: "Revise y responda a este formulario.",
+    estimateApprovalNeeded: "Aprobación de estimado necesaria",
+    estimateApprovalIntro: "Revise y apruebe o rechace el estimado de tratamiento.",
+    reviewEstimate: "Revisar estimado",
+    dischargeAvailable: "Instrucciones de alta disponibles",
+    dischargeReady: "Los documentos de alta están listos para esta visita.",
+    viewDischarge: "Ver instrucciones de alta",
+    noActionNow: "No se necesita acción ahora.",
+    noActionBody: "Le avisaremos aquí cuando algo necesite su revisión.",
+    completedActions: "Acciones completadas",
+    backToActions: "Volver a acciones",
+    pendingStatus: "Pendiente",
+    formBodyFallback: "Revise este formulario antes de responder.",
+    ownerFullName: "Nombre completo del dueño",
+    relationshipToPet: "Relación con la mascota",
+    emergencyChecks: [
+      "Autorizo la evaluación de emergencia inicial y el cuidado de estabilización para mi mascota.",
+      "Entiendo que pueden aplicarse cargos por la evaluación de emergencia y el cuidado de estabilización.",
+      "Entiendo que el pago vence al momento del servicio.",
+      "Entiendo que diagnósticos, tratamientos, hospitalización, procedimientos o cirugía adicionales pueden requerir un estimado y aprobación por separado.",
+    ],
+    signWithFinger: "Firme con su dedo",
+    clearSignature: "Borrar firma",
+    signatureHelp: "Use su dedo o lápiz táctil para firmar dentro del recuadro.",
+    typedSignature: "Firma escrita como respaldo",
+    dateTimeSigned: "Fecha/hora de firma",
+    submitting: "Enviando...",
+    signConsent: "Firmar consentimiento",
+    declineReason: "Motivo del rechazo",
+    declineWarning: "Rechazar este consentimiento puede retrasar la atención. El equipo veterinario puede contactarle antes de continuar.",
+    decline: "Rechazar",
+    careHubTitle: "Centro de cuidado",
+    careHubIntro: "Solo aparecen aquí los documentos conectados a esta visita.",
+    documentFallback: "Documento",
+    visitDocumentFallback: "Documento de visita.",
+    noDocuments: "Aún no hay documentos de visita disponibles.",
+    estimatesTitle: "Estimados de tratamiento",
+    estimatesIntro: "Revise los estimados e indique a la clínica cómo proceder.",
+    loadingEstimates: "Cargando estimados...",
+    noEstimates: "No hay estimados de tratamiento listos ahora.",
+    printedName: "Nombre en letra de molde",
+    optionalNote: "Nota o pregunta opcional",
+    approve: "Aprobar",
+    requestDiscussion: "Solicitar conversación",
+    ownerResponded: (ownerName: string, status: string) => `${ownerName || "Dueño"} respondió: ${status}`,
+    dischargeTitle: "Documentos de alta",
+    dischargeIntro: "Las instrucciones de alta, confirmaciones de medicamentos y cuidado de seguimiento aparecerán aquí cuando estén listos.",
+    dischargeDocument: "Documento de alta",
+    noDischargeDocuments: "Aún no hay documentos de alta listos.",
+    backToMyPawLink: "Volver a MyPawLink",
+  },
+} as const;
+
+const getInitialCustomerLanguage = (): CustomerLanguage => {
+  if (typeof window === "undefined") return "en";
+  const storedLanguage = window.localStorage.getItem(customerLanguageStorageKey);
+  return storedLanguage === "en" || storedLanguage === "es" ? storedLanguage : "en";
+};
 
 const emptyClinicFormDraft = (): ClinicFormDraft => ({
   ownerName: "",
@@ -384,6 +597,8 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
   const [respondingFormId, setRespondingFormId] = useState("");
   const [formActionMessage, setFormActionMessage] = useState("");
   const [respondingEstimateId, setRespondingEstimateId] = useState("");
+  const [customerLanguage, setCustomerLanguage] = useState<CustomerLanguage>(getInitialCustomerLanguage);
+  const copy = visitPortalCopy[customerLanguage];
 
   const latestUpdate = useMemo(
     () => visit.updates[visit.updates.length - 1],
@@ -417,7 +632,21 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
         hour: "numeric",
         minute: "2-digit",
       })
-    : "In progress";
+    : customerLanguage === "es" ? "En progreso" : "In progress";
+
+  const setCustomerLanguagePreference = (language: CustomerLanguage) => {
+    setCustomerLanguage(language);
+    window.localStorage.setItem(customerLanguageStorageKey, language);
+    window.dispatchEvent(
+      new CustomEvent(customerLanguageChangedEvent, {
+        detail: { language },
+      })
+    );
+  };
+
+  const toggleCustomerLanguage = () => {
+    setCustomerLanguagePreference(customerLanguage === "en" ? "es" : "en");
+  };
 
   const jumpToSection = (sectionId: string) => {
     document.getElementById(sectionId)?.scrollIntoView({
@@ -773,15 +1002,25 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
   return (
     <main style={styles.page}>
       <section style={styles.shell}>
-        <div style={styles.logoRow}>
-          <img src="/mypawlink-logo.png" alt="MyPawLink" style={styles.logo} />
+        <div style={styles.portalHeader}>
+          <div style={styles.logoRow}>
+            <img src="/mypawlink-logo.png" alt="MyPawLink" style={styles.logo} />
+          </div>
+          <button
+            type="button"
+            style={styles.portalLanguageButton}
+            onClick={toggleCustomerLanguage}
+            aria-label={copy.languageAriaLabel}
+          >
+            {copy.languageButton}
+          </button>
         </div>
 
         <div style={styles.greeting}>
           <div style={{ minWidth: 0 }}>
-            <p style={styles.eyebrow}>Secure visit portal</p>
-            <h1 style={styles.title}>Hi, {visit.ownerFirstName || "there"}.</h1>
-            <p style={styles.text}>Here is the latest on {visit.petName}.</p>
+            <p style={styles.eyebrow}>{copy.securePortal}</p>
+            <h1 style={styles.title}>{copy.hi}, {visit.ownerFirstName || copy.there}.</h1>
+            <p style={styles.text}>{copy.latestOn(visit.petName)}</p>
           </div>
           <span style={styles.statusBadge}>{compactStatusLabel}</span>
         </div>
@@ -801,37 +1040,37 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
               style={styles.refreshButton}
               onClick={() => void refreshVisit("manual")}
             >
-              Refresh
+              {copy.refresh}
             </button>
           </div>
 
           <div style={styles.liveBody}>
             <h2 style={styles.updateTitle}>
-              {latestUpdate?.message || `${visit.petName}'s visit request has been received.`}
+              {latestUpdate?.message || copy.visitReceived(visit.petName)}
             </h2>
             <div style={styles.petAvatarWrap}>
               <img
                 src={visit.petPhotoUrl || defaultPetAvatarSrc}
-                alt={visit.petPhotoUrl ? visit.petName : "No pet photo uploaded"}
+                alt={visit.petPhotoUrl ? visit.petName : copy.noPetPhoto}
                 style={styles.petAvatar}
               />
-              {!visit.petPhotoUrl && <span>No pet photo uploaded</span>}
+              {!visit.petPhotoUrl && <span>{copy.noPetPhoto}</span>}
             </div>
           </div>
 
           <div style={styles.syncRow}>
             <span>{syncStatus}</span>
-            {lastSynced && <span>Synced {lastSynced}</span>}
+            {lastSynced && <span>{copy.synced} {lastSynced}</span>}
           </div>
         </div>
 
         <section style={styles.ownerOverviewCard}>
           <div style={styles.ownerOverviewHeader}>
             <div>
-              <p style={styles.eyebrow}>Visit overview</p>
+              <p style={styles.eyebrow}>{copy.visitOverview}</p>
               <h2 style={styles.overviewTitle}>{visit.petName}</h2>
               <p style={styles.text}>
-                {[visit.breed || visit.species, visit.petAge?.display, visit.visitType || "Emergency visit"]
+                {[visit.breed || visit.species, visit.petAge?.display, visit.visitType || copy.emergencyVisit]
                   .filter(Boolean)
                   .join(" - ")}
               </p>
@@ -842,26 +1081,26 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
                 ...(needsAttentionCount > 0 ? styles.attentionBadgeActive : {}),
               }}
             >
-              {needsAttentionCount > 0 ? `${needsAttentionCount} needs review` : "No action needed"}
+              {needsAttentionCount > 0 ? copy.needsReview(needsAttentionCount) : copy.noActionNeeded}
             </span>
           </div>
 
           <div style={styles.ownerMetricGrid}>
             <div style={styles.ownerMetric}>
-              <span>Started</span>
+              <span>{copy.started}</span>
               <strong>{visitStartedLabel}</strong>
             </div>
             <div style={styles.ownerMetric}>
-              <span>Latest</span>
-              <strong>{latestUpdate?.time || "Waiting"}</strong>
+              <span>{copy.latest}</span>
+              <strong>{latestUpdate?.time || copy.waiting}</strong>
             </div>
             <div style={styles.ownerMetric}>
-              <span>Forms</span>
-              <strong>{pendingClinicForms.length} pending</strong>
+              <span>{copy.forms}</span>
+              <strong>{copy.pending(pendingClinicForms.length)}</strong>
             </div>
             <div style={styles.ownerMetric}>
-              <span>Estimates</span>
-              <strong>{pendingEstimateCount} pending</strong>
+              <span>{copy.estimates}</span>
+              <strong>{copy.pending(pendingEstimateCount)}</strong>
             </div>
           </div>
 
@@ -874,23 +1113,23 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
                     ...(index <= currentStepIndex ? styles.ownerProgressDotActive : {}),
                   }}
                 />
-                <small>{step}</small>
+                <small>{copy.visitSteps[index]}</small>
               </div>
             ))}
           </div>
 
           <div style={styles.quickActionGrid}>
             <button type="button" style={styles.quickActionButton} onClick={() => jumpToSection("timeline")}>
-              Updates
+              {copy.quickActions.updates}
             </button>
             <button type="button" style={styles.quickActionButton} onClick={() => jumpToSection("actions")}>
-              Actions
+              {copy.quickActions.actions}
             </button>
             <button type="button" style={styles.quickActionButton} onClick={() => jumpToSection("estimates")}>
-              Estimates
+              {copy.quickActions.estimates}
             </button>
             <button type="button" style={styles.quickActionButton} onClick={() => jumpToSection("discharge")}>
-              Discharge
+              {copy.quickActions.discharge}
             </button>
           </div>
         </section>
@@ -898,31 +1137,31 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
         <section style={styles.card}>
           <div style={styles.sectionHeader}>
             <div>
-              <h2 style={styles.sectionTitle}>Visit Contacts</h2>
-              <p style={styles.text}>People connected to updates for this visit.</p>
+              <h2 style={styles.sectionTitle}>{copy.contactsTitle}</h2>
+              <p style={styles.text}>{copy.contactsIntro}</p>
             </div>
           </div>
           <div style={styles.contactStack}>
             <div style={styles.contactCard}>
-              <span style={styles.actionEyebrow}>Primary owner</span>
-              <strong>{[visit.ownerFirstName, visit.ownerLastName].filter(Boolean).join(" ") || "Owner"}</strong>
-              <span>{visit.phone || "Phone not provided"}</span>
-              <span>{visit.ownerEmail || "Email not provided"}</span>
-              <span style={styles.permissionBadge}>Full access</span>
+              <span style={styles.actionEyebrow}>{copy.primaryOwner}</span>
+              <strong>{[visit.ownerFirstName, visit.ownerLastName].filter(Boolean).join(" ") || copy.owner}</strong>
+              <span>{visit.phone || copy.phoneMissing}</span>
+              <span>{visit.ownerEmail || copy.emailMissing}</span>
+              <span style={styles.permissionBadge}>{copy.fullAccess}</span>
             </div>
             {(visit.secondaryContacts || []).map((contact) => (
               <div key={`${contact.name}-${contact.phone}-${contact.email}`} style={styles.contactCard}>
-                <span style={styles.actionEyebrow}>Additional contact</span>
+                <span style={styles.actionEyebrow}>{copy.additionalContact}</span>
                 <strong>{contact.name}</strong>
                 <span>{contact.relationship}</span>
-                <span>{contact.phone || "Phone not provided"}</span>
-                <span>{contact.email || "Email not provided"}</span>
+                <span>{contact.phone || copy.phoneMissing}</span>
+                <span>{contact.email || copy.emailMissing}</span>
                 <span style={styles.permissionBadge}>
                   {contact.permissionLevel === "Can approve estimates/forms"
-                    ? "Authorized approver"
+                    ? copy.authorizedApprover
                     : contact.permissionLevel === "Can discuss care"
-                      ? "Care contact"
-                      : "Updates only"}
+                      ? copy.careContact
+                      : copy.updatesOnly}
                 </span>
               </div>
             ))}
@@ -932,8 +1171,8 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
         <div style={styles.grid}>
           <section id="timeline" style={styles.card}>
             <div style={styles.sectionHeader}>
-              <h2 style={styles.sectionTitle}>Live Timeline</h2>
-              <span style={styles.timelineCount}>{visit.updates.length} updates</span>
+              <h2 style={styles.sectionTitle}>{copy.liveTimeline}</h2>
+              <span style={styles.timelineCount}>{copy.updateCount(visit.updates.length)}</span>
             </div>
 
             {visit.updates.length > 0 ? (
@@ -954,18 +1193,18 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
                 ))}
               </div>
             ) : (
-              <p style={styles.text}>Updates will appear here as the clinic sends them.</p>
+              <p style={styles.text}>{copy.emptyTimeline}</p>
             )}
           </section>
 
           <section id="actions" style={styles.card}>
             <div style={styles.sectionHeader}>
               <div>
-                <h2 style={styles.sectionTitle}>Actions</h2>
-                <p style={styles.text}>Forms, estimates, and discharge documents appear here only when your review is needed.</p>
+                <h2 style={styles.sectionTitle}>{copy.actionsTitle}</h2>
+                <p style={styles.text}>{copy.actionsIntro}</p>
               </div>
               <span style={styles.timelineCount}>
-                {needsAttentionCount > 0 ? needsAttentionCount + " pending" : "Clear"}
+                {needsAttentionCount > 0 ? copy.pending(needsAttentionCount) : copy.clear}
               </span>
             </div>
 
@@ -975,63 +1214,63 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
               <div style={styles.actionStack}>
                 {pendingEmergencyConsent && (
                   <div style={styles.actionNeededCard}>
-                    <span style={styles.actionEyebrow}>Action Needed</span>
-                    <strong>Emergency Care Consent</strong>
-                    <p>Please review and sign so the veterinary team can begin evaluation and stabilizing care.</p>
+                    <span style={styles.actionEyebrow}>{copy.actionNeeded}</span>
+                    <strong>{copy.emergencyCareConsent}</strong>
+                    <p>{copy.emergencyConsentIntro}</p>
                     <button
                       type="button"
                       style={styles.signButton}
                       onClick={() => openClinicForm(pendingEmergencyConsent.id)}
                     >
-                      Review & Sign
+                      {copy.reviewAndSign}
                     </button>
                   </div>
                 )}
 
                 {pendingOtherClinicForms.map((form) => (
                   <div key={form.id} style={styles.actionNeededCard}>
-                    <span style={styles.actionEyebrow}>Action Needed</span>
-                    <strong>{form.form_type || "Form"}</strong>
-                    <p>{form.form_body || "Please review and respond to this form."}</p>
+                    <span style={styles.actionEyebrow}>{copy.actionNeeded}</span>
+                    <strong>{form.form_type || copy.formFallback}</strong>
+                    <p>{form.form_body || copy.formReviewFallback}</p>
                     <button type="button" style={styles.signButton} onClick={() => openClinicForm(form.id)}>
-                      Review & Sign
+                      {copy.reviewAndSign}
                     </button>
                   </div>
                 ))}
 
                 {pendingEstimateCount > 0 && (
                   <div style={styles.actionInfoCard}>
-                    <span style={styles.actionEyebrow}>Estimate Approval Needed</span>
-                    <strong>Please review and approve or decline the treatment estimate.</strong>
+                    <span style={styles.actionEyebrow}>{copy.estimateApprovalNeeded}</span>
+                    <strong>{copy.estimateApprovalIntro}</strong>
                     <button type="button" style={styles.secondaryActionButton} onClick={() => jumpToSection("estimates")}>
-                      Review Estimate
+                      {copy.reviewEstimate}
                     </button>
                   </div>
                 )}
 
                 {hasDischargeDocuments && (
                   <div style={styles.actionInfoCard}>
-                    <span style={styles.actionEyebrow}>Discharge Instructions Available</span>
-                    <strong>Discharge documents are ready for this visit.</strong>
+                    <span style={styles.actionEyebrow}>{copy.dischargeAvailable}</span>
+                    <strong>{copy.dischargeReady}</strong>
                     <button type="button" style={styles.secondaryActionButton} onClick={() => jumpToSection("discharge")}>
-                      View Discharge Instructions
+                      {copy.viewDischarge}
                     </button>
                   </div>
                 )}
 
                 {pendingClinicForms.length === 0 && pendingEstimateCount === 0 && !hasDischargeDocuments && (
                   <div style={styles.emptyBox}>
-                    <strong>No action needed right now.</strong>
-                    <span>We will let you know here when something needs your review.</span>
+                    <strong>{copy.noActionNow}</strong>
+                    <span>{copy.noActionBody}</span>
                   </div>
                 )}
 
                 {completedClinicForms.length > 0 && (
                   <div style={styles.completedActionBox}>
-                    <span style={styles.actionEyebrow}>Completed Actions</span>
+                    <span style={styles.actionEyebrow}>{copy.completedActions}</span>
                     {completedClinicForms.map((form) => (
                       <div key={form.id} style={styles.completedActionItem}>
-                        <strong>{form.form_type || "Form"}</strong>
+                        <strong>{form.form_type || copy.formFallback}</strong>
                         <span>
                           {form.form_status}
                           {form.signed_at
@@ -1050,12 +1289,12 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
             {selectedClinicForm && (
               <div style={styles.consentShell}>
                 <button type="button" style={styles.backButton} onClick={() => setSelectedClinicFormId(null)}>
-                  Back to Actions
+                  {copy.backToActions}
                 </button>
-                <span style={styles.formStatus}>{selectedClinicForm.form_status || "Pending"}</span>
-                <h3 style={styles.careHubTitle}>{selectedClinicForm.form_type || "Form"}</h3>
+                <span style={styles.formStatus}>{selectedClinicForm.form_status || copy.pendingStatus}</span>
+                <h3 style={styles.careHubTitle}>{selectedClinicForm.form_type || copy.formFallback}</h3>
                 <div style={styles.legalBox}>
-                  {(selectedClinicForm.form_body || "Please review this form before responding.")
+                  {(selectedClinicForm.form_body || copy.formBodyFallback)
                     .split("\n\n")
                     .map((paragraph) => (
                       <p key={paragraph} style={styles.legalText}>
@@ -1069,14 +1308,14 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
                     style={styles.input}
                     value={(clinicFormDrafts[selectedClinicForm.id] || emptyClinicFormDraft()).ownerName}
                     onChange={(event) => updateClinicFormDraft(selectedClinicForm.id, "ownerName", event.target.value)}
-                    placeholder="Owner full name"
+                    placeholder={copy.ownerFullName}
                     autoComplete="name"
                   />
                   <input
                     style={styles.input}
                     value={(clinicFormDrafts[selectedClinicForm.id] || emptyClinicFormDraft()).relationship}
                     onChange={(event) => updateClinicFormDraft(selectedClinicForm.id, "relationship", event.target.value)}
-                    placeholder="Relationship to pet"
+                    placeholder={copy.relationshipToPet}
                   />
                   {isEmergencyCareConsentForm(selectedClinicForm) && (
                     <div style={styles.checkboxStack}>
@@ -1086,7 +1325,7 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
                           checked={(clinicFormDrafts[selectedClinicForm.id] || emptyClinicFormDraft()).authorized}
                           onChange={(event) => updateClinicFormDraft(selectedClinicForm.id, "authorized", event.target.checked)}
                         />
-                        I authorize initial emergency evaluation and stabilizing care for my pet.
+                        {copy.emergencyChecks[0]}
                       </label>
                       <label style={styles.checkRow}>
                         <input
@@ -1094,7 +1333,7 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
                           checked={(clinicFormDrafts[selectedClinicForm.id] || emptyClinicFormDraft()).chargesAcknowledged}
                           onChange={(event) => updateClinicFormDraft(selectedClinicForm.id, "chargesAcknowledged", event.target.checked)}
                         />
-                        I understand that charges may apply for emergency evaluation and stabilizing care.
+                        {copy.emergencyChecks[1]}
                       </label>
                       <label style={styles.checkRow}>
                         <input
@@ -1102,7 +1341,7 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
                           checked={(clinicFormDrafts[selectedClinicForm.id] || emptyClinicFormDraft()).paymentDueAcknowledged}
                           onChange={(event) => updateClinicFormDraft(selectedClinicForm.id, "paymentDueAcknowledged", event.target.checked)}
                         />
-                        I understand that payment is due at the time of service.
+                        {copy.emergencyChecks[2]}
                       </label>
                       <label style={styles.checkRow}>
                         <input
@@ -1110,19 +1349,19 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
                           checked={(clinicFormDrafts[selectedClinicForm.id] || emptyClinicFormDraft()).separateEstimateAcknowledged}
                           onChange={(event) => updateClinicFormDraft(selectedClinicForm.id, "separateEstimateAcknowledged", event.target.checked)}
                         />
-                        I understand that additional diagnostics, treatment, hospitalization, procedures, or surgery may require a separate estimate and approval.
+                        {copy.emergencyChecks[3]}
                       </label>
                     </div>
                   )}
                   <div style={styles.signaturePadShell}>
                     <div style={styles.signatureHintRow}>
-                      <span>Sign with your finger</span>
+                      <span>{copy.signWithFinger}</span>
                       <button
                         type="button"
                         style={styles.clearSignatureButton}
                         onClick={() => clearClinicSignature(selectedClinicForm.id)}
                       >
-                        Clear Signature
+                        {copy.clearSignature}
                       </button>
                     </div>
                     <MobileSignaturePad
@@ -1130,7 +1369,7 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
                       onChange={(value) => updateClinicFormDraft(selectedClinicForm.id, "signatureData", value)}
                     />
                     <span style={styles.signatureHelper}>
-                      Use your finger or stylus to sign inside the box.
+                      {copy.signatureHelp}
                     </span>
                   </div>
                   <div style={styles.typedSignatureBox}>
@@ -1138,7 +1377,7 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
                       style={styles.input}
                       value={(clinicFormDrafts[selectedClinicForm.id] || emptyClinicFormDraft()).typedSignature}
                       onChange={(event) => updateClinicFormDraft(selectedClinicForm.id, "typedSignature", event.target.value)}
-                      placeholder="Typed signature fallback"
+                      placeholder={copy.typedSignature}
                       autoComplete="name"
                     />
                     <label style={styles.checkRow}>
@@ -1151,29 +1390,29 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
                     </label>
                   </div>
                   <div style={styles.legalNotice}>{electronicSignatureNotice}</div>
-                  <div style={styles.timestampBox}>Date/time signed: {new Date().toLocaleString()}</div>
+                  <div style={styles.timestampBox}>{copy.dateTimeSigned}: {new Date().toLocaleString()}</div>
                   <button
                     type="button"
                     style={{ ...styles.signButton, ...(respondingFormId ? styles.disabledButton : {}) }}
                     disabled={Boolean(respondingFormId)}
                     onClick={() => void respondToClinicForm(selectedClinicForm, "Signed")}
                   >
-                    {respondingFormId === selectedClinicForm.id ? "Submitting..." : "Sign Consent"}
+                    {respondingFormId === selectedClinicForm.id ? copy.submitting : copy.signConsent}
                   </button>
                   <textarea
                     style={styles.estimateNotes}
                     value={(clinicFormDrafts[selectedClinicForm.id] || emptyClinicFormDraft()).declineReason}
                     onChange={(event) => updateClinicFormDraft(selectedClinicForm.id, "declineReason", event.target.value)}
-                    placeholder="Reason for declining"
+                    placeholder={copy.declineReason}
                   />
-                  <div style={styles.warningBox}>Declining this consent may delay care. The veterinary team may contact you before care can continue.</div>
+                  <div style={styles.warningBox}>{copy.declineWarning}</div>
                   <button
                     type="button"
                     style={styles.declineButton}
                     disabled={Boolean(respondingFormId)}
                     onClick={() => void respondToClinicForm(selectedClinicForm, "Declined")}
                   >
-                    Decline
+                    {copy.decline}
                   </button>
                 </form>
               </div>
@@ -1183,8 +1422,8 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
           <section id="care-hub" style={styles.card}>
             <div style={styles.sectionHeader}>
               <div>
-                <h2 style={styles.sectionTitle}>Care Hub</h2>
-                <p style={styles.text}>Only documents connected to this visit appear here.</p>
+                <h2 style={styles.sectionTitle}>{copy.careHubTitle}</h2>
+                <p style={styles.text}>{copy.careHubIntro}</p>
               </div>
             </div>
             <div style={styles.formList}>
@@ -1192,8 +1431,8 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
                 completedClinicForms.map((form) => (
                   <div key={form.id} style={styles.formCard}>
                     <div>
-                      <strong>{form.form_type || "Document"}</strong>
-                      <p style={styles.formText}>{form.form_body || "Visit document."}</p>
+                      <strong>{form.form_type || copy.documentFallback}</strong>
+                      <p style={styles.formText}>{form.form_body || copy.visitDocumentFallback}</p>
                     </div>
                     <span
                       style={{
@@ -1206,7 +1445,7 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
                   </div>
                 ))
               ) : (
-                <div style={styles.emptyBox}>No visit documents are available yet.</div>
+                <div style={styles.emptyBox}>{copy.noDocuments}</div>
               )}
             </div>
           </section>
@@ -1214,19 +1453,19 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
           <section id="estimates" style={styles.card}>
             <div style={styles.sectionHeader}>
               <div>
-                <h2 style={styles.sectionTitle}>Treatment Estimates</h2>
-                <p style={styles.text}>Review estimates and tell the clinic how to proceed.</p>
+                <h2 style={styles.sectionTitle}>{copy.estimatesTitle}</h2>
+                <p style={styles.text}>{copy.estimatesIntro}</p>
               </div>
               <span style={styles.timelineCount}>
-                {pendingEstimateCount} pending
+                {copy.pending(pendingEstimateCount)}
               </span>
             </div>
 
             {estimateMessage && <div style={styles.careHubNotice}>{estimateMessage}</div>}
-            {estimateLoading && <div style={styles.emptyBox}>Loading estimates...</div>}
+            {estimateLoading && <div style={styles.emptyBox}>{copy.loadingEstimates}</div>}
 
             {!estimateLoading && estimates.length === 0 && (
-              <div style={styles.emptyBox}>No treatment estimates are ready right now.</div>
+              <div style={styles.emptyBox}>{copy.noEstimates}</div>
             )}
 
             <div style={styles.estimateList}>
@@ -1268,7 +1507,7 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
                           onChange={(event) =>
                             updateEstimateDraft(estimate.id, "ownerName", event.target.value)
                           }
-                          placeholder="Printed name"
+                          placeholder={copy.printedName}
                         />
                         <textarea
                           style={styles.estimateNotes}
@@ -1276,7 +1515,7 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
                           onChange={(event) =>
                             updateEstimateDraft(estimate.id, "notes", event.target.value)
                           }
-                          placeholder="Optional note or question"
+                          placeholder={copy.optionalNote}
                         />
                         <div style={styles.legalNotice}>{electronicSignatureNotice}</div>
                         <div style={styles.estimateButtonGrid}>
@@ -1286,7 +1525,7 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
                             disabled={isResponding}
                             onClick={() => void respondToEstimate(estimate, "approved")}
                           >
-                            Approve
+                            {copy.approve}
                           </button>
                           <button
                             type="button"
@@ -1294,7 +1533,7 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
                             disabled={isResponding}
                             onClick={() => void respondToEstimate(estimate, "discussion")}
                           >
-                            Request Discussion
+                            {copy.requestDiscussion}
                           </button>
                           <button
                             type="button"
@@ -1302,14 +1541,14 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
                             disabled={isResponding}
                             onClick={() => void respondToEstimate(estimate, "declined")}
                           >
-                            Decline
+                            {copy.decline}
                           </button>
                         </div>
                       </div>
                     ) : (
                       <div style={styles.estimateResponseSummary}>
                         <strong>
-                          {estimate.ownerName || "Owner"} responded: {estimate.status}
+                          {copy.ownerResponded(estimate.ownerName, estimate.status)}
                         </strong>
                         {estimate.responseNotes && <span>{estimate.responseNotes}</span>}
                         {(estimate.approvedAt ||
@@ -1332,26 +1571,23 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
           </section>
 
           <section id="discharge" style={styles.card}>
-            <h2 style={styles.sectionTitle}>Discharge Documents</h2>
-            <p style={styles.text}>
-              Discharge instructions, medication acknowledgments, and follow-up care will appear
-              here when ready.
-            </p>
+            <h2 style={styles.sectionTitle}>{copy.dischargeTitle}</h2>
+            <p style={styles.text}>{copy.dischargeIntro}</p>
             <div style={styles.dischargeList}>
               {dischargeClinicForms.map((form) => (
                 <div key={form.id} style={styles.dischargeItem}>
-                  <strong>{form.form_type || "Discharge document"}</strong>
-                  <span>{form.form_status || "Pending"}</span>
+                  <strong>{form.form_type || copy.dischargeDocument}</strong>
+                  <span>{form.form_status || copy.pendingStatus}</span>
                 </div>
               ))}
               {dischargeClinicForms.length === 0 && (
-                <div style={styles.emptyBox}>No discharge documents are ready yet.</div>
+                <div style={styles.emptyBox}>{copy.noDischargeDocuments}</div>
               )}
             </div>
           </section>
 
           <Link href="/" style={styles.homeLink}>
-            Back to MyPawLink
+            {copy.backToMyPawLink}
           </Link>
         </div>
       </section>
@@ -1372,15 +1608,35 @@ const styles: Record<string, CSSProperties> = {
     width: "min(100%, 430px)",
     margin: "0 auto",
   },
+  portalHeader: {
+    alignItems: "center",
+    display: "grid",
+    gap: 8,
+    gridTemplateColumns: "1fr auto 1fr",
+    marginBottom: 10,
+  },
   logoRow: {
     display: "flex",
     justifyContent: "center",
-    marginBottom: 10,
+    gridColumn: 2,
   },
   logo: {
     width: 210,
     maxWidth: "76%",
     height: "auto",
+  },
+  portalLanguageButton: {
+    background: "#f0fbf8",
+    border: "1px solid #bfe9e0",
+    borderRadius: 8,
+    color: "#087f78",
+    cursor: "pointer",
+    fontSize: 12,
+    fontWeight: 900,
+    gridColumn: 3,
+    justifySelf: "end",
+    minHeight: 36,
+    padding: "7px 10px",
   },
   greeting: {
     display: "flex",

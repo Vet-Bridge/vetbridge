@@ -20,6 +20,8 @@ type Update = {
 
 type EstimateItem = Record<string, unknown>;
 
+type CustomerLanguage = "en" | "es";
+
 type VisitForm = {
   id: string;
   form_type: string;
@@ -381,6 +383,241 @@ type CareHubCategory = {
   title: string;
   description: string;
   forms: CareHubForm[];
+};
+
+const customerLanguageStorageKey = "mypawlink-customer-language";
+const customerLanguageChangedEvent = "mypawlink-language-change";
+const brandGreen = "#087f78";
+
+const customerCopy = {
+  en: {
+    languageButton: "Español",
+    heroTitle: "Stay connected to your pet's care in real time.",
+    heroSubtitle:
+      "Receive updates, approve treatment, and communicate with your veterinary team from your phone.",
+    startVisitTitle: "Start Visit",
+    startVisitSubtitle: "Check your pet in before arrival or when you get to the hospital.",
+    trackPetTitle: "Track My Pet",
+    trackPetSubtitle: "Use your secure visit link or access code to view live updates.",
+    secureLine: "Secure communication between pet owners and care teams.",
+    liveUpdate: "Live update",
+    sampleUpdateTitle: "Bella has been checked in.",
+    sampleUpdateBody: "Dr. Smith is reviewing the case. Estimate pending approval.",
+    veterinaryTeams: "For veterinary teams",
+    vetReferral: "Vet Referral",
+    staffLogin: "Staff Login",
+    howItWorks: "How MyPawLink Works",
+    workSteps: ["Check in", "Receive live updates", "Approve care", "Pick up your pet"],
+    builtFor: "Built for Emergency Veterinary Hospitals",
+    benefits: [
+      "Fewer status-check phone calls",
+      "Faster digital intake",
+      "Signed consents and approvals",
+      "Clear discharge communication",
+    ],
+    emergencyDisclaimer:
+      "MyPawLink is a communication platform that helps veterinary clinics share updates with pet owners. MyPawLink does not provide veterinary medical advice, diagnosis, or treatment. If your pet is experiencing a medical emergency, contact your veterinarian or the nearest emergency veterinary hospital immediately.",
+    checkInStep: "Step {step} of 4",
+    checkInTitle: "Start Emergency Visit",
+    checkInIntro:
+      "Need emergency care? Complete this quick check-in so the veterinary team can prepare.",
+    visitStepLabels: ["Pet", "Emergency", "Extras", "Review"],
+    petContactTitle: "Pet + contact",
+    petContactIntro:
+      "Contact comes first so the team can reach you if anything interrupts check-in.",
+    placeholders: {
+      ownerFirstName: "Owner first name",
+      ownerLastName: "Owner last name",
+      phone: "Phone number",
+      email: "Email",
+      petName: "Pet name",
+      contactName: "Contact name",
+      relationship: "Relationship",
+      permissionLevel: "Permission level",
+      petTypeOther: "Pet type, for example Rabbit or Bird",
+      ageNumber: "Age number",
+    },
+    addContact: "+ Add another contact",
+    additionalContact: "Additional Contact",
+    additionalContactIntro:
+      "Add another person who can receive updates or help make decisions for this visit.",
+    remove: "Remove",
+    petAge: "Pet age",
+    optional: "Optional",
+    ageUnknownTitle: "Age: Unknown",
+    ageUnknownText: "The clinic will confirm age during intake if needed.",
+    estimateAge: "Estimate age",
+    knowBirthday: "I know my pet's birthday",
+    notSure: "I'm not sure",
+    petType: "Pet type",
+    actionsTitle: "Actions",
+    actionsIntro:
+      "Forms, approvals, and discharge documents will appear here only when the care team needs a response.",
+    noActionTitle: "No action needed right now.",
+    noActionText: "We will let you know here when something needs your review.",
+    actionNeeded: "Action Needed",
+    formsToReview: "Forms to review",
+    status: "Status",
+    reviewBeforeResponding: "Please review before responding:",
+    emergencyConsent: "Emergency Care Consent",
+    formFallback: "Form",
+    emergencyConsentIntro:
+      "Please review and sign so the veterinary team can begin evaluation and stabilizing care.",
+    reviewItemIntro: "Please review this item from the veterinary team.",
+    reviewAndSign: "Review & Sign",
+    backToActions: "Back to Actions",
+    ownerFullName: "Owner full name",
+    relationshipToPet: "Relationship to pet",
+    consentChecks: [
+      "I authorize initial emergency evaluation and stabilizing care for my pet.",
+      "I understand that charges may apply for emergency evaluation and stabilizing care.",
+      "I understand that payment is due at the time of service.",
+      "I understand that additional diagnostics, treatment, hospitalization, procedures, or surgery may require a separate estimate and approval.",
+    ],
+    signWithFinger: "Sign with your finger",
+    clearSignature: "Clear Signature",
+    signatureHelp: "Use your finger or stylus to sign inside the box.",
+    typedSignatureFallback: "Typed signature fallback",
+    typedSignatureAgreement: "I agree that my typed name represents my electronic signature.",
+    dateTimeSigned: "Date/time signed",
+    submitting: "Submitting...",
+    signConsent: "Sign Consent",
+    reasonDeclining: "Reason for declining",
+    declineWarning:
+      "Declining this consent may delay care. The veterinary team may contact you before care can continue.",
+    decline: "Decline",
+    careHubTitle: "MyPawLink Care Hub",
+    careHubIntro: "Only documents connected to this visit are shown here.",
+    openCareHub: "Open Care Hub",
+    visitDocuments: "Visit documents",
+    careHubEmptyTitle: "No visit documents yet.",
+    careHubEmptyText:
+      "The veterinary team will send forms, approvals, or discharge documents here when needed.",
+    ownerTabs: {
+      home: "Home",
+      updates: "Updates",
+      actions: "Actions",
+      pet: "My Pet",
+      profile: "Profile",
+    },
+  },
+  es: {
+    languageButton: "English",
+    heroTitle: "Mantente conectado al cuidado de tu mascota en tiempo real.",
+    heroSubtitle:
+      "Recibe actualizaciones, aprueba tratamientos y comunícate con el equipo veterinario desde tu teléfono.",
+    startVisitTitle: "Iniciar visita",
+    startVisitSubtitle: "Registra a tu mascota antes de llegar o al llegar al hospital.",
+    trackPetTitle: "Ver mi mascota",
+    trackPetSubtitle: "Usa tu enlace seguro o código de acceso para ver actualizaciones.",
+    secureLine: "Comunicación segura entre dueños de mascotas y equipos de atención.",
+    liveUpdate: "Actualización en vivo",
+    sampleUpdateTitle: "Bella ya fue registrada.",
+    sampleUpdateBody: "Dr. Smith está revisando el caso. La estimación espera aprobación.",
+    veterinaryTeams: "Para equipos veterinarios",
+    vetReferral: "Referencia veterinaria",
+    staffLogin: "Ingreso del personal",
+    howItWorks: "Cómo funciona MyPawLink",
+    workSteps: ["Regístrate", "Recibe actualizaciones", "Aprueba el cuidado", "Recoge a tu mascota"],
+    builtFor: "Creado para hospitales veterinarios de emergencia",
+    benefits: [
+      "Menos llamadas para pedir estado",
+      "Ingreso digital más rápido",
+      "Consentimientos y aprobaciones firmados",
+      "Comunicación clara al alta",
+    ],
+    emergencyDisclaimer:
+      "MyPawLink es una plataforma de comunicación que ayuda a las clínicas veterinarias a compartir actualizaciones con los dueños de mascotas. MyPawLink no proporciona consejo médico veterinario, diagnóstico ni tratamiento. Si tu mascota tiene una emergencia médica, contacta a tu veterinario o al hospital veterinario de emergencia más cercano inmediatamente.",
+    checkInStep: "Paso {step} de 4",
+    checkInTitle: "Iniciar visita de emergencia",
+    checkInIntro:
+      "¿Necesitas atención de emergencia? Completa este registro rápido para que el equipo veterinario pueda prepararse.",
+    visitStepLabels: ["Mascota", "Emergencia", "Extras", "Revisión"],
+    petContactTitle: "Mascota + contacto",
+    petContactIntro:
+      "El contacto va primero para que el equipo pueda comunicarse contigo si algo interrumpe el registro.",
+    placeholders: {
+      ownerFirstName: "Nombre del dueño",
+      ownerLastName: "Apellido del dueño",
+      phone: "Número de teléfono",
+      email: "Correo electrónico",
+      petName: "Nombre de la mascota",
+      contactName: "Nombre del contacto",
+      relationship: "Relación",
+      permissionLevel: "Nivel de permiso",
+      petTypeOther: "Tipo de mascota, por ejemplo conejo o ave",
+      ageNumber: "Edad",
+    },
+    addContact: "+ Agregar otro contacto",
+    additionalContact: "Contacto adicional",
+    additionalContactIntro:
+      "Agrega otra persona que pueda recibir actualizaciones o ayudar a tomar decisiones para esta visita.",
+    remove: "Quitar",
+    petAge: "Edad de la mascota",
+    optional: "Opcional",
+    ageUnknownTitle: "Edad: desconocida",
+    ageUnknownText: "La clínica confirmará la edad durante el ingreso si es necesario.",
+    estimateAge: "Estimar edad",
+    knowBirthday: "Sé la fecha de nacimiento",
+    notSure: "No estoy seguro",
+    petType: "Tipo de mascota",
+    actionsTitle: "Acciones",
+    actionsIntro:
+      "Los formularios, aprobaciones y documentos de alta aparecerán aquí solo cuando el equipo necesite una respuesta.",
+    noActionTitle: "No se necesita ninguna acción ahora.",
+    noActionText: "Te avisaremos aquí cuando algo necesite tu revisión.",
+    actionNeeded: "Acción necesaria",
+    formsToReview: "Formularios para revisar",
+    status: "Estado",
+    reviewBeforeResponding: "Revisa antes de responder:",
+    emergencyConsent: "Consentimiento de atención de emergencia",
+    formFallback: "Formulario",
+    emergencyConsentIntro:
+      "Revisa y firma para que el equipo veterinario pueda comenzar la evaluación y estabilización.",
+    reviewItemIntro: "Revisa este elemento del equipo veterinario.",
+    reviewAndSign: "Revisar y firmar",
+    backToActions: "Volver a acciones",
+    ownerFullName: "Nombre completo del dueño",
+    relationshipToPet: "Relación con la mascota",
+    consentChecks: [
+      "Autorizo la evaluación inicial de emergencia y la atención de estabilización para mi mascota.",
+      "Entiendo que pueden aplicarse cargos por la evaluación de emergencia y la estabilización.",
+      "Entiendo que el pago vence en el momento del servicio.",
+      "Entiendo que diagnósticos, tratamientos, hospitalización, procedimientos o cirugía adicionales pueden requerir una estimación y aprobación separadas.",
+    ],
+    signWithFinger: "Firma con tu dedo",
+    clearSignature: "Borrar firma",
+    signatureHelp: "Usa tu dedo o un lápiz táctil para firmar dentro del recuadro.",
+    typedSignatureFallback: "Firma escrita como alternativa",
+    typedSignatureAgreement: "Acepto que mi nombre escrito representa mi firma electrónica.",
+    dateTimeSigned: "Fecha/hora de firma",
+    submitting: "Enviando...",
+    signConsent: "Firmar consentimiento",
+    reasonDeclining: "Motivo para rechazar",
+    declineWarning:
+      "Rechazar este consentimiento puede retrasar la atención. El equipo veterinario puede contactarte antes de continuar.",
+    decline: "Rechazar",
+    careHubTitle: "Centro de cuidado MyPawLink",
+    careHubIntro: "Aquí solo se muestran documentos conectados con esta visita.",
+    openCareHub: "Abrir Centro de cuidado",
+    visitDocuments: "Documentos de la visita",
+    careHubEmptyTitle: "Aún no hay documentos de visita.",
+    careHubEmptyText:
+      "El equipo veterinario enviará formularios, aprobaciones o documentos de alta aquí cuando sea necesario.",
+    ownerTabs: {
+      home: "Inicio",
+      updates: "Actualizaciones",
+      actions: "Acciones",
+      pet: "Mi mascota",
+      profile: "Perfil",
+    },
+  },
+} as const satisfies Record<CustomerLanguage, Record<string, unknown>>;
+
+const getInitialCustomerLanguage = (): CustomerLanguage => {
+  if (typeof window === "undefined") return "en";
+  const savedLanguage = window.localStorage.getItem(customerLanguageStorageKey);
+  return savedLanguage === "en" || savedLanguage === "es" ? savedLanguage : "en";
 };
 
 const doctors: DoctorOption[] = [
@@ -1066,6 +1303,7 @@ export function MyPawLinkApp({
   const [clinicStatusFilter, setClinicStatusFilter] = useState("All statuses");
   const [clinicDoctorFilter, setClinicDoctorFilter] = useState("All doctors");
   const [clinicSort, setClinicSort] = useState<ClinicSort>("newest");
+  const [customerLanguage, setCustomerLanguage] = useState<CustomerLanguage>(getInitialCustomerLanguage);
   const [ownerUpdateDrafts, setOwnerUpdateDrafts] = useState<Record<string, string>>({});
   const [ownerMediaDrafts, setOwnerMediaDrafts] = useState<Record<string, OwnerUpdateMediaDraft>>({});
   const [authUserEmail, setAuthUserEmail] = useState("");
@@ -1109,6 +1347,20 @@ export function MyPawLinkApp({
   const clinicLoadingRef = useRef(false);
   const pendingClinicActionsRef = useRef<Record<string, string>>({});
   const clinicScrollRef = useRef<HTMLElement | null>(null);
+  const copy = customerCopy[customerLanguage];
+  const setCustomerLanguagePreference = (language: CustomerLanguage) => {
+    setCustomerLanguage(language);
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(customerLanguageStorageKey, language);
+    window.dispatchEvent(
+      new CustomEvent(customerLanguageChangedEvent, {
+        detail: { language },
+      })
+    );
+  };
+  const toggleCustomerLanguage = () => {
+    setCustomerLanguagePreference(customerLanguage === "en" ? "es" : "en");
+  };
   const dogBreeds = [
     "Labrador Retriever",
     "German Shepherd",
@@ -1206,11 +1458,11 @@ export function MyPawLinkApp({
   const getAssignedDoctorName = (visit: Visit) =>
     getAssignedDoctorFromNotes(visit.clinicNotes)?.name || "Unassigned";
   const ownerPortalTabs: { id: OwnerPortalTab; label: string }[] = [
-    { id: "home", label: "Home" },
-    { id: "updates", label: "Updates" },
-    { id: "actions", label: "Actions" },
-    { id: "pet", label: "My Pet" },
-    { id: "profile", label: "Profile" },
+    { id: "home", label: copy.ownerTabs.home },
+    { id: "updates", label: copy.ownerTabs.updates },
+    { id: "actions", label: copy.ownerTabs.actions },
+    { id: "pet", label: copy.ownerTabs.pet },
+    { id: "profile", label: copy.ownerTabs.profile },
   ];
   const visibleOwnerPortalTabs =
     ownerPortalMode === "shared"
@@ -3717,68 +3969,95 @@ export function MyPawLinkApp({
         @media (prefers-reduced-motion: reduce) {
           * { animation-duration: 0.01ms !important; scroll-behavior: auto !important; }
         }
+        @media (max-width: 560px) {
+          .customer-hero-header {
+            grid-template-columns: 1fr !important;
+          }
+          .customer-brand-row,
+          .customer-language-button {
+            grid-column: 1 / -1 !important;
+          }
+          .customer-language-button {
+            justify-self: center !important;
+          }
+        }
       `}</style>
       {view === "home" && (
         <section style={styles.hero}>
-          <div style={styles.brandRow}>
-            <div style={styles.logoCrop}>
-              <img src="/mypawlink-logo.png" alt="MyPawLink" style={styles.logoImage} />
+          <div className="customer-hero-header" style={styles.heroHeader}>
+            <div className="customer-brand-row" style={styles.brandRow}>
+              <div style={styles.logoCrop}>
+                <img src="/mypawlink-logo.png" alt="MyPawLink" style={styles.logoImage} />
+              </div>
             </div>
+            <button
+              className="customer-language-button"
+              type="button"
+              style={styles.languageButton}
+              onClick={toggleCustomerLanguage}
+              aria-label={
+                customerLanguage === "en"
+                  ? "Switch customer-facing text to Spanish"
+                  : "Cambiar el texto para clientes a inglés"
+              }
+            >
+              {copy.languageButton}
+            </button>
           </div>
 
-          <h1 style={styles.heroTitle}>Stay connected to your pet&apos;s care in real time.</h1>
+          <h1 style={styles.heroTitle}>{copy.heroTitle}</h1>
 
           <p style={styles.heroSubtitle}>
-            Receive updates, approve treatment, and communicate with your veterinary team from your phone.
+            {copy.heroSubtitle}
           </p>
 
           <div style={styles.buttonRow}>
             <button style={styles.primaryCardButton} onClick={() => setView("newPet")}>
               <span style={styles.bigIcon}><MiniIcon type="paw" /></span>
               <div style={styles.buttonText}>
-                <div style={styles.buttonTitle}>Start Visit</div>
+                <div style={styles.buttonTitle}>{copy.startVisitTitle}</div>
                 <div style={styles.buttonSubtitle}>
-                  Check your pet in before arrival or when you get to the hospital.
+                  {copy.startVisitSubtitle}
                 </div>
               </div>
-              <span style={styles.cardCta}>Start Visit</span>
+              <span style={styles.cardCta}>{copy.startVisitTitle}</span>
             </button>
 
             <button style={styles.darkCardButton} onClick={() => setView("existingPet")}>
               <span style={styles.bigIcon}><MiniIcon type="search" /></span>
               <div style={styles.buttonText}>
-                <div style={styles.buttonTitle}>Track My Pet</div>
+                <div style={styles.buttonTitle}>{copy.trackPetTitle}</div>
                 <div style={styles.buttonSubtitle}>
-                  Use your secure visit link or access code to view live updates.
+                  {copy.trackPetSubtitle}
                 </div>
               </div>
-              <span style={styles.cardCtaBlue}>Track My Pet</span>
+              <span style={styles.cardCtaBlue}>{copy.trackPetTitle}</span>
             </button>
           </div>
 
           <div style={styles.secureLine}>
             <MiniIcon type="lock" />
-            <span>Secure communication between pet owners and care teams.</span>
+            <span>{copy.secureLine}</span>
           </div>
 
           <div style={styles.statusPreviewCard}>
             <div style={styles.statusPreviewTop}>
-              <span style={styles.statusPreviewBadge}>Live update</span>
+              <span style={styles.statusPreviewBadge}>{copy.liveUpdate}</span>
               <span style={styles.statusPreviewTime}>10:42 AM</span>
             </div>
-            <strong>Bella has been checked in.</strong>
+            <strong>{copy.sampleUpdateTitle}</strong>
             <p style={styles.statusPreviewText}>
-              Dr. Smith is reviewing the case. Estimate pending approval.
+              {copy.sampleUpdateBody}
             </p>
           </div>
 
           <div style={styles.teamLinkRow}>
-            <span>For veterinary teams</span>
+            <span>{copy.veterinaryTeams}</span>
             <button style={styles.teamTextButton} onClick={() => setView("referral")}>
-              Vet Referral
+              {copy.vetReferral}
             </button>
             <button style={styles.teamTextButton} onClick={() => router.push("/clinic/patients")}>
-              Staff Login
+              {copy.staffLogin}
             </button>
           </div>
         </section>
@@ -3789,14 +4068,9 @@ export function MyPawLinkApp({
           {view === "home" && (
             <section style={styles.homeProductSections}>
               <div style={styles.homeInfoSection}>
-                <h2 style={styles.homeSectionTitle}>How MyPawLink Works</h2>
+                <h2 style={styles.homeSectionTitle}>{copy.howItWorks}</h2>
                 <div style={styles.homeStepList}>
-                  {[
-                    "Check in",
-                    "Receive live updates",
-                    "Approve care",
-                    "Pick up your pet",
-                  ].map((step, index) => (
+                  {copy.workSteps.map((step, index) => (
                     <div key={step} style={styles.homeStepCard}>
                       <span style={styles.homeStepNumber}>{index + 1}</span>
                       <strong>{step}</strong>
@@ -3806,14 +4080,9 @@ export function MyPawLinkApp({
               </div>
 
               <div style={styles.homeInfoSection}>
-                <h2 style={styles.homeSectionTitle}>Built for Emergency Veterinary Hospitals</h2>
+                <h2 style={styles.homeSectionTitle}>{copy.builtFor}</h2>
                 <div style={styles.homeBenefitGrid}>
-                  {[
-                    "Fewer status-check phone calls",
-                    "Faster digital intake",
-                    "Signed consents and approvals",
-                    "Clear discharge communication",
-                  ].map((benefit) => (
+                  {copy.benefits.map((benefit) => (
                     <div key={benefit} style={styles.homeBenefitCard}>
                       <span aria-label="Completed benefit" role="img" style={styles.homeBenefitCheck}>
                         <svg aria-hidden="true" fill="none" height="16" viewBox="0 0 16 16" width="16">
@@ -3833,10 +4102,7 @@ export function MyPawLinkApp({
               </div>
 
               <div style={styles.homeDisclaimer}>
-                MyPawLink is a communication platform that helps veterinary clinics share updates
-                with pet owners. MyPawLink does not provide veterinary medical advice, diagnosis,
-                or treatment. If your pet is experiencing a medical emergency, contact your
-                veterinarian or the nearest emergency veterinary hospital immediately.
+                {copy.emergencyDisclaimer}
               </div>
             </section>
           )}
@@ -3844,15 +4110,17 @@ export function MyPawLinkApp({
           {view === "newPet" && (
             <section id="start-visit-form">
               <div style={styles.visitWizardHeader}>
-                <span style={styles.visitStepEyebrow}>Step {visitWizardStep} of 4</span>
-                <h2 style={styles.title}>Start Emergency Visit</h2>
+                <span style={styles.visitStepEyebrow}>
+                  {copy.checkInStep.replace("{step}", String(visitWizardStep))}
+                </span>
+                <h2 style={styles.title}>{copy.checkInTitle}</h2>
                 <p style={styles.text}>
-                  Need emergency care? Complete this quick check-in so the veterinary team can prepare.
+                  {copy.checkInIntro}
                 </p>
               </div>
 
               <div style={styles.visitProgressTrack}>
-                {visitStepLabels.map((label, index) => {
+                {copy.visitStepLabels.map((label, index) => {
                   const step = index + 1;
                   const active = visitWizardStep === step;
                   const complete = visitWizardStep > step;
@@ -3891,9 +4159,9 @@ export function MyPawLinkApp({
                 {visitWizardStep === 1 && (
                   <section style={styles.visitStepCard}>
                     <div>
-                      <h3 style={styles.visitStepTitle}>Pet + contact</h3>
+                      <h3 style={styles.visitStepTitle}>{copy.petContactTitle}</h3>
                       <p style={styles.visitStepText}>
-                        Contact comes first so the team can reach you if anything interrupts check-in.
+                        {copy.petContactIntro}
                       </p>
                     </div>
 
@@ -3902,21 +4170,21 @@ export function MyPawLinkApp({
                         style={styles.input}
                         value={visitDraft.ownerFirstName}
                         onChange={(e) => updateVisitDraft("ownerFirstName", e.target.value)}
-                        placeholder="Owner first name"
+                        placeholder={copy.placeholders.ownerFirstName}
                         autoComplete="given-name"
                       />
                       <input
                         style={styles.input}
                         value={visitDraft.ownerLastName}
                         onChange={(e) => updateVisitDraft("ownerLastName", e.target.value)}
-                        placeholder="Owner last name"
+                        placeholder={copy.placeholders.ownerLastName}
                         autoComplete="family-name"
                       />
                       <input
                         style={styles.input}
                         value={visitDraft.phone}
                         onChange={(e) => updateVisitDraft("phone", e.target.value)}
-                        placeholder="Phone number"
+                        placeholder={copy.placeholders.phone}
                         inputMode="tel"
                         autoComplete="tel"
                       />
@@ -3924,7 +4192,7 @@ export function MyPawLinkApp({
                         style={styles.input}
                         value={visitDraft.email}
                         onChange={(e) => updateVisitDraft("email", e.target.value)}
-                        placeholder="Email"
+                        placeholder={copy.placeholders.email}
                         inputMode="email"
                         autoComplete="email"
                       />
@@ -3932,7 +4200,7 @@ export function MyPawLinkApp({
                         style={styles.input}
                         value={visitDraft.petName}
                         onChange={(e) => updateVisitDraft("petName", e.target.value)}
-                        placeholder="Pet name"
+                        placeholder={copy.placeholders.petName}
                       />
                     </div>
 
@@ -3943,15 +4211,15 @@ export function MyPawLinkApp({
                           style={styles.optionalContactButton}
                           onClick={() => updateVisitDraft("secondaryContactEnabled", "Yes")}
                         >
-                          + Add another contact
+                          {copy.addContact}
                         </button>
                       ) : (
                         <div style={styles.optionalContactForm}>
                           <div style={styles.optionalContactHeader}>
                             <div>
-                              <h4 style={styles.optionalContactTitle}>Additional Contact</h4>
+                              <h4 style={styles.optionalContactTitle}>{copy.additionalContact}</h4>
                               <p style={styles.visitStepText}>
-                                Add another person who can receive updates or help make decisions for this visit.
+                                {copy.additionalContactIntro}
                               </p>
                             </div>
                             <button
@@ -3959,7 +4227,7 @@ export function MyPawLinkApp({
                               style={styles.inlineTextButton}
                               onClick={() => updateVisitDraft("secondaryContactEnabled", "")}
                             >
-                              Remove
+                              {copy.remove}
                             </button>
                           </div>
 
@@ -3968,7 +4236,7 @@ export function MyPawLinkApp({
                               style={styles.input}
                               value={visitDraft.secondaryContactName}
                               onChange={(e) => updateVisitDraft("secondaryContactName", e.target.value)}
-                              placeholder="Contact name"
+                              placeholder={copy.placeholders.contactName}
                               autoComplete="name"
                             />
                             <select
@@ -3977,7 +4245,7 @@ export function MyPawLinkApp({
                               onChange={(e) => updateVisitDraft("secondaryContactRelationship", e.target.value)}
                               aria-label="Relationship"
                             >
-                              <option value="">Relationship</option>
+                              <option value="">{copy.placeholders.relationship}</option>
                               {relationshipOptions.map((relationship) => (
                                 <option key={relationship} value={relationship}>
                                   {relationship}
@@ -3988,7 +4256,7 @@ export function MyPawLinkApp({
                               style={styles.input}
                               value={visitDraft.secondaryContactPhone}
                               onChange={(e) => updateVisitDraft("secondaryContactPhone", e.target.value)}
-                              placeholder="Phone number"
+                              placeholder={copy.placeholders.phone}
                               inputMode="tel"
                               autoComplete="tel"
                             />
@@ -3996,7 +4264,7 @@ export function MyPawLinkApp({
                               style={styles.input}
                               value={visitDraft.secondaryContactEmail}
                               onChange={(e) => updateVisitDraft("secondaryContactEmail", e.target.value)}
-                              placeholder="Email"
+                              placeholder={copy.placeholders.email}
                               inputMode="email"
                               autoComplete="email"
                             />
@@ -4019,16 +4287,16 @@ export function MyPawLinkApp({
 
                     <div style={styles.ageSection}>
                       <div style={styles.ageHeader}>
-                        <span style={styles.visitChoiceLabel}>Pet age</span>
+                        <span style={styles.visitChoiceLabel}>{copy.petAge}</span>
                         <span style={styles.agePreview}>
-                          {getPetAgeDisplayFromDraft(visitDraft) || "Optional"}
+                          {getPetAgeDisplayFromDraft(visitDraft) || copy.optional}
                         </span>
                       </div>
 
                       {visitDraft.petAgeMode === "unknown" || visitDraft.petAgeUnknown === "Yes" ? (
                         <div style={styles.ageUnknownBox}>
-                          <strong>Age: Unknown</strong>
-                          <span>The clinic will confirm age during intake if needed.</span>
+                          <strong>{copy.ageUnknownTitle}</strong>
+                          <span>{copy.ageUnknownText}</span>
                         </div>
                       ) : visitDraft.petAgeMode === "birthdate" ? (
                         <div style={styles.visitFieldGrid}>
@@ -4049,7 +4317,7 @@ export function MyPawLinkApp({
                             step="1"
                             value={visitDraft.petAgeValue}
                             onChange={(e) => updateVisitDraft("petAgeValue", e.target.value)}
-                            placeholder="Age number"
+                            placeholder={copy.placeholders.ageNumber}
                             inputMode="numeric"
                           />
                           <select
@@ -4075,7 +4343,7 @@ export function MyPawLinkApp({
                             updateVisitDraft("petAgeMode", "estimate");
                           }}
                         >
-                          Estimate age
+                          {copy.estimateAge}
                         </button>
                         <button
                           type="button"
@@ -4084,7 +4352,7 @@ export function MyPawLinkApp({
                             updateVisitDraft("petAgeMode", "birthdate");
                           }}
                         >
-                          I know my pet&apos;s birthday
+                          {copy.knowBirthday}
                         </button>
                         <button
                           type="button"
@@ -4093,19 +4361,19 @@ export function MyPawLinkApp({
                             updateVisitDraft("petAgeUnknown", "Yes");
                           }}
                         >
-                          I&apos;m not sure
+                          {copy.notSure}
                         </button>
                       </div>
                     </div>
 
-                    {renderVisitChoiceGroup("Pet type", "species", ["Dog", "Cat", "Other"])}
+                    {renderVisitChoiceGroup(copy.petType, "species", ["Dog", "Cat", "Other"])}
 
                     {visitDraft.species === "Other" && (
                       <input
                         style={styles.input}
                         value={visitDraft.otherSpecies}
                         onChange={(e) => updateVisitDraft("otherSpecies", e.target.value)}
-                        placeholder="Pet type, for example Rabbit or Bird"
+                        placeholder={copy.placeholders.petTypeOther}
                       />
                     )}
 
@@ -6575,24 +6843,23 @@ export function MyPawLinkApp({
               {!showPostCheckInConfirmationOnly && ownerPortalTab === "actions" && (
                 <div style={styles.ownerTabPanel}>
                   <div style={styles.ownerSectionHeader}>
-                    <h2 style={styles.sectionTitle}>Actions</h2>
+                    <h2 style={styles.sectionTitle}>{copy.actionsTitle}</h2>
                     <p style={styles.careHubIntro}>
-                      Forms, approvals, and discharge documents will appear here only when the care
-                      team needs a response.
+                      {copy.actionsIntro}
                     </p>
                   </div>
 
                   {pendingOwnerForms.length === 0 && !careHubOpen && (
                     <div style={styles.ownerNoActionCard}>
-                      <strong>No action needed right now.</strong>
-                      <span>We will let you know here when something needs your review.</span>
+                      <strong>{copy.noActionTitle}</strong>
+                      <span>{copy.noActionText}</span>
                     </div>
                   )}
                   {pendingOwnerForms.length > 0 && (
                     <div style={styles.ownerFormList}>
                       <div>
-                        <span style={styles.ownerHeroEyebrow}>Action Needed</span>
-                        <h3 style={styles.ownerVisitTitle}>Forms to review</h3>
+                        <span style={styles.ownerHeroEyebrow}>{copy.actionNeeded}</span>
+                        <h3 style={styles.ownerVisitTitle}>{copy.formsToReview}</h3>
                       </div>
 
                       {pendingOwnerForms.map((form) => {
@@ -6606,14 +6873,14 @@ export function MyPawLinkApp({
                             <div style={styles.ownerFormHeader}>
                               <div>
                                 <strong>{form.form_type}</strong>
-                                <p>Status: {form.form_status}</p>
+                                <p>{copy.status}: {form.form_status}</p>
                               </div>
                               <span style={styles.formStatus}>{form.form_status}</span>
                             </div>
 
                             {form.form_body && formIsOpen && (
                               <div style={styles.noticeBox}>
-                                <strong>Please review before responding:</strong>
+                                <strong>{copy.reviewBeforeResponding}</strong>
                                 {form.form_body.split("\n\n").map((paragraph) => (
                                   <p key={paragraph}>{paragraph}</p>
                                 ))}
@@ -6625,13 +6892,13 @@ export function MyPawLinkApp({
                                 <div>
                                   <strong>
                                     {isEmergencyCareConsentForm(form)
-                                      ? "Emergency Care Consent"
-                                      : form.form_type || "Form"}
+                                      ? copy.emergencyConsent
+                                      : form.form_type || copy.formFallback}
                                   </strong>
                                   <span>
                                     {isEmergencyCareConsentForm(form)
-                                      ? "Please review and sign so the veterinary team can begin evaluation and stabilizing care."
-                                      : "Please review this item from the veterinary team."}
+                                      ? copy.emergencyConsentIntro
+                                      : copy.reviewItemIntro}
                                   </span>
                                 </div>
                                 <button
@@ -6639,7 +6906,7 @@ export function MyPawLinkApp({
                                   style={styles.careHubViewButton}
                                   onClick={() => setActiveOwnerFormId(form.id)}
                                 >
-                                  Review & Sign
+                                  {copy.reviewAndSign}
                                 </button>
                               </div>
                             )}
@@ -6651,7 +6918,7 @@ export function MyPawLinkApp({
                                   style={styles.backButton}
                                   onClick={() => setActiveOwnerFormId("")}
                                 >
-                                  Back to Actions
+                                  {copy.backToActions}
                                 </button>
                                 <input
                                   style={styles.input}
@@ -6659,7 +6926,7 @@ export function MyPawLinkApp({
                                   onChange={(event) =>
                                     updateOwnerFormDraft(form.id, "ownerName", event.target.value)
                                   }
-                                  placeholder="Owner full name"
+                                  placeholder={copy.ownerFullName}
                                   autoComplete="name"
                                 />
                                 <input
@@ -6668,7 +6935,7 @@ export function MyPawLinkApp({
                                   onChange={(event) =>
                                     updateOwnerFormDraft(form.id, "relationship", event.target.value)
                                   }
-                                  placeholder="Relationship to pet"
+                                  placeholder={copy.relationshipToPet}
                                 />
 
                                 {isEmergencyCareConsentForm(form) && (
@@ -6681,7 +6948,7 @@ export function MyPawLinkApp({
                                           updateOwnerFormDraft(form.id, "authorized", event.target.checked)
                                         }
                                       />
-                                      I authorize initial emergency evaluation and stabilizing care for my pet.
+                                      {copy.consentChecks[0]}
                                     </label>
                                     <label style={styles.checkRow}>
                                       <input
@@ -6691,7 +6958,7 @@ export function MyPawLinkApp({
                                           updateOwnerFormDraft(form.id, "chargesAcknowledged", event.target.checked)
                                         }
                                       />
-                                      I understand that charges may apply for emergency evaluation and stabilizing care.
+                                      {copy.consentChecks[1]}
                                     </label>
                                     <label style={styles.checkRow}>
                                       <input
@@ -6701,7 +6968,7 @@ export function MyPawLinkApp({
                                           updateOwnerFormDraft(form.id, "paymentDueAcknowledged", event.target.checked)
                                         }
                                       />
-                                      I understand that payment is due at the time of service.
+                                      {copy.consentChecks[2]}
                                     </label>
                                     <label style={styles.checkRow}>
                                       <input
@@ -6715,20 +6982,20 @@ export function MyPawLinkApp({
                                           )
                                         }
                                       />
-                                      I understand that additional diagnostics, treatment, hospitalization, procedures, or surgery may require a separate estimate and approval.
+                                      {copy.consentChecks[3]}
                                     </label>
                                   </div>
                                 )}
 
                                 <div style={styles.signaturePadShell}>
                                   <div style={styles.signatureHintRow}>
-                                    <span>Sign with your finger</span>
+                                    <span>{copy.signWithFinger}</span>
                                     <button
                                       type="button"
                                       style={styles.clearSignatureButton}
                                       onClick={() => clearOwnerSignature(form.id)}
                                     >
-                                      Clear Signature
+                                      {copy.clearSignature}
                                     </button>
                                   </div>
                                   <SignaturePad
@@ -6736,7 +7003,7 @@ export function MyPawLinkApp({
                                     onChange={(value) => updateOwnerFormDraft(form.id, "signatureData", value)}
                                   />
                                   <span style={styles.signatureHelper}>
-                                    Use your finger or stylus to sign inside the box.
+                                    {copy.signatureHelp}
                                   </span>
                                 </div>
 
@@ -6747,7 +7014,7 @@ export function MyPawLinkApp({
                                     onChange={(event) =>
                                       updateOwnerFormDraft(form.id, "typedSignature", event.target.value)
                                     }
-                                    placeholder="Typed signature fallback"
+                                    placeholder={copy.typedSignatureFallback}
                                     autoComplete="name"
                                   />
                                   <label style={styles.checkRow}>
@@ -6762,12 +7029,12 @@ export function MyPawLinkApp({
                                         )
                                       }
                                     />
-                                    I agree that my typed name represents my electronic signature.
+                                    {copy.typedSignatureAgreement}
                                   </label>
                                 </div>
 
                                 <div style={styles.timestampBox}>
-                                  Date/time signed: {new Date().toLocaleString()}
+                                  {copy.dateTimeSigned}: {new Date().toLocaleString()}
                                 </div>
 
                                 {formMessage && (
@@ -6793,7 +7060,7 @@ export function MyPawLinkApp({
                                   disabled={Boolean(respondingOwnerFormId)}
                                   onClick={() => void respondToOwnerForm(selectedVisit, form, "Signed")}
                                 >
-                                  {isResponding ? "Submitting..." : "Sign Consent"}
+                                  {isResponding ? copy.submitting : copy.signConsent}
                                 </button>
 
                                 <textarea
@@ -6802,10 +7069,10 @@ export function MyPawLinkApp({
                                   onChange={(event) =>
                                     updateOwnerFormDraft(form.id, "declineReason", event.target.value)
                                   }
-                                  placeholder="Reason for declining"
+                                  placeholder={copy.reasonDeclining}
                                 />
                                 <div style={styles.warningBox}>
-                                  Declining this consent may delay care. The veterinary team may contact you before care can continue.
+                                  {copy.declineWarning}
                                 </div>
                                 <button
                                   type="button"
@@ -6813,7 +7080,7 @@ export function MyPawLinkApp({
                                   disabled={Boolean(respondingOwnerFormId)}
                                   onClick={() => void respondToOwnerForm(selectedVisit, form, "Declined")}
                                 >
-                                  Decline
+                                  {copy.decline}
                                 </button>
                               </div>
                             )}
@@ -6839,12 +7106,12 @@ export function MyPawLinkApp({
                   )}
               {pendingOwnerForms.length === 0 && (
                 <div style={styles.ownerActionCard}>
-                  <h3 style={styles.sectionTitle}>MyPawLink Care Hub</h3>
+                  <h3 style={styles.sectionTitle}>{copy.careHubTitle}</h3>
                   <p style={styles.careHubIntro}>
-                    Only documents connected to this visit are shown here.
+                    {copy.careHubIntro}
                   </p>
                   <button style={styles.careHubButton} onClick={openCareHub}>
-                    Open Care Hub <span>&gt;</span>
+                    {copy.openCareHub} <span>&gt;</span>
                   </button>
                 </div>
               )}
@@ -6853,10 +7120,10 @@ export function MyPawLinkApp({
                 <div style={styles.careHubPortal}>
                   <div style={styles.careHubHeader}>
                     <div>
-                      <p style={styles.careHubEyebrow}>Visit documents</p>
-                      <h3 style={styles.sectionTitle}>MyPawLink Care Hub</h3>
+                      <p style={styles.careHubEyebrow}>{copy.visitDocuments}</p>
+                      <h3 style={styles.sectionTitle}>{copy.careHubTitle}</h3>
                       <p style={styles.careHubIntro}>
-                        Forms, approvals, and discharge documents appear here only after the clinic sends them for this visit.
+                        {copy.actionsIntro}
                       </p>
                     </div>
                     <button
@@ -6880,9 +7147,9 @@ export function MyPawLinkApp({
                   {!selectedCareHubCategory && (
                     selectedVisit.forms.length === 0 ? (
                       <div style={styles.ownerNoActionCard}>
-                        <strong>No visit documents yet.</strong>
+                        <strong>{copy.careHubEmptyTitle}</strong>
                         <span>
-                          The veterinary team will send forms, approvals, or discharge documents here when needed.
+                          {copy.careHubEmptyText}
                         </span>
                       </div>
                     ) : (
@@ -7259,10 +7526,31 @@ const styles: { [key: string]: React.CSSProperties } = {
     alignContent: "center",
     gap: 22,
   },
+  heroHeader: {
+    alignItems: "center",
+    display: "grid",
+    gap: 8,
+    gridTemplateColumns: "1fr auto 1fr",
+  },
   brandRow: {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
+    gridColumn: 2,
+  },
+  languageButton: {
+    alignSelf: "start",
+    background: "#f0fbf8",
+    border: "1px solid #bfe9e0",
+    borderRadius: 8,
+    color: brandGreen,
+    cursor: "pointer",
+    fontSize: 13,
+    fontWeight: 900,
+    gridColumn: 3,
+    justifySelf: "end",
+    minHeight: 38,
+    padding: "8px 12px",
   },
   logoCrop: {
     width: "min(100%, 250px)",
@@ -7673,7 +7961,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: 30,
     height: 30,
     borderRadius: "50%",
-    background: "#16a34a",
+    background: brandGreen,
     color: "#ffffff",
     display: "grid",
     placeItems: "center",
