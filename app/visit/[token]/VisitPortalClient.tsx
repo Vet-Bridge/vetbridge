@@ -1002,10 +1002,7 @@ export default function VisitPortalClient({ token, initialVisit }: VisitPortalCl
   return (
     <main style={styles.page}>
       <section style={styles.shell}>
-        <div style={styles.portalHeader}>
-          <div style={styles.logoRow}>
-            <img src="/mypawlink-logo.png" alt="MyPawLink" style={styles.logo} />
-          </div>
+        <div style={styles.portalUtilityRow}>
           <button
             type="button"
             style={styles.portalLanguageButton}
@@ -1608,22 +1605,11 @@ const styles: Record<string, CSSProperties> = {
     width: "min(100%, 430px)",
     margin: "0 auto",
   },
-  portalHeader: {
+  portalUtilityRow: {
     alignItems: "center",
-    display: "grid",
-    gap: 8,
-    gridTemplateColumns: "1fr auto 1fr",
-    marginBottom: 10,
-  },
-  logoRow: {
     display: "flex",
-    justifyContent: "center",
-    gridColumn: 2,
-  },
-  logo: {
-    width: 210,
-    maxWidth: "76%",
-    height: "auto",
+    justifyContent: "flex-end",
+    marginBottom: 10,
   },
   portalLanguageButton: {
     background: "#f0fbf8",
@@ -1633,8 +1619,6 @@ const styles: Record<string, CSSProperties> = {
     cursor: "pointer",
     fontSize: 12,
     fontWeight: 900,
-    gridColumn: 3,
-    justifySelf: "end",
     minHeight: 36,
     padding: "7px 10px",
   },

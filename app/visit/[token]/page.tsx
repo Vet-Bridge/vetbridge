@@ -110,9 +110,6 @@ const formatDateTime = (value: unknown) => {
 const renderUnavailable = (title: string, message: string) => (
   <main style={styles.page}>
     <section style={styles.shell}>
-      <div style={styles.logoRow}>
-        <img src="/mypawlink-logo.png" alt="MyPawLink" style={styles.logo} />
-      </div>
       <div style={styles.card}>
         <span style={styles.badge}>Secure visit portal</span>
         <h1 style={styles.title}>{title}</h1>
@@ -232,16 +229,6 @@ const styles: Record<string, CSSProperties> = {
   shell: {
     width: "min(100%, 430px)",
     margin: "0 auto",
-  },
-  logoRow: {
-    display: "flex",
-    justifyContent: "center",
-    marginBottom: 10,
-  },
-  logo: {
-    width: 210,
-    maxWidth: "76%",
-    height: "auto",
   },
   greeting: {
     display: "flex",

@@ -12,6 +12,7 @@ import {
   buildFallbackIntegrationReadiness,
   type IntegrationReadiness,
 } from "../lib/integration-catalog";
+import { customerHomeEvent } from "./components/CustomerNavHeader";
 
 type Update = {
   message: string;
@@ -3924,6 +3925,19 @@ export function MyPawLinkApp({
     setSelectedCareHubCategoryId(null);
     setSelectedCareHubFormId(null);
   };
+
+  useEffect(() => {
+    const handleCustomerHome = () => {
+      setView("home");
+      setCareHubOpen(false);
+      setSelectedCareHubCategoryId(null);
+      setSelectedCareHubFormId(null);
+      setOwnerPortalMode("owner");
+    };
+
+    window.addEventListener(customerHomeEvent, handleCustomerHome);
+    return () => window.removeEventListener(customerHomeEvent, handleCustomerHome);
+  }, []);
 
   const submitCareHubForm = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import CustomerNavHeader from "./components/CustomerNavHeader";
 import LegalFooter from "./components/LegalFooter";
 import "./globals.css";
 
@@ -16,6 +17,7 @@ export default function RootLayout({
     <html lang="en" className="h-full antialiased">
       <body className="min-h-full flex flex-col">
         <div className="site-shell">
+          <CustomerNavHeader />
           <div className="site-shell__content">{children}</div>
           <LegalFooter />
         </div>
